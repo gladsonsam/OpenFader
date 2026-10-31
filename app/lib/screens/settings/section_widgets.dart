@@ -12,7 +12,8 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -36,10 +37,9 @@ class _Section extends StatelessWidget {
             ),
           ),
         ),
-        Material(
+        ConsolePanel(
           color: ConsolePalette.of(context).chip,
-          borderRadius: BorderRadius.circular(wide ? 14 : 12),
-          clipBehavior: Clip.antiAlias,
+          padding: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: _divided(context, children),
@@ -71,7 +71,8 @@ class _Note extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Padding(
       padding: EdgeInsets.fromLTRB(4, wide ? 14 : 12, 4, 0),
       child: Text(
@@ -94,52 +95,15 @@ class _PrefRow extends StatelessWidget {
   const _PrefRow({required this.label, this.desc, required this.trailing});
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    final compact = !wide && _SettingsLayout.isConnections(context);
-    return Container(
-      constraints: BoxConstraints(minHeight: wide ? 68 : (compact ? 64 : 68)),
-      padding: EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: U4.font,
-                    fontSize: wide ? 17 : 16,
-                    height: wide ? 1.25 : 24 / 18,
-                    fontWeight: FontWeight.w500,
-                    color: ConsolePalette.of(context).text1,
-                  ),
-                ),
-                if (desc != null) ...[
-                  SizedBox(height: wide ? 7 : 4),
-                  Text(
-                    desc!,
-                    style: TextStyle(
-                      fontFamily: U4.font,
-                      fontSize: wide ? 14 : 14,
-                      height: wide ? 1.4 : 21 / 15,
-                      color: ConsolePalette.of(context).text7,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(width: wide ? 24 : 16),
-          trailing,
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ConsolePreferenceRow(
+      label: label,
+      description: desc,
+      trailing: trailing,
+      minHeight: MediaQuery.sizeOf(context).width <=
+                  AppDesign.settingsSidebarBreakpoint &&
+              _SettingsLayout.isConnections(context)
+          ? AppDesign.compactSettingsRowHeight
+          : AppDesign.settingsRowHeight);
 }
 
 class _ActionRow extends StatelessWidget {
@@ -155,66 +119,19 @@ class _ActionRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    return Semantics(
+  Widget build(BuildContext context) => Semantics(
       button: true,
       label: label,
       onTap: () => _runSettingsAction(context, onTap),
-      child: GestureDetector(
-        onTap: () => _runSettingsAction(context, onTap),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          constraints: BoxConstraints(minHeight: 68),
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: U4.font,
-                        fontSize: wide ? 17 : 16,
-                        height: wide ? 1.25 : 24 / 18,
-                        fontWeight: FontWeight.w500,
-                        color: danger
-                            ? ConsolePalette.of(context).mute
-                            : ConsolePalette.of(context).text1,
-                      ),
-                    ),
-                    if (desc != null) ...[
-                      SizedBox(height: wide ? 7 : 4),
-                      Text(
-                        desc!,
-                        style: TextStyle(
-                          fontFamily: U4.font,
-                          fontSize: wide ? 14 : 14,
-                          height: wide ? 1.4 : 21 / 15,
-                          color: ConsolePalette.of(context).text7,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              _SettingsIcon(
-                Icons.chevron_right,
-                size: 24,
-                color: ConsolePalette.of(context).text7,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      child: InkWell(
+          onTap: () => _runSettingsAction(context, onTap),
+          child: ConsolePreferenceRow(
+              label: label,
+              description: desc,
+              foreground: danger ? ConsolePalette.of(context).mute : null,
+              trailing: _SettingsIcon(Icons.chevron_right,
+                  size: AppDesign.iconSize,
+                  color: ConsolePalette.of(context).text7))));
 }
 
 class _ValueText extends StatelessWidget {
@@ -223,7 +140,8 @@ class _ValueText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Text(
       text,
       maxLines: 1,

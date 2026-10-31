@@ -16,7 +16,8 @@ class _AboutDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -31,7 +32,7 @@ class _AboutDetail extends StatelessWidget {
                   'OpenFader',
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 26,
+                    fontSize: AppDesign.pageTitle,
                     fontWeight: FontWeight.w600,
                     color: ConsolePalette.of(context).text1,
                   ),
@@ -119,22 +120,22 @@ class _AboutDetail extends StatelessWidget {
                         'OpenFader is free and open source. The project repository contains the current licence and contributor information.',
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: 17,
+                          fontSize: AppDesign.rowLabel,
                           height: 1.5,
                           color: ConsolePalette.of(context).text7,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppDesign.spaceMd),
                       Text(
                         'Interface typeface: Barlow. Toolbar symbols and the OpenFader logo are vector artwork.',
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: 17,
+                          fontSize: AppDesign.rowLabel,
                           height: 1.5,
                           color: ConsolePalette.of(context).text7,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: AppDesign.spaceLg),
                       GestureDetector(
                         onTap: () =>
                             _runSettingsAction(context, () => _open(_repo)),
@@ -142,7 +143,7 @@ class _AboutDetail extends StatelessWidget {
                           'Open project repository',
                           style: TextStyle(
                             fontFamily: U4.font,
-                            fontSize: 17,
+                            fontSize: AppDesign.rowLabel,
                             fontWeight: FontWeight.w600,
                             color: ConsolePalette.of(context).cyan,
                           ),
@@ -157,7 +158,7 @@ class _AboutDetail extends StatelessWidget {
                         'Close',
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: 17,
+                          fontSize: AppDesign.rowLabel,
                           color: ConsolePalette.of(context).text1,
                         ),
                       ),
@@ -201,7 +202,8 @@ class _LinkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Semantics(
       button: true,
       label: label,
@@ -225,7 +227,7 @@ class _LinkRow extends StatelessWidget {
                       label,
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 17,
+                        fontSize: AppDesign.rowLabel,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -237,7 +239,7 @@ class _LinkRow extends StatelessWidget {
                         desc!,
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: 14,
+                          fontSize: AppDesign.body,
                           height: wide ? 1.4 : 21 / 15,
                           color: ConsolePalette.of(context).text7,
                         ),
@@ -246,7 +248,7 @@ class _LinkRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppDesign.spaceLg),
               _SettingsIcon(
                 icon,
                 size: 22,
@@ -274,7 +276,8 @@ class _HelpAccordionState extends State<_HelpAccordion> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -297,7 +300,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                       widget.title,
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 17,
+                        fontSize: AppDesign.rowLabel,
                         height: 1.2,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -327,12 +330,12 @@ class _HelpAccordionState extends State<_HelpAccordion> {
               children: [
                 for (final (index, paragraph)
                     in widget.body.split('\n\n').indexed) ...[
-                  if (index > 0) const SizedBox(height: 12),
+                  if (index > 0) const SizedBox(height: AppDesign.spaceMd),
                   Text(
                     paragraph,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 14,
+                      fontSize: AppDesign.body,
                       height: wide ? 1.5 : 22 / 15,
                       color: ConsolePalette.of(context).text7,
                     ),

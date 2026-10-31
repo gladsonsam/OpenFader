@@ -333,7 +333,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final narrow = MediaQuery.sizeOf(context).width < 700;
+        final narrow =
+            MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
         return U4Shell(
           header: Column(mainAxisSize: MainAxisSize.min, children: [
             _workspaceToolbar(),
@@ -394,7 +395,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget _workspaceToolbar() => ListenableBuilder(
       listenable: Listenable.merge([_mixer, _fx, _fxReadout, _channelFocus]),
       builder: (context, _) {
-        final compact = MediaQuery.sizeOf(context).width < 800;
+        final compact = MediaQuery.sizeOf(context).width <
+            AppDesign.compactToolbarBreakpoint;
         final store = widget.store;
         Widget? readout;
         if (_tab == AppTab.fx) {

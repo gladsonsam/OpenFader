@@ -128,7 +128,8 @@ class _SavedMixerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: 16,
@@ -146,7 +147,7 @@ class _SavedMixerRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 17,
+                    fontSize: AppDesign.rowLabel,
                     height: wide ? 1.25 : 24 / 18,
                     fontWeight: FontWeight.w500,
                     color: ConsolePalette.of(context).text1,
@@ -159,7 +160,7 @@ class _SavedMixerRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 14,
+                    fontSize: AppDesign.body,
                     height: wide ? 1.4 : 1.5,
                     color: ConsolePalette.of(context).text7,
                     fontFeatures: const [FontFeature.tabularFigures()],
