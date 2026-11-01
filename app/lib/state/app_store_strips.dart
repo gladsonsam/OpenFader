@@ -78,7 +78,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       ? ((masterControlKnown('fader') ? 1 : 0) |
           (masterControlKnown('mute') ? 2 : 0) |
           (_targetSoloReady(-1) ? 8 : 0))
-      : (canEditControl(ch, 'fader') ? 1 : 0) |
+      : (canEditMixerFader(ch) ? 1 : 0) |
           (canEditControl(ch, 'mute') ? 2 : 0) |
           (canEditControl(ch, 'pan') ? 4 : 0) |
           (canEditControl(ch, 'solo') ? 8 : 0);
@@ -87,6 +87,75 @@ mixin _AppStoreStrips on _AppStoreContext {
         ch,
         () => ValueNotifier(_controlReady(ch)),
       );
+
+  final Map<int, ValueNotifier<double>> _mixerFaderNotes = {};
+
+  // The surface follows the selected destination, while the channel editor
+  // retains its independent LR fader and explicit per-send controls.
+  String? _mixerSendLevel(int ch) {
+    if (!_busId.startsWith('bus')) return null;
+    final target = masterProcessingTarget;
+    for (final field in engine.supportedParams) {
+      if (!RegExp(r'^send[1-9][0-9]*_level$').hasMatch(field) ||
+          !_stripParamApplies(ch, field)) {
+        continue;
+      }
+      final metadata =
+          parameterPresentation(engine.parameterMetadata[field], (leaf) {
+        final value = ps.optimisticValue(_maps, ch, leaf);
+        return value is num ? value.toDouble() : null;
+      });
+      final destination = metadata?['destination'];
+      if (destination is Map && destination['key'] == target) return field;
+    }
+    return null;
+  }
+
+  bool canEditMixerFader(int ch) {
+    if (!_busId.startsWith('bus')) return canEditControl(ch, 'fader');
+    final field = _mixerSendLevel(ch);
+    return field != null &&
+        engine.connected &&
+        engine.capsReady &&
+        _accessParamAllowed(ch, field) &&
+        engine.valueKnown(ch, field);
+  }
+
+  double _mixerFaderValue(int ch) {
+    if (!_busId.startsWith('bus')) return faderOf(ch).value;
+    final field = _mixerSendLevel(ch);
+    final raw = field == null ? null : ps.optimisticValue(_maps, ch, field);
+    return raw is num ? dbToPos(raw.toDouble()) : 0;
+  }
+
+  @override
+  ValueNotifier<double> mixerFaderOf(int ch) => _mixerFaderNotes.putIfAbsent(
+      ch, () => ValueNotifier(_mixerFaderValue(ch)));
+
+  @override
+  void setMixerFader(int ch, double value) {
+    if (!_busId.startsWith('bus')) {
+      setFader(ch, value);
+      return;
+    }
+    if (!canEditMixerFader(ch)) return;
+    final field = _mixerSendLevel(ch)!;
+    final level = value.clamp(0.0, 1.0);
+    final metadata =
+        parameterPresentation(engine.parameterMetadata[field], (leaf) {
+      final value = ps.optimisticValue(_maps, ch, leaf);
+      return value is num ? value.toDouble() : null;
+    });
+    final floor = (metadata?['min'] as num?)?.toDouble();
+    final db = posToDb(level);
+    if (!db.isFinite && floor == null) return;
+    final protocolValue = db.isFinite ? db : floor!;
+    ps.noteOptimistic(_maps, ch, field, protocolValue, _nowMs());
+    mixerFaderOf(ch).value = level;
+    _coalescer.offer(
+        'param:$ch:$field', () => _send(Cmds.param(ch, field, protocolValue)));
+    _invalidateDerived();
+  }
 
   @override
   int? get _selectedSubgroup => _busId.startsWith('subgroup')
@@ -341,6 +410,8 @@ mixin _AppStoreStrips on _AppStoreContext {
       final muted = _stripMuteValue(ch, s.muted);
       if (m.value != muted) m.value = muted;
     }
+    final surface = _mixerFaderNotes[ch];
+    if (surface != null) surface.value = _mixerFaderValue(ch);
     final p = _panNotes[ch]!;
     final pv = panOf(ch);
     if (p.value != pv) p.value = pv;
@@ -414,7 +485,15 @@ mixin _AppStoreStrips on _AppStoreContext {
     final key = 'bus/${(index + 1).toString().padLeft(2, '0')}';
     final name =
         engine.strips.where((s) => s.key == key).firstOrNull?.name.trim();
-    return name == null || name.isEmpty ? 'BUS ${index + 1}' : name;
+    if (name != null && name.isNotEmpty) return name;
+    // Providers without bus strips expose the desk name on destination controls.
+    for (final control in engine.destinationControls) {
+      final reported = control.targetName?.trim();
+      if (control.target == key && reported != null && reported.isNotEmpty) {
+        return reported;
+      }
+    }
+    return 'BUS ${index + 1}';
   }
 
   @override
