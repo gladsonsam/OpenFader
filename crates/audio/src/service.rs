@@ -15,6 +15,40 @@ use std::{
     time::Duration,
 };
 
+// Select the device's native PCM representation; ASIO drivers often expose
+// integer samples only. The realtime callbacks convert without allocating.
+macro_rules! pcm_stream {
+    ($format:expr, $build:ident) => {
+        match $format {
+            cpal::SampleFormat::I8 => $build!(i8),
+            cpal::SampleFormat::I16 => $build!(i16),
+            cpal::SampleFormat::I24 => $build!(cpal::I24),
+            cpal::SampleFormat::I32 => $build!(i32),
+            cpal::SampleFormat::I64 => $build!(i64),
+            cpal::SampleFormat::U8 => $build!(u8),
+            cpal::SampleFormat::U16 => $build!(u16),
+            cpal::SampleFormat::U24 => $build!(cpal::U24),
+            cpal::SampleFormat::U32 => $build!(u32),
+            cpal::SampleFormat::U64 => $build!(u64),
+            cpal::SampleFormat::F32 => $build!(f32),
+            cpal::SampleFormat::F64 => $build!(f64),
+            _ => return Err(error("device uses an unsupported non-PCM sample format")),
+        }
+    };
+}
+fn capture_sample<T: cpal::Sample>(sample: T) -> i32
+where
+    f64: cpal::FromSample<T>,
+{
+    let value = sample.to_sample::<f64>();
+    if !value.is_finite() {
+        return 0;
+    }
+    (value.clamp(-1.0, 1.0) * 8_388_608.0)
+        .round()
+        .clamp(-8_388_608.0, 8_388_607.0) as i32
+}
+
 fn error(e: impl std::fmt::Display) -> io::Error {
     io::Error::other(e.to_string())
 }
@@ -94,9 +128,9 @@ struct PlaybackOutput {
     underrun: bool,
 }
 impl PlaybackOutput {
-    fn render(&mut self, output: &mut [f32]) {
+    fn render<T: cpal::SizedSample + cpal::FromSample<f32>>(&mut self, output: &mut [T]) {
         // Clear any incomplete frame as well as every frame after EOF/failure.
-        output.fill(0.0);
+        output.fill(T::EQUILIBRIUM);
         for out in output.chunks_exact_mut(self.mask.len()) {
             if self.done.load(Ordering::Acquire)
                 || self.ended.load(Ordering::Acquire)
@@ -122,7 +156,17 @@ impl PlaybackOutput {
                     }
                     for (i, o) in out.iter_mut().enumerate() {
                         if i < self.take_channels && self.mask[i] {
-                            *o = samples[i] * self.ramp;
+                            let value = samples[i] * self.ramp;
+                            *o = T::from_sample(
+                                if matches!(
+                                    T::FORMAT,
+                                    cpal::SampleFormat::F32 | cpal::SampleFormat::F64
+                                ) {
+                                    value
+                                } else {
+                                    value.clamp(-1.0, 1.0 - f32::EPSILON)
+                                },
+                            );
                         }
                     }
                     self.position.store(frame + 1, Ordering::Release);
@@ -424,11 +468,11 @@ impl RecorderService {
                 c.channels() == channels
                     && c.min_sample_rate() <= rate
                     && c.max_sample_rate() >= rate
-                    && c.sample_format() == cpal::SampleFormat::F32
             })
             .ok_or_else(|| {
-                error("device does not support float capture at its current sample rate")
+                error("device does not support capture with this layout at its current sample rate")
             })?;
+        let sample_format = supported.sample_format();
         let config = supported.with_sample_rate(rate).config();
         let (mut producer, consumer) =
             rtrb::RingBuffer::<[i32; MAX_CHANNELS]>::new(rate as usize * 4);
@@ -440,35 +484,40 @@ impl RecorderService {
         let cb_failed = failed.clone();
         let cb_xruns = xruns.clone();
         let err_failed = failed.clone();
-        let stream = device
-            .build_input_stream(
-                &config,
-                move |data: &[f32], _| {
-                    if cb_failed.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    if !data.len().is_multiple_of(channels as usize) {
-                        cb_failed.store(true, Ordering::Release);
-                        return;
-                    }
-                    for chunk in data.chunks_exact(channels as usize) {
-                        let mut frame = [0; MAX_CHANNELS];
-                        for (dst, &v) in frame.iter_mut().zip(chunk) {
-                            *dst = (v.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
-                        }
-                        if producer.push(frame).is_err() {
-                            cb_xruns.fetch_add(1, Ordering::Relaxed);
-                            cb_failed.store(true, Ordering::Release);
-                            break;
-                        }
-                    }
-                },
-                move |_| {
-                    err_failed.store(true, Ordering::Release);
-                },
-                None,
-            )
-            .map_err(error)?;
+        macro_rules! build_input {
+            ($sample:ty) => {
+                device
+                    .build_input_stream(
+                        &config,
+                        move |data: &[$sample], _| {
+                            if cb_failed.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            if !data.len().is_multiple_of(channels as usize) {
+                                cb_failed.store(true, Ordering::Release);
+                                return;
+                            }
+                            for chunk in data.chunks_exact(channels as usize) {
+                                let mut frame = [0; MAX_CHANNELS];
+                                for (dst, &v) in frame.iter_mut().zip(chunk) {
+                                    *dst = capture_sample(v);
+                                }
+                                if producer.push(frame).is_err() {
+                                    cb_xruns.fetch_add(1, Ordering::Relaxed);
+                                    cb_failed.store(true, Ordering::Release);
+                                    break;
+                                }
+                            }
+                        },
+                        move |_| {
+                            err_failed.store(true, Ordering::Release);
+                        },
+                        None,
+                    )
+                    .map_err(error)
+            };
+        }
+        let stream = pcm_stream!(sample_format, build_input)?;
         self.prepared = Some(PreparedCapture {
             stream,
             consumer,
@@ -729,28 +778,38 @@ impl RecorderService {
             return Err(error("device sample rate differs from take"));
         }
         #[cfg(target_os = "windows")]
-        let config = device
+        let supported = device
             .supported_output_configs()
             .map_err(error)?
             .find(|c| {
                 c.channels() == channels
                     && c.min_sample_rate() <= current
                     && c.max_sample_rate() >= current
-                    && c.sample_format() == cpal::SampleFormat::F32
             })
-            .ok_or_else(|| error("device does not support float playback at take rate"))?
-            .with_sample_rate(current)
-            .config();
-        device
-            .build_output_stream(
-                &config,
-                move |data: &mut [f32], _| output.render(data),
-                move |_| {
-                    done.store(true, Ordering::Release);
-                },
-                None,
-            )
-            .map_err(error)
+            .ok_or_else(|| {
+                error("device does not support playback with this layout at take rate")
+            })?;
+        #[cfg(target_os = "windows")]
+        let sample_format = supported.sample_format();
+        #[cfg(target_os = "windows")]
+        let config = supported.with_sample_rate(current).config();
+        #[cfg(target_os = "macos")]
+        let sample_format = cpal::SampleFormat::F32;
+        macro_rules! build_output {
+            ($sample:ty) => {
+                device
+                    .build_output_stream(
+                        &config,
+                        move |data: &mut [$sample], _| output.render(data),
+                        move |_| {
+                            done.store(true, Ordering::Release);
+                        },
+                        None,
+                    )
+                    .map_err(error)
+            };
+        }
+        pcm_stream!(sample_format, build_output)
     }
 
     /// Validate and construct an output stream without starting it.
@@ -970,6 +1029,27 @@ mod tests {
         }
     }
     #[test]
+    fn native_integer_playback_converts_and_silences_masked_channels() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(4);
+        let mut samples = [0.0; MAX_CHANNELS];
+        samples[0] = 0.5;
+        samples[1] = -0.5;
+        samples[2] = 0.75;
+        producer.push(Some((0, samples))).unwrap();
+        let mut output = output(consumer);
+        output.mask[2] = false;
+        let mut data = [123i32; CHANNELS];
+        output.render(&mut data);
+        assert_eq!(data[0], 1 << 30);
+        assert_eq!(data[1], -(1 << 30));
+        assert_eq!(data[2], 0);
+        assert_eq!(output.position.load(Ordering::Acquire), 1);
+        let mut silence = [0u16; CHANNELS];
+        output.render(&mut silence);
+        assert!(silence.iter().all(|&v| v == 32768));
+    }
+
+    #[test]
     fn variable_output_strides_and_masks_preserve_alignment() {
         for channels in [16, 18, 32] {
             let (mut producer, consumer) = rtrb::RingBuffer::new(2);
@@ -1148,5 +1228,23 @@ mod tests {
         assert_eq!(service.status().position_frames, 0);
         assert!(service.load_take("../take").is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod native_format_tests {
+    use super::*;
+    #[test]
+    fn integer_capture_preserves_24_bit_alignment_and_limits() {
+        assert_eq!(capture_sample(i32::MIN), -8_388_608);
+        assert_eq!(capture_sample(i32::MAX), 8_388_607);
+        assert_eq!(capture_sample(0i32), 0);
+        assert_eq!(capture_sample(123456i32 << 8), 123456);
+        assert_eq!(capture_sample(-123456i32 << 8), -123456);
+        assert_eq!(capture_sample(i16::MIN), -8_388_608);
+        assert_eq!(capture_sample(0u16), -8_388_608);
+        assert_eq!(capture_sample(32768u16), 0);
+        assert_eq!(capture_sample(f32::NAN), 0);
+        assert_eq!(capture_sample(0.5f64), 4_194_304);
     }
 }
