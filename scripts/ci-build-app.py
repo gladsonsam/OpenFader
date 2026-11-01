@@ -120,7 +120,8 @@ def main():
         dmg.unlink(missing_ok=True)
         run('hdiutil', 'create', '-volname', 'OpenFader', '-srcfolder', app, '-ov', '-format', 'UDZO', dmg)
     elif platform in ('linux', 'windows'):
-        run('cargo', 'build', '--locked', '--release', '-p', 'openfader-flutter-bridge', cwd=ROOT)
+        run('cargo', 'build', '--locked', '--release', '-p', 'openfader-flutter-bridge',
+            '-p', 'openfader-serve', '-p', 'openfader-audio', cwd=ROOT)
         run(flutter, 'build', platform, '--release', *flags)
         if platform == 'linux':
             bundle = APP / 'build/linux/x64/release/bundle'

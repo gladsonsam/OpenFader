@@ -84,6 +84,32 @@ impl PlaybackClient {
         cancellation: CancellationHandle,
         output_mask: Vec<bool>,
     ) -> PlaybackPreparation {
+        Self::prepare_mapped(
+            helper,
+            device,
+            root,
+            take_id,
+            generation,
+            deadline,
+            cancellation,
+            output_mask,
+            None,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepare_mapped(
+        helper: PathBuf,
+        device: DeviceInfo,
+        root: PathBuf,
+        take_id: String,
+        generation: u64,
+        deadline: Instant,
+        cancellation: CancellationHandle,
+        output_mask: Vec<bool>,
+        output_mapping: Option<Vec<Option<usize>>>,
+        manual_session: Option<String>,
+    ) -> PlaybackPreparation {
         let (tx, rx) = mpsc::sync_channel::<Request>(1);
         let (ready_tx, ready) = oneshot::channel();
         let cancelled = cancellation.requested.clone();
@@ -100,7 +126,7 @@ impl PlaybackClient {
                     }
                 };
                 let execute = || -> Result<(), String> {
-                    let prepare = json!({"op":"prepare_playback", "device":device, "root":root, "take_id":take_id, "generation":generation, "output_mask":output_mask});
+                    let prepare = json!({"op":"prepare_playback", "device":device, "root":root, "take_id":take_id, "generation":generation, "output_mask":output_mask, "output_mapping":output_mapping, "manual_session":manual_session});
                     let result =
                         exchange(&mut child, &prepare, "READY", generation, deadline, &flag);
                     let ok = result.is_ok();

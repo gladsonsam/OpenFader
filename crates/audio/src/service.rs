@@ -124,6 +124,7 @@ struct PlaybackOutput {
     xruns: Arc<AtomicU64>,
     mask: Vec<bool>,
     take_channels: usize,
+    mapping: Option<Vec<Option<usize>>>,
     ramp: f32,
     underrun: bool,
 }
@@ -155,8 +156,15 @@ impl PlaybackOutput {
                         self.ramp = (self.ramp + 1.0 / 256.0).min(1.0);
                     }
                     for (i, o) in out.iter_mut().enumerate() {
-                        if i < self.take_channels && self.mask[i] {
-                            let value = samples[i] * self.ramp;
+                        let track = self.mapping.as_ref().and_then(|m| m[i]).or_else(|| {
+                            if self.mapping.is_none() && i < self.take_channels && self.mask[i] {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(track) = track {
+                            let value = samples[track] * self.ramp;
                             *o = T::from_sample(
                                 if matches!(
                                     T::FORMAT,
@@ -267,6 +275,7 @@ pub struct RecorderService {
     loop_range: Option<(u64, u64)>,
     paused: bool,
     playback_mask: Option<Vec<bool>>,
+    playback_mapping: Option<Vec<Option<usize>>>,
     selected_info: Option<DeviceInfo>,
 }
 impl RecorderService {
@@ -287,6 +296,7 @@ impl RecorderService {
             loop_range: None,
             paused: false,
             playback_mask: None,
+            playback_mapping: None,
             selected_info: None,
         })
     }
@@ -308,33 +318,55 @@ impl RecorderService {
         {
             let mut result = Vec::new();
             for d in Self::host()?.devices().map_err(error)? {
-                let (Ok(id), Ok(desc), Ok(input), Ok(output)) = (
-                    d.id(),
-                    d.description(),
-                    d.default_input_config(),
-                    d.default_output_config(),
-                ) else {
+                let (Ok(id), Ok(desc)) = (d.id(), d.description()) else {
+                    continue;
+                };
+                let input = d.default_input_config().ok();
+                let output = d.default_output_config().ok();
+                let Some(rate) = input
+                    .as_ref()
+                    .map(|c| c.sample_rate())
+                    .or_else(|| output.as_ref().map(|c| c.sample_rate()))
+                    .filter(|r| *r > 0)
+                else {
                     continue;
                 };
                 let ins = d
                     .supported_input_configs()
-                    .map_err(error)?
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .filter(|c| {
+                        c.channels() <= 64
+                            && c.min_sample_rate() <= rate
+                            && c.max_sample_rate() >= rate
+                    })
                     .map(|c| c.channels())
                     .max()
                     .unwrap_or(0);
-                let outs = d
-                    .supported_output_configs()
-                    .map_err(error)?
-                    .map(|c| c.channels())
-                    .max()
-                    .unwrap_or(0);
-                if input.sample_rate() > 0 && input.sample_rate() == output.sample_rate() {
+                let outs = if output.as_ref().is_some_and(|c| c.sample_rate() == rate) {
+                    d.supported_output_configs()
+                        .ok()
+                        .into_iter()
+                        .flatten()
+                        .filter(|c| {
+                            c.channels() <= 64
+                                && c.min_sample_rate() <= rate
+                                && c.max_sample_rate() >= rate
+                        })
+                        .map(|c| c.channels())
+                        .max()
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                if ins > 0 || outs > 0 {
                     result.push(DeviceInfo {
                         id: id.to_string(),
                         name: desc.name().to_owned(),
                         input_channels: ins,
                         output_channels: outs,
-                        sample_rate: input.sample_rate(),
+                        sample_rate: rate,
                     });
                 }
             }
@@ -365,6 +397,7 @@ impl RecorderService {
         self.selected = Some(d.id.clone());
         self.selected_info = Some(d);
         self.playback_mask = None;
+        self.playback_mapping = None;
         Ok(())
     }
     pub fn status(&self) -> RecorderStatus {
@@ -687,6 +720,27 @@ impl RecorderService {
         self.playback_mask = Some(mask);
         Ok(())
     }
+    /// Map each take track to a distinct zero-based output channel.
+    pub fn set_playback_mapping(&mut self, mapping: Vec<Option<usize>>) -> io::Result<()> {
+        let outputs = self
+            .selected_info
+            .as_ref()
+            .ok_or_else(|| error("select a device first"))?
+            .output_channels as usize;
+        if self.playback.is_some()
+            || mapping.is_empty()
+            || mapping.len() > 64
+            || mapping.iter().flatten().any(|&n| n >= outputs)
+        {
+            return Err(error("invalid output mapping"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if !mapping.iter().flatten().all(|n| seen.insert(*n)) || seen.is_empty() {
+            return Err(error("output channels must be unique"));
+        }
+        self.playback_mapping = Some(mapping);
+        Ok(())
+    }
     pub fn load_take(&mut self, id: &str) -> io::Result<TakeManifest> {
         valid_id(id)?;
         if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
@@ -842,6 +896,7 @@ impl RecorderService {
             xruns: Arc::new(AtomicU64::new(0)),
             mask: vec![false; info.output_channels as usize],
             take_channels: 0,
+            mapping: None,
             ramp: 0.0,
             underrun: false,
         };
@@ -882,9 +937,15 @@ impl RecorderService {
             .playback_mask
             .clone()
             .unwrap_or_else(|| vec![true; outputs]);
+        if self
+            .playback_mapping
+            .as_ref()
+            .is_some_and(|m| m.len() != manifest.channels as usize)
+        {
+            return Err(error("mapping must include every take track"));
+        }
         if mask.len() != outputs
-            || (manifest.channels as usize > outputs
-                && (outputs..manifest.channels as usize).any(|_| true))
+            || (self.playback_mapping.is_none() && manifest.channels as usize > outputs)
         {
             return Err(error(
                 "take channels exceed device outputs or mask length differs",
@@ -908,6 +969,15 @@ impl RecorderService {
             xruns: xruns.clone(),
             mask,
             take_channels: manifest.channels as usize,
+            mapping: self.playback_mapping.as_ref().map(|mapping| {
+                let mut inverted = vec![None; outputs];
+                for (track, output) in mapping.iter().enumerate() {
+                    if let Some(output) = output {
+                        inverted[*output] = Some(track);
+                    }
+                }
+                inverted
+            }),
             ramp: 0.0,
             underrun: false,
         };
@@ -1026,9 +1096,26 @@ mod tests {
             xruns: Arc::new(AtomicU64::new(0)),
             mask: vec![true; CHANNELS],
             take_channels: CHANNELS,
+            mapping: None,
             ramp: 1.0,
             underrun: false,
         }
+    }
+    #[test]
+    fn mapped_output_routes_tracks_and_leaves_unassigned_silent() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(2);
+        let mut samples = [0.0; MAX_CHANNELS];
+        samples[0] = 0.25;
+        samples[1] = 0.5;
+        samples[2] = -0.75;
+        producer.push(Some((0, samples))).unwrap();
+        let mut cb = output(consumer);
+        cb.mask = vec![true; 3];
+        cb.mapping = Some(vec![Some(2), None, Some(0)]);
+        cb.take_channels = 3;
+        let mut data = [0.0f32; 3];
+        cb.render(&mut data);
+        assert_eq!(data, [-0.75, 0.0, 0.25]);
     }
     #[test]
     fn native_integer_playback_converts_and_silences_masked_channels() {

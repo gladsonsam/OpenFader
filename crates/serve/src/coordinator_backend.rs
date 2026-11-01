@@ -105,6 +105,8 @@ pub struct CoordinatorBackend {
     coordinator: Option<Coordinator<EngineAdapter, PlaybackClient>>,
     generation: u64,
     telemetry: Option<Value>,
+    manual: Option<PlaybackClient>,
+    manual_transport: String,
     cancellation: Mutex<CancellationSlot>,
     probe_key: Option<(u64, String, u16, u16, u32)>,
     probe: Option<tokio::task::JoinHandle<Result<(), String>>>,
@@ -136,6 +138,8 @@ impl CoordinatorBackend {
             coordinator: None,
             generation: 0,
             telemetry: None,
+            manual: None,
+            manual_transport: "stopped".into(),
             cancellation: Mutex::new(CancellationSlot::default()),
             probe_key: None,
             probe: None,
@@ -159,7 +163,7 @@ impl CoordinatorBackend {
         Ok(())
     }
     async fn run(&mut self, action: &str, args: &Value) -> anyhow::Result<()> {
-        if action != "enter_soundcheck" {
+        if !matches!(action, "enter_soundcheck" | "enter_manual_soundcheck") {
             return self.run_inner(action, args, None).await;
         }
         let cancellation = {
@@ -196,6 +200,208 @@ impl CoordinatorBackend {
         args: &Value,
         operation: Option<(CancellationHandle, Arc<AtomicBool>)>,
     ) -> anyhow::Result<()> {
+        let marker = self.config.root.join("manual-routing-pending");
+        if action == "enter_manual_soundcheck" {
+            anyhow::ensure!(
+                args["routing_confirmed"] == true,
+                "confirm that mixer inputs are routed to interface returns"
+            );
+            anyhow::ensure!(
+                !marker.exists()
+                    && !self.config.journal.exists()
+                    && self.coordinator.is_none()
+                    && self.manual.is_none(),
+                "finish existing routing recovery first"
+            );
+            // Persist before touching output: external mixer routing was already changed.
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&marker)?;
+            let nonce = format!(
+                "{}-{}-{}",
+                std::process::id(),
+                self.generation,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_nanos()
+            );
+            f.write_all(nonce.as_bytes())?;
+            f.sync_all()?;
+            #[cfg(unix)]
+            std::fs::File::open(&self.config.root)?.sync_all()?;
+            let device = self
+                .config
+                .device
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("select an audio interface"))?;
+            anyhow::ensure!(
+                args["expected_device_id"].as_str() == Some(device.id.as_str()),
+                "selected interface changed; confirm the mapping again"
+            );
+            let helper = self
+                .config
+                .helper
+                .clone()
+                .filter(|p| p.is_file())
+                .ok_or_else(|| anyhow::anyhow!("playback helper unavailable"))?;
+            let take = args["take_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("take_id required"))?;
+            anyhow::ensure!(
+                !take.is_empty() && take != "." && take != ".." && !take.contains(['/', '\\']),
+                "invalid take ID"
+            );
+            let manifest = openfader_audio::read_manifest(self.config.root.join(take))?;
+            let mut take_device = device.clone();
+            take_device.output_channels = take_device.output_channels.max(manifest.channels);
+            validate_take(&self.config.root, take, &take_device, manifest.channels)?;
+            let mapping: Vec<Option<usize>> =
+                serde_json::from_value(args["output_mapping"].clone())?;
+            anyhow::ensure!(
+                mapping.len() == usize::from(manifest.channels),
+                "map every take track"
+            );
+            let mut used = std::collections::HashSet::new();
+            anyhow::ensure!(
+                mapping
+                    .iter()
+                    .flatten()
+                    .all(|&v| v < usize::from(device.output_channels) && used.insert(v))
+                    && !used.is_empty(),
+                "outputs must be unique and within interface range"
+            );
+            let (cancellation, started) = operation.expect("manual enter has operation");
+            anyhow::ensure!(!cancellation.cancellation_requested(), "playback cancelled");
+            self.generation = self.generation.wrapping_add(1);
+            let generation = self.generation;
+            started.store(true, Ordering::Release);
+            let c = PlaybackClient::prepare_mapped(
+                helper,
+                device.clone(),
+                self.config.root.clone(),
+                take.into(),
+                generation,
+                Instant::now() + Duration::from_secs(10),
+                cancellation,
+                vec![true; device.output_channels as usize],
+                Some(mapping),
+                Some(nonce),
+            )
+            .ready()
+            .await
+            .map_err(anyhow::Error::msg)?;
+            self.manual = Some(c);
+            self.manual
+                .as_ref()
+                .unwrap()
+                .play(generation)
+                .await
+                .map_err(anyhow::Error::msg)?;
+            self.manual_transport = "playing".into();
+            return Ok(());
+        }
+        if marker.exists() {
+            anyhow::ensure!(
+                !self.config.journal.exists(),
+                "automatic routing recovery must be resolved separately"
+            );
+            if action == "return_manual_live" {
+                anyhow::ensure!(
+                    args["routing_restored"] == true,
+                    "confirm physical live routing has been restored"
+                );
+                anyhow::ensure!(
+                    self.manual.is_none(),
+                    "stop and close playback before restoring live routing"
+                );
+                let _guard = openfader_audio::playback_guard(&self.config.root)
+                    .map_err(|_| anyhow::anyhow!("playback helper has not exited"))?;
+                std::fs::remove_file(&marker)?;
+                #[cfg(unix)]
+                std::fs::File::open(&self.config.root)?.sync_all()?;
+                return Ok(());
+            }
+            if action == "stop_manual_output" {
+                if let Some(c) = self.manual.as_ref() {
+                    c.stop(Instant::now() + Duration::from_secs(3))
+                        .await
+                        .map_err(anyhow::Error::msg)?;
+                    self.manual = None;
+                }
+                // A previous host may have died while its helper was blocked in
+                // native initialization. The helper holds this lock until exit.
+                let _guard = openfader_audio::playback_guard(&self.config.root).map_err(|_| {
+                    anyhow::anyhow!(
+                        "playback helper has not exited; wait until output is confirmed stopped"
+                    )
+                })?;
+                self.manual_transport = "stopped".into();
+                return Ok(());
+            }
+            let c = self.manual.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("restore physical live routing before continuing")
+            })?;
+            let gen = self.generation;
+            let value = match action {
+                "play" => {
+                    let v = c.play(gen).await;
+                    if v.is_ok() {
+                        self.manual_transport = "playing".into();
+                    }
+                    v
+                }
+                "pause" => {
+                    let v = c.pause(gen).await;
+                    if v.is_ok() {
+                        self.manual_transport = "paused".into();
+                    }
+                    v
+                }
+                "stop" => {
+                    let v = if self.manual_transport == "playing" {
+                        c.pause(gen).await
+                    } else {
+                        Ok(Value::Null)
+                    };
+                    if v.is_ok() {
+                        self.manual_transport = "stopped".into();
+                    }
+                    v
+                }
+                "seek" => {
+                    c.seek(
+                        gen,
+                        args["position_frames"]
+                            .as_u64()
+                            .ok_or_else(|| anyhow::anyhow!("position_frames required"))?,
+                    )
+                    .await
+                }
+                "set_loop" => {
+                    c.set_loop(
+                        gen,
+                        args["start_frame"]
+                            .as_u64()
+                            .ok_or_else(|| anyhow::anyhow!("start_frame required"))?,
+                        args["end_frame"]
+                            .as_u64()
+                            .ok_or_else(|| anyhow::anyhow!("end_frame required"))?,
+                        args["enabled"]
+                            .as_bool()
+                            .ok_or_else(|| anyhow::anyhow!("enabled required"))?,
+                    )
+                    .await
+                }
+                _ => anyhow::bail!("manual routing recovery required"),
+            }
+            .map_err(anyhow::Error::msg)?;
+            if value.get("status").is_some() {
+                self.telemetry = Some(value["status"].clone());
+            }
+            return Ok(());
+        }
         if action == "accept_current_routing" {
             anyhow::ensure!(
                 args["accept_current"] == true,
@@ -433,6 +639,23 @@ impl SoundcheckBackend for CoordinatorBackend {
         self.config.device = device;
     }
     fn state(&self) -> SoundcheckState {
+        if self.config.root.join("manual-routing-pending").exists() {
+            return SoundcheckState {
+                input_mode: if self.manual.is_some() {
+                    "soundcheck"
+                } else {
+                    "manual_recovery_required"
+                }
+                .into(),
+                transport: if self.manual.is_none()
+                    && openfader_audio::playback_guard(&self.config.root).is_err()
+                {
+                    "unknown".into()
+                } else {
+                    self.manual_transport.clone()
+                },
+            };
+        }
         let mode = self
             .coordinator
             .as_ref()
@@ -466,6 +689,27 @@ impl SoundcheckBackend for CoordinatorBackend {
     }
     fn telemetry(&mut self) -> Pin<Box<dyn Future<Output = Option<Value>> + Send + '_>> {
         Box::pin(async move {
+            if let Some(c) = &self.manual {
+                match c.status().await {
+                    Ok(v) => {
+                        let mut status = v["status"].clone();
+                        status["manual_routing"] = Value::Bool(true);
+                        if self.manual_transport == "stopped" {
+                            status["transport"] = Value::String("stopped".into());
+                        }
+                        self.manual_transport =
+                            status["transport"].as_str().unwrap_or("unknown").to_owned();
+                        self.telemetry = Some(status);
+                    }
+                    Err(e) => {
+                        self.manual_transport = "unknown".into();
+                        self.telemetry = Some(
+                            serde_json::json!({"manual_routing":true,"playback_error":e,"transport":"unknown"}),
+                        );
+                    }
+                }
+                return self.telemetry.clone();
+            }
             if self.coordinator.is_none() {
                 let key = self.config.device.as_ref().map(|d| {
                     (
@@ -567,6 +811,111 @@ impl SoundcheckBackend for CoordinatorBackend {
 #[cfg(test)]
 mod preflight_tests {
     use super::*;
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manual_mapping_and_recovery_without_mixer() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "manual-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut w = openfader_audio::TakeWriter::create_with_layout(
+            root.join("take"),
+            48000,
+            100,
+            openfader_audio::ChannelLayout::new(3).unwrap(),
+        )
+        .unwrap();
+        w.append_interleaved(&[1, 2, 3]).unwrap();
+        w.finish().unwrap();
+        let helper = root.join("helper");
+        std::fs::write(&helper, "#!/bin/sh\nread line\nprintf '{\"state\":\"READY\",\"generation\":1}\n'\nwhile read line; do case \"$line\" in *play*) printf '{\"state\":\"PLAYED\",\"generation\":1}\n';; *pause*) printf '{\"state\":\"PAUSED\",\"generation\":1}\n';; *stop*) printf '{\"state\":\"STOPPED\",\"generation\":1}\n'; exit 0;; esac; done\n").unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let engine = Engine::new(openfader_engine::EngineConfig::default());
+        let mut b = CoordinatorBackend::new(
+            engine.clone(),
+            BackendConfig::new(root.join("journal"), root.clone()),
+        );
+        b.configure(
+            Some(helper),
+            Some(DeviceInfo {
+                id: "fake".into(),
+                name: "fake".into(),
+                input_channels: 0,
+                output_channels: 2,
+                sample_rate: 48000,
+            }),
+        );
+        for mapping in [
+            serde_json::json!([0, 0, null]),
+            serde_json::json!([0, 2, null]),
+            serde_json::json!([null, null, null]),
+        ] {
+            assert!(b.command("enter_manual_soundcheck", &serde_json::json!({"take_id":"take","routing_confirmed":true,"expected_device_id":"fake","output_mapping":mapping})).await.is_err());
+            assert!(root.join("manual-routing-pending").exists());
+            b.command(
+                "return_manual_live",
+                &serde_json::json!({"routing_restored":true}),
+            )
+            .await
+            .unwrap();
+        }
+        b.command("enter_manual_soundcheck", &serde_json::json!({"take_id":"take","routing_confirmed":true,"expected_device_id":"fake","output_mapping":[1,null,0]})).await.unwrap();
+        assert_eq!(b.state().input_mode, "soundcheck");
+        assert!(!root.join("journal").exists());
+        assert!(b
+            .command(
+                "return_manual_live",
+                &serde_json::json!({"routing_restored":true})
+            )
+            .await
+            .is_err());
+        b.command("stop_manual_output", &serde_json::json!({}))
+            .await
+            .unwrap();
+        drop(b);
+        let mut recovered = CoordinatorBackend::new(
+            engine,
+            BackendConfig::new(root.join("journal"), root.clone()),
+        );
+        assert_eq!(recovered.state().input_mode, "manual_recovery_required");
+        let blocked = openfader_audio::playback_guard(&root).unwrap();
+        assert_eq!(recovered.state().transport, "unknown");
+        assert!(recovered
+            .command("stop_manual_output", &serde_json::json!({}))
+            .await
+            .is_err());
+        assert!(recovered
+            .command(
+                "return_manual_live",
+                &serde_json::json!({"routing_restored":true})
+            )
+            .await
+            .is_err());
+        drop(blocked);
+        recovered
+            .command("stop_manual_output", &serde_json::json!({}))
+            .await
+            .unwrap();
+        assert!(recovered
+            .command("return_manual_live", &serde_json::json!({}))
+            .await
+            .is_err());
+        recovered
+            .command(
+                "return_manual_live",
+                &serde_json::json!({"routing_restored":true}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(recovered.state().input_mode, "live");
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[tokio::test]
     async fn accepting_restored_legacy_routing_archives_without_changing_routes() {
         let engine = Engine::new(openfader_engine::EngineConfig::default());
