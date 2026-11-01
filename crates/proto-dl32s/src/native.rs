@@ -89,6 +89,8 @@ impl NativeCache {
                 Some((id, assignment_name_label(slot, &name)?))
             })
             .collect();
+        self.view.complete = false;
+        self.view.error = None;
         self.view.slots = slots;
         self.view.current = session.current_snapshot_pushed();
         self.view.received = !self.view.slots.is_empty() || self.view.current.is_some();
@@ -166,6 +168,7 @@ pub(super) fn ingest_native(
                 if v.view.connected {
                     v.library_revision += 1;
                     v.library_index = None;
+                    v.view.complete = false;
                     match v.view.slots.iter_mut().find(|s| s.slot == *slot) {
                         Some(row) => row.name = name.clone(),
                         None => v.view.slots.push(openfader_core::NativeSnapshotSlot {
