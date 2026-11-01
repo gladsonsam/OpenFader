@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as path;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/native_library_store.dart';
 
 import '../palette.dart';
 import 'recorder_arrangement.dart';
@@ -231,6 +238,7 @@ class RecorderPage extends StatefulWidget {
   const RecorderPage(
       {super.key,
       required this.store,
+      required this.nativeStore,
       required this.onMixer,
       required this.onFx,
       required this.onSettings,
@@ -239,6 +247,7 @@ class RecorderPage extends StatefulWidget {
   final VoidCallback onMixer, onFx, onSettings, onTools;
   final String mixerName;
   final RecorderStore store;
+  final NativeLibraryStore nativeStore;
 
   @override
   State<RecorderPage> createState() => _RecorderPageState();
@@ -251,6 +260,350 @@ class _RecorderPageState extends State<RecorderPage> {
   Object? _loopTake;
   String? _previewTakeId;
   bool _startingPlay = false;
+
+  Map<String, dynamic> _snapshotLinks = {};
+  static const _snapshotKey = 'recorder.native_snapshot_links.v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSnapshotLinks();
+  }
+
+  Future<void> _loadSnapshotLinks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = jsonDecode(prefs.getString(_snapshotKey) ?? '{}');
+      if (mounted && value is Map) {
+        setState(() => _snapshotLinks = Map<String, dynamic>.from(value));
+      }
+    } catch (_) {
+      _snapshotMessage('Could not read snapshot links on this device.');
+    }
+  }
+
+  void _snapshotMessage(String text) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    }
+  }
+
+  bool _takeAvailable(String id) =>
+      store.takes.any((t) => t['id'] == id && t['complete'] == true);
+
+  Future<void> _linkSnapshot(String takeId) async {
+    final native = widget.nativeStore;
+    if (native.nativeBusy || !native.nativeWritable) {
+      _snapshotMessage(
+          'Connect to a writable mixer provider, then inspect its snapshots.');
+      return;
+    }
+    await native.nativeAction({'op': 'inspect'}, native.nativeContext);
+    if (!mounted) return;
+    final view = native.nativeLibrary;
+    if (view == null || !view.connected || !view.supports('recall')) {
+      _snapshotMessage(native.nativeStatus ??
+          'Native snapshot recall is unavailable for this provider.');
+      return;
+    }
+    final captured = native.nativeContext;
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+          title: const Text('Link native mixer snapshot'),
+          children: [
+            const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                    'A device-local reference, separate from OpenFader scenes. Verify the mixer before recall.')),
+            for (final slot in view.slots)
+              SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, slot),
+                  child: Text(
+                      '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}')),
+            if (_snapshotLinks.containsKey(takeId))
+              SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, <String, dynamic>{}),
+                  child: const Text('Remove link')),
+          ]),
+    );
+    if (!mounted || selected == null) return;
+    if (native.nativeContext != captured ||
+        !native.nativeWritable ||
+        !_takeAvailable(takeId)) {
+      _snapshotMessage(
+          'The provider or take changed. Inspect and select again.');
+      return;
+    }
+    final updated = Map<String, dynamic>.from(_snapshotLinks);
+    if (selected.isEmpty) {
+      updated.remove(takeId);
+    } else {
+      updated[takeId] = {
+        'slot': selected['slot'],
+        'name': selected['name'],
+        'label': view.label,
+        'authority': view.authority
+      };
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (native.nativeContext != captured ||
+          !native.nativeWritable ||
+          !_takeAvailable(takeId)) {
+        _snapshotMessage(
+            'The provider or take changed. Inspect and select again.');
+        return;
+      }
+      if (!await prefs.setString(_snapshotKey, jsonEncode(updated))) {
+        throw StateError('Preferences write failed');
+      }
+      if (mounted) setState(() => _snapshotLinks = updated);
+    } catch (e) {
+      _snapshotMessage('Could not save the snapshot link: $e');
+    }
+  }
+
+  bool get _safeToRecall =>
+      store.state['input_mode'] == 'live' &&
+      store.state['transport'] == 'stopped' &&
+      !store.pending &&
+      store.connected;
+
+  Future<bool> _offerSnapshotRecall(String takeId) async {
+    final link = _snapshotLinks[takeId];
+    if (link is! Map) return true;
+    final native = widget.nativeStore;
+    if (!_safeToRecall || native.nativeBusy || !native.nativeWritable) {
+      _snapshotMessage(
+          'Linked snapshot unavailable. Connect to the mixer and try again.');
+      return false;
+    }
+    await native.nativeAction({'op': 'inspect'}, native.nativeContext);
+    if (!mounted) return false;
+    final view = native.nativeLibrary;
+    bool matches() =>
+        view != null &&
+        view.connected &&
+        view.supports('recall') &&
+        view.label == link['label'] &&
+        view.authority == link['authority'] &&
+        view.slots
+            .any((s) => s['slot'] == link['slot'] && s['name'] == link['name']);
+    if (!matches()) {
+      _snapshotMessage(
+          'Linked snapshot is unavailable or changed. Inspect and relink it for this take.');
+      return false;
+    }
+    final captured = native.nativeContext;
+    final recall = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Recall linked mixer snapshot?'),
+              content: Text(
+                  'Slot ${link['slot']} “${link['name']}” in ${link['label']}. Recall may change mixer settings. The provider name does not identify a particular physical mixer. Return to live restores routing only.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Continue without recall')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Recall snapshot')),
+              ],
+            ));
+    if (!mounted || recall == null) return false;
+    if (!_safeToRecall ||
+        native.nativeContext != captured ||
+        !native.nativeWritable ||
+        !matches() ||
+        !_takeAvailable(takeId)) {
+      _snapshotMessage('The provider or take changed. Inspect and try again.');
+      return false;
+    }
+    if (!recall) return true;
+    await native.nativeAction({'op': 'recall', 'slot': link['slot']}, captured);
+    if (!mounted) return false;
+    final status = native.nativeStatus;
+    _snapshotMessage(status ??
+        'Snapshot recall result unavailable. Inspect the mixer before continuing.');
+    return native.nativeLastConfirmed &&
+        _safeToRecall &&
+        _takeAvailable(takeId);
+  }
+
+  bool _transferBusy = false;
+
+  Future<void> _rejectLinkedParents(String value) async {
+    var current = path.absolute(value);
+    while (true) {
+      if (await FileSystemEntity.type(current, followLinks: false) ==
+          FileSystemEntityType.link) {
+        throw StateError(
+            'Symbolic links cannot be used for take transfers: $current');
+      }
+      final parent = path.dirname(current);
+      if (parent == current) break;
+      current = parent;
+    }
+  }
+
+  Future<void> _copyTransfer(String source, String destination) async {
+    final type = await FileSystemEntity.type(source, followLinks: false);
+    if (type == FileSystemEntityType.link ||
+        type == FileSystemEntityType.notFound) {
+      throw StateError(
+          'Symbolic links and missing files cannot be transferred.');
+    }
+    if (await FileSystemEntity.type(destination, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw StateError('Destination already exists: $destination');
+    }
+    if (type == FileSystemEntityType.file) {
+      final target = File(destination);
+      await target.create(exclusive: true);
+      try {
+        final sink = target.openWrite();
+        try {
+          await sink.addStream(File(source).openRead());
+        } finally {
+          await sink.close();
+        }
+      } catch (_) {
+        await target.delete();
+        rethrow;
+      }
+    } else if (type == FileSystemEntityType.directory) {
+      await Directory(destination).create();
+      try {
+        await for (final child in Directory(source).list(followLinks: false)) {
+          await _copyTransfer(
+              child.path, path.join(destination, path.basename(child.path)));
+        }
+      } catch (_) {
+        await Directory(destination).delete(recursive: true);
+        rethrow;
+      }
+    } else {
+      throw StateError('Unsupported file type: $source');
+    }
+  }
+
+  Future<void> _transferTake({required bool importing, String? takeId}) async {
+    if (_transferBusy || store.pending) return;
+    if (!store.canAdminRemote || !(Platform.isMacOS || Platform.isWindows)) {
+      _snapshotMessage(
+          'Take transfer is available only on a local macOS or Windows recorder host.');
+      return;
+    }
+    final format = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+              title: Text(importing ? 'Import take' : 'Export take'),
+              children: [
+                SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, 'wav'),
+                    child: const Text('Multichannel WAV file')),
+                SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, 'native'),
+                    child: const Text('Native take folder')),
+              ],
+            ));
+    if (!mounted || format == null) return;
+    String? selected;
+    if (importing && format == 'wav') {
+      selected = (await FilePicker.pickFiles(
+              type: FileType.custom, allowedExtensions: ['wav']))
+          .firstOrNull
+          ?.path;
+    } else {
+      selected = await FilePicker.getDirectoryPath(
+          dialogTitle: importing
+              ? 'Choose native take folder'
+              : 'Choose export destination');
+    }
+    if (!mounted || selected == null) return;
+    setState(() => _transferBusy = true);
+    String? staged;
+    var safeToClean = false;
+    try {
+      final root = Platform.isMacOS
+          ? path.join(Platform.environment['HOME'] ?? '', 'Library',
+              'Application Support', 'OpenFader', 'Recorder', 'transfers')
+          : path.join(Platform.environment['APPDATA'] ?? '', 'OpenFader',
+              'Recorder', 'transfers');
+      if ((Platform.isMacOS
+                  ? Platform.environment['HOME']
+                  : Platform.environment['APPDATA'])
+              ?.isNotEmpty !=
+          true) {
+        throw StateError('Recorder data directory is unavailable.');
+      }
+      await _rejectLinkedParents(root);
+      await _rejectLinkedParents(selected);
+      await Directory(root).create(recursive: true);
+      if (await FileSystemEntity.type(root, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        throw StateError('Recorder staging directory is not a directory.');
+      }
+      final nonce = List.generate(
+          16,
+          (_) => Random.secure()
+              .nextInt(256)
+              .toRadixString(16)
+              .padLeft(2, '0')).join();
+      final name = 'transfer-$nonce';
+      staged = path.join(root, name);
+      if (importing) {
+        await _copyTransfer(selected, staged);
+        safeToClean = true;
+      }
+      final id = importing
+          ? 'take-${DateTime.now().toUtc().microsecondsSinceEpoch}-$nonce'
+          : takeId!;
+      if (!importing && !_takeAvailable(id)) {
+        throw StateError('Take is no longer available.');
+      }
+      if (store.pending ||
+          !store.connected ||
+          store.state['transport'] != 'stopped') {
+        throw StateError(
+            'Stop the recorder and connect to the host before transferring.');
+      }
+      safeToClean = false;
+      await store.command(importing ? 'import_take' : 'export_take',
+          {'take_id': id, 'transfer_name': name, 'format': format});
+      if (store.error != null) throw StateError(store.error!);
+      if (!importing) {
+        final destination =
+            path.join(selected, '$id${format == 'wav' ? '.wav' : ''}');
+        await _copyTransfer(staged, destination);
+        _snapshotMessage('Take exported to $destination');
+      } else {
+        _snapshotMessage('Take imported.');
+      }
+      safeToClean = true;
+    } catch (e) {
+      _snapshotMessage(
+          'Transfer failed: $e${staged == null ? '' : ' Staging: $staged'}');
+    } finally {
+      if (safeToClean && staged != null) {
+        try {
+          final entity =
+              await FileSystemEntity.type(staged, followLinks: false);
+          if (entity == FileSystemEntityType.directory) {
+            await Directory(staged).delete(recursive: true);
+          }
+          if (entity == FileSystemEntityType.file) await File(staged).delete();
+        } catch (e) {
+          _snapshotMessage('Could not remove staging data at $staged: $e');
+        }
+      }
+      if (mounted) setState(() => _transferBusy = false);
+    }
+  }
 
   Future<void> _playSelected(String? takeId) async {
     if (_startingPlay || store.pending) return;
@@ -329,6 +682,12 @@ class _RecorderPageState extends State<RecorderPage> {
         message(store.state['soundcheck_reason']?.toString() ??
             store.error ??
             'Soundcheck is unavailable for the selected interface and mixer routing. Check Recorder settings.');
+        return;
+      }
+      if (!await _offerSnapshotRecall(takeId) ||
+          !mounted ||
+          store.pending ||
+          !store.connected) {
         return;
       }
       final confirmed = await showDialog<bool>(
@@ -1037,6 +1396,18 @@ class _RecorderPageState extends State<RecorderPage> {
                         fontSize: 24,
                         fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
+                TextButton.icon(
+                    onPressed: _transferBusy || store.pending
+                        ? null
+                        : () => _transferTake(importing: true),
+                    icon: const Icon(Icons.file_upload_outlined),
+                    label:
+                        Text(_transferBusy ? 'Transferring…' : 'Import take')),
+                if (!store.canAdminRemote ||
+                    !(Platform.isMacOS || Platform.isWindows))
+                  Text(
+                      'Transfer requires a local macOS or Windows recorder host.',
+                      style: TextStyle(color: p.mutedText)),
                 if (store.takes.isEmpty)
                   Text('Your recorded takes will appear here.',
                       style: TextStyle(color: p.mutedText)),
@@ -1102,6 +1473,26 @@ class _RecorderPageState extends State<RecorderPage> {
                                               color: p.mutedText,
                                               fontSize: 19)),
                                     ]))),
+                        if (take['id'] == selectedTake &&
+                            take['complete'] == true) ...[
+                          Text(
+                              _snapshotLinks[take['id']] is Map
+                                  ? 'Native snapshot: ${_snapshotLinks[take['id']]['slot']} · ${_snapshotLinks[take['id']]['name']} (${_snapshotLinks[take['id']]['label']})'
+                                  : 'No native snapshot linked',
+                              style: TextStyle(color: p.mutedText)),
+                          TextButton(
+                              onPressed: _transferBusy || store.pending
+                                  ? null
+                                  : () => _transferTake(
+                                      importing: false,
+                                      takeId: take['id'] as String),
+                              child: const Text('Export take')),
+                          TextButton(
+                              onPressed: enabled && !recording && !soundcheck
+                                  ? () => _linkSnapshot(take['id'] as String)
+                                  : null,
+                              child: const Text('Link native snapshot')),
+                        ],
                         const SizedBox(height: 8),
                         SizedBox(
                             height: 48,
