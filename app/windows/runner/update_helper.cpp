@@ -28,7 +28,7 @@ bool SameUser(HANDLE process, const std::vector<BYTE>& sid) {
       reinterpret_cast<const TOKEN_USER*>(sid.data())->User.Sid);
 }
 
-struct Processes { std::vector<DWORD> app; bool host = false; };
+struct Processes { std::vector<DWORD> app; bool host = false; bool capture = false; };
 Processes FindProcesses(const std::wstring& directory, const std::vector<BYTE>& sid) {
   Processes found;
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -37,7 +37,8 @@ Processes FindProcesses(const std::wstring& directory, const std::vector<BYTE>& 
   entry.dwSize = sizeof(entry);
   if (Process32FirstW(snapshot, &entry)) do {
     if (_wcsicmp(entry.szExeFile, L"openfader.exe") &&
-        _wcsicmp(entry.szExeFile, L"openfader-serve.exe")) continue;
+        _wcsicmp(entry.szExeFile, L"openfader-serve.exe") &&
+        _wcsicmp(entry.szExeFile, L"openfader-capture-helper.exe")) continue;
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
     if (!process) continue;
     wchar_t path[32768];
@@ -45,6 +46,7 @@ Processes FindProcesses(const std::wstring& directory, const std::vector<BYTE>& 
     if (QueryFullProcessImageNameW(process, 0, path, &length) && SameUser(process, sid)) {
       if (!_wcsicmp(path, (directory + L"\\openfader.exe").c_str())) found.app.push_back(entry.th32ProcessID);
       if (!_wcsicmp(path, (directory + L"\\openfader-serve.exe").c_str())) found.host = true;
+      if (!_wcsicmp(path, (directory + L"\\openfader-capture-helper.exe").c_str())) found.capture = true;
     }
     CloseHandle(process);
   } while (Process32NextW(snapshot, &entry));
@@ -75,7 +77,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   const auto sid = Sid(GetCurrentProcess());
   if (sid.empty()) return 2;
   auto processes = FindProcesses(dir, sid);
-  if (processes.app.empty() && !processes.host) return 0;
+  if (processes.app.empty() && !processes.host && !processes.capture) return 0;
+  // A capture process without its host cannot be safely coordinated here.
+  if (processes.app.empty() && !processes.host) return 2;
   if (processes.app.empty()) {
     // Reopen the local UI so its normal authenticated shutdown can run.
     const auto exe = dir + L"\\openfader.exe";
@@ -99,7 +103,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   const ULONGLONG deadline = GetTickCount64() + 60000;
   do {
     processes = FindProcesses(dir, sid);
-    if (processes.app.empty() && !processes.host) return 10;
+    if (processes.app.empty() && !processes.host && !processes.capture) return 10;
     Sleep(250);
   } while (GetTickCount64() < deadline);
   return 2;
