@@ -281,9 +281,9 @@ List<_KnobDef> _dynKnobs(DynKind kind, ChannelDynVm d) {
   return [
     knob('Threshold', 'thr', d.thr, '${d.thr.toStringAsFixed(1)} dB'),
     knob('Ratio', 'ratio', d.ratio, '${d.ratio.toStringAsFixed(1)}:1'),
-    knob('Knee', 'knee', d.knee, '${d.knee.toStringAsFixed(1)} dB'),
     knob('Attack', 'att', d.att, '${d.att.toStringAsFixed(1)} ms'),
-    knob('Release', 'rel', d.rel, '${d.rel.toStringAsFixed(0)} ms'),
+    // Match Gate's Hold slot, leaving Release in the same final position.
     knob('Gain', 'makeup', d.makeup, '${d.makeup.toStringAsFixed(1)} dB'),
+    knob('Release', 'rel', d.rel, '${d.rel.toStringAsFixed(0)} ms'),
   ];
 }
