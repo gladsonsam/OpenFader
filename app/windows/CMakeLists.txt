@@ -55,6 +55,10 @@ add_subdirectory("runner")
 # Standalone helper is extracted by Setup and has no Flutter runtime dependency.
 add_executable(openfader-update-helper WIN32 "runner/update_helper.cpp")
 target_compile_features(openfader-update-helper PRIVATE cxx_std_17)
+# Setup runs this executable from a temporary directory, including on machines
+# without a separately installed Visual C++ runtime.
+set_property(TARGET openfader-update-helper PROPERTY MSVC_RUNTIME_LIBRARY
+  "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 target_link_libraries(openfader-update-helper PRIVATE advapi32 shell32)
 
 
