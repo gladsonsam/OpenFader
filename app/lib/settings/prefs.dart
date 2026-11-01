@@ -330,7 +330,11 @@ class PrefsService extends ChangeNotifier {
       _set('openfader.backupCreatedAt', v);
 
   void _applyWakeLock() {
-    WakelockPlus.toggle(enable: keepAwake);
+    unawaited(WakelockPlus.toggle(enable: keepAwake).catchError((Object error) {
+      // Some desktop sessions have no inhibition portal. That must not stop
+      // startup or leave a preference change as an unhandled async error.
+      debugPrint('Keep-awake is unavailable in this desktop session: $error');
+    }));
   }
 
   /// Restore display, meter, and connection defaults. Access limits, mixes,

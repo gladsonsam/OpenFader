@@ -17,6 +17,7 @@ class DesktopHost implements HostTransport {
   WebSocket? _socket;
   final List<String> _events = [];
   Future<void>? _connecting;
+  bool _stopping = false;
 
   static String get _directory => Platform.isMacOS
       ? '${Platform.environment['HOME']}/Library/Application Support/OpenFader/Recorder'
@@ -214,16 +215,28 @@ class DesktopHost implements HostTransport {
 
   @override
   Future<void> quitHost() async {
-    await _request('shutdown', post: true);
+    _stopping = true;
+    try {
+      // Finish a connection already in flight before shutting down its host.
+      await _connecting;
+      await _request('shutdown', post: true);
+    } catch (_) {
+      _stopping = false;
+      rethrow;
+    }
   }
 
-  Future<void> _connect() =>
-      _connecting ??= _open().whenComplete(() => _connecting = null);
+  Future<void> _connect() {
+    if (_stopping) throw StateError('The desktop host is shutting down.');
+    return _connecting ??= _open().whenComplete(() => _connecting = null);
+  }
+
   Future<void> _open() async {
     if (_socket != null) return;
     try {
       await _openSocket();
     } catch (_) {
+      if (_stopping) rethrow;
       final replacement = await start();
       endpoint = replacement.endpoint;
       token = replacement.token;

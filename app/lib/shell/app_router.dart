@@ -7,6 +7,8 @@ library;
 
 import '../boot/host_transport.dart';
 import '../boot/remote_host.dart';
+import '../desktop/desktop_integration.dart';
+import '../ui/overlays/console_dialogs.dart';
 
 import 'dart:async';
 import 'dart:io' show Platform;
@@ -70,6 +72,7 @@ enum AppTab {
 }
 
 class AppShell extends StatefulWidget {
+  final DesktopIntegration? desktop;
   final EngineApi api;
   final AppStore store;
   final AppTab initialTab;
@@ -80,6 +83,7 @@ class AppShell extends StatefulWidget {
 
   const AppShell(
       {super.key,
+      this.desktop,
       required this.api,
       required this.store,
       this.initialTab = AppTab.mixer,
@@ -126,6 +130,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final ShellFxStore _fx;
   late final ShellDebugStore _debug;
   late final ShellRecorderStore _recorder;
+  bool _desktopQuitting = false;
 
   @override
   void initState() {
@@ -138,6 +143,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 if (strip.ch >= 0 && strip.ch < 64 && strip.name.isNotEmpty)
                   strip.ch: strip.name
             });
+    widget.desktop?.attach(this, _prepareDesktopQuit);
+    widget.store.addListener(_updateDesktopStatus);
+    _recorder.addListener(_updateDesktopStatus);
+    _updateDesktopStatus();
     WidgetsBinding.instance.addObserver(this);
     _tab = widget.initialTab;
     _syncChannelFocus();
@@ -170,6 +179,99 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_reconnectLast(prefs.lastMixerAddr));
       });
+    }
+  }
+
+  void _updateDesktopStatus() {
+    final engine = widget.store.engine;
+    final recorder = _recorder.state['transport'];
+    widget.desktop?.updateStatus([
+      engine.connected ? 'Connected · ${engine.driver}' : 'Disconnected',
+      if (recorder == 'recording') 'Recording',
+      if (recorder == 'playing') 'Playing',
+    ].join(' · '));
+  }
+
+  Future<bool> _prepareDesktopQuit() async {
+    try {
+      final api = widget.api;
+      if (api is HostTransport && api.supportsAdministration) {
+        if (_recorder.pending) {
+          throw StateError(
+              'Wait for the recorder operation to finish before quitting.');
+        }
+        // Read the host directly: the window may have been hidden for hours,
+        // or a paired client may have started recording since the last frame.
+        var state = await api.recorderRequest('state');
+        if (state['error'] != null) throw StateError('${state['error']}');
+        if (state['soundcheck_pending'] == true ||
+            state['input_mode'] == 'recovery_required') {
+          throw StateError(
+              'Return the recorder to live mode and resolve pending routing recovery before quitting.');
+        }
+        final transport = state['transport'];
+        final needsStop = transport == 'recording' ||
+            transport == 'playing' ||
+            transport == 'paused';
+        final soundcheck = state['input_mode'] == 'soundcheck';
+        if (needsStop || soundcheck) {
+          if (!mounted) return false;
+          final confirmed = await showConsoleConfirmation(context,
+              title: transport == 'recording'
+                  ? 'Stop recording and quit?'
+                  : 'Stop recorder and quit?',
+              message: transport == 'recording'
+                  ? 'The recording will be stopped and the take finalized before OpenFader quits.'
+                  : 'Playback will stop and the mixer will return to live inputs before OpenFader quits.',
+              confirmLabel: 'Stop and quit',
+              danger: true);
+          if (!confirmed || !mounted) return false;
+          await _recorder.command('stop');
+          if (_recorder.error != null) throw StateError(_recorder.error!);
+          state = await api.recorderRequest('state');
+          if (state['input_mode'] == 'soundcheck') {
+            await _recorder.command('return_live');
+            if (_recorder.error != null) throw StateError(_recorder.error!);
+          }
+        }
+        // Stop UI polling before requesting shutdown: the desktop transport
+        // otherwise reconnects automatically when its WebSocket closes.
+        _desktopQuitting = true;
+        _shellLoop?.cancel();
+        _resumeVerdict?.cancel();
+        if (!await _recorder.quitHost()) {
+          throw StateError(_recorder.error ??
+              'The recorder host could not confirm shutdown.');
+        }
+      } else {
+        _desktopQuitting = true;
+        _shellLoop?.cancel();
+        _resumeVerdict?.cancel();
+        // A remote host belongs to another computer and must remain running.
+        if (api is RemoteHost) {
+          await api.disconnect();
+        } else {
+          await widget.store.sendCommand(Cmds.disconnect());
+        }
+      }
+      return true;
+    } catch (error) {
+      _desktopQuitting = false;
+      _restartLoop();
+      if (mounted) {
+        await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+                  title: const Text('OpenFader is still running'),
+                  content: Text('$error'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'))
+                  ],
+                ));
+      }
+      return false;
     }
   }
 
@@ -208,6 +310,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // under a second, and the traffic check below still guards healthy ones.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.desktop != null) return;
     if (state == AppLifecycleState.paused) {
       _resumeVerdict?.cancel();
       final engine = widget.store.engine;
@@ -266,11 +369,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _restartLoop() {
     _shellLoop?.cancel();
+    if (_desktopQuitting) return;
     final ms = (1000 / PrefsService.instance.meterRate).round().clamp(16, 250);
     _shellLoop = Timer.periodic(Duration(milliseconds: ms), (_) => _tick());
   }
 
   Future<void> _tick() async {
+    if (_desktopQuitting) return;
     try {
       await widget.store.pollMeters();
       _conn.tickRecovery();
@@ -283,6 +388,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.desktop?.detach(this);
+    widget.store.removeListener(_updateDesktopStatus);
+    _recorder.removeListener(_updateDesktopStatus);
     WidgetsBinding.instance.removeObserver(this);
     widget.store.removeListener(_watchColdReconnect);
     _resumeVerdict?.cancel();
@@ -614,6 +722,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     return switch (t) {
       AppTab.home => WorkspaceHome(
+          onQuit: widget.desktop?.requestQuit,
           onMixer: () => _go(AppTab.mixer),
           onRecorder:
               (widget.api is HostTransport) ? () => _go(AppTab.recorder) : null,

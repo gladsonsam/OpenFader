@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import 'boot/boot_controller.dart';
 import 'boot/launch_screen.dart';
+import 'boot/host_transport.dart';
+import 'desktop/desktop_integration.dart';
 import 'settings/prefs.dart';
 import 'shell/app_router.dart';
 import 'theme.dart';
@@ -16,11 +18,13 @@ Future<void> main() async {
   } catch (error) {
     debugPrint('Preferences unavailable; using defaults: $error');
   }
-  runApp(const OpenfaderApp());
+  final desktop = await DesktopIntegration.initialize();
+  runApp(OpenfaderApp(desktop: desktop));
 }
 
 class OpenfaderApp extends StatelessWidget {
-  const OpenfaderApp({super.key});
+  final DesktopIntegration? desktop;
+  const OpenfaderApp({super.key, this.desktop});
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +37,7 @@ class OpenfaderApp extends StatelessWidget {
           _ => VisualDensity.standard,
         };
         return MaterialApp(
+          navigatorKey: desktop?.navigatorKey,
           title: 'OpenFader',
           debugShowCheckedModeBanner: false,
           theme: u4Theme(
@@ -61,8 +66,18 @@ class OpenfaderApp extends StatelessWidget {
                   data: MediaQuery.of(context).copyWith(
                       textScaler:
                           TextScaler.linear(PrefsService.instance.textScale)),
-                  child: child!)),
-          home: const BootGate(),
+                  child: CallbackShortcuts(
+                      bindings: {
+                        if (desktop != null)
+                          const SingleActivator(LogicalKeyboardKey.keyQ,
+                              control: true): () => desktop!.requestQuit(),
+                      },
+                      child: Listener(
+                          onPointerDown: desktop?.pointerDown,
+                          onPointerUp: desktop?.pointerEnded,
+                          onPointerCancel: desktop?.pointerEnded,
+                          child: child!)))),
+          home: BootGate(desktop: desktop),
         );
       },
     );
@@ -72,7 +87,8 @@ class OpenfaderApp extends StatelessWidget {
 /// First-frame gate: paints [LaunchScreen], then swaps in [AppShell]
 /// once the store is synced.
 class BootGate extends StatefulWidget {
-  const BootGate({super.key});
+  final DesktopIntegration? desktop;
+  const BootGate({super.key, this.desktop});
 
   @override
   State<BootGate> createState() => _BootGateState();
@@ -86,6 +102,15 @@ class _BootGateState extends State<BootGate> {
   void initState() {
     super.initState();
     _boot = BootController();
+    widget.desktop?.attach(this, () async {
+      if (_boot.running) {
+        throw StateError(
+            'OpenFader is still starting. Wait for startup to finish before quitting.');
+      }
+      final api = _boot.api;
+      if (api is HostTransport) await api.quitHost();
+      return true;
+    });
     _boot.addListener(_onBoot);
     // Post-frame so the launch screen paints before the slow stages start.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -104,6 +129,7 @@ class _BootGateState extends State<BootGate> {
       }
       Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => AppShell(
+              desktop: widget.desktop,
               api: api,
               store: store,
               initialTab: AppTab.mixer,
@@ -113,6 +139,7 @@ class _BootGateState extends State<BootGate> {
 
   @override
   void dispose() {
+    widget.desktop?.detach(this);
     _boot.removeListener(_onBoot);
     _boot.dispose();
     super.dispose();
@@ -120,12 +147,24 @@ class _BootGateState extends State<BootGate> {
 
   @override
   Widget build(BuildContext context) {
-    return LaunchScreen(
-      controller: _boot,
-      onRetry: () {
-        _navigated = false;
-        _boot.start();
-      },
-    );
+    return Stack(children: [
+      LaunchScreen(
+        controller: _boot,
+        onRetry: () {
+          _navigated = false;
+          _boot.start();
+        },
+      ),
+      if (widget.desktop != null)
+        Positioned(
+            top: 8,
+            right: 8,
+            child: Material(
+                type: MaterialType.transparency,
+                child: SafeArea(
+                    child: TextButton(
+                        onPressed: () => widget.desktop!.requestQuit(),
+                        child: const Text('Quit OpenFader')))))
+    ]);
   }
 }
