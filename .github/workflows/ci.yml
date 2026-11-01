@@ -1,9 +1,7 @@
-name: Quick checks
+name: Release checks (manual)
 
+# Run explicitly before a release; ordinary pushes and PRs do not trigger CI.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:

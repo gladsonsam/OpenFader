@@ -2,7 +2,35 @@
 
 use super::*;
 
+enum LibraryFrames {
+    Shows,
+    Scenes,
+}
+
 impl Engine {
+    async fn apply_legacy_library_action(
+        &self,
+        action: &LibraryAction,
+        frames: LibraryFrames,
+        out: &mut Vec<Event>,
+    ) -> anyhow::Result<Option<Event>> {
+        match self.library_apply_action(action).await {
+            Ok(CommitDisposition::Committed { .. }) => {
+                out.push(match frames {
+                    LibraryFrames::Shows => self.shows_message(),
+                    LibraryFrames::Scenes => self.scenes_message(),
+                });
+                out.push(self.local_library_status_message());
+                Ok(None)
+            }
+            Ok(CommitDisposition::Uncertain { error, .. }) => {
+                out.push(self.local_library_status_message());
+                anyhow::bail!("local library uncertain: {error}")
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub(super) async fn apply_library(
         &self,
         cmd: Cmd,
@@ -19,18 +47,8 @@ impl Engine {
                 // commit as the durable API: same tags, same rendered
                 // collection frames, plus the status frame.
                 let action = LibraryAction::Capture { show, name };
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.shows_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Shows, out)
+                    .await
             }
             Cmd::RecallScene {
                 show,
@@ -103,35 +121,15 @@ impl Engine {
             }
             Cmd::DeleteScene { show, name } => {
                 let action = LibraryAction::DeleteNamed { show, name };
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.shows_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Shows, out)
+                    .await
             }
             Cmd::SceneSave { n, name } => {
                 // Numbered save through the SAME serialized candidate
                 // commit: capture, validate, durably commit, then swap.
                 let action = LibraryAction::Save { n, name };
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.scenes_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Scenes, out)
+                    .await
             }
             Cmd::SceneRecall { n, fade_ms, scope } => {
                 policy.allow_recall()?;
@@ -173,48 +171,18 @@ impl Engine {
             }
             Cmd::SceneRename { n, name } => {
                 let action = LibraryAction::Rename { n, name };
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.scenes_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Scenes, out)
+                    .await
             }
             Cmd::SceneDelete { n } => {
                 let action = LibraryAction::Delete { n };
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.scenes_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Scenes, out)
+                    .await
             }
             Cmd::SceneClear => {
                 let action = LibraryAction::ClearNumbered;
-                match self.library_apply_action(&action).await {
-                    Ok(CommitDisposition::Committed { .. }) => {
-                        out.push(self.scenes_message());
-                        out.push(self.local_library_status_message());
-                        Ok(None)
-                    }
-                    Ok(CommitDisposition::Uncertain { error, .. }) => {
-                        out.push(self.local_library_status_message());
-                        anyhow::bail!("local library uncertain: {error}")
-                    }
-                    Err(e) => Err(e),
-                }
+                self.apply_legacy_library_action(&action, LibraryFrames::Scenes, out)
+                    .await
             }
             Cmd::LocalLibraryStatus => Ok(Some(self.local_library_status_message())),
             Cmd::LocalLibraryMutate {
