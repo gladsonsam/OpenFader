@@ -496,9 +496,10 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<void> _transferTake({required bool importing, String? takeId}) async {
     if (_transferBusy || store.pending) return;
-    if (!store.canAdminRemote || !(Platform.isMacOS || Platform.isWindows)) {
+    if (!store.canAdminRemote ||
+        !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       _snapshotMessage(
-          'Take transfer is available only on a local macOS or Windows recorder host.');
+          'Take transfer is available only on a local desktop recorder host.');
       return;
     }
     final format = await showDialog<String>(
@@ -512,10 +513,9 @@ class _RecorderPageState extends State<RecorderPage> {
                 SimpleDialogOption(
                     onPressed: () => Navigator.pop(context, 'native'),
                     child: const Text('Native take folder')),
-                if (!importing)
-                  SimpleDialogOption(
-                      onPressed: () => Navigator.pop(context, 'tracks'),
-                      child: const Text('Mono WAV tracks folder')),
+                SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, 'tracks'),
+                    child: const Text('Mono WAV tracks folder')),
                 if (!importing)
                   const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 24),
@@ -532,9 +532,8 @@ class _RecorderPageState extends State<RecorderPage> {
           ?.path;
     } else {
       selected = await FilePicker.getDirectoryPath(
-          dialogTitle: importing
-              ? 'Choose native take folder'
-              : 'Choose export destination');
+          dialogTitle:
+              importing ? 'Choose take folder' : 'Choose export destination');
     }
     if (!mounted || selected == null) return;
     setState(() => _transferBusy = true);
@@ -544,11 +543,27 @@ class _RecorderPageState extends State<RecorderPage> {
       final root = Platform.isMacOS
           ? path.join(Platform.environment['HOME'] ?? '', 'Library',
               'Application Support', 'OpenFader', 'Recorder', 'transfers')
-          : path.join(Platform.environment['APPDATA'] ?? '', 'OpenFader',
-              'Recorder', 'transfers');
+          : Platform.isLinux
+              ? path.join(
+                  (Platform.environment['XDG_DATA_HOME']?.startsWith('/') ??
+                          false)
+                      ? Platform.environment['XDG_DATA_HOME']!
+                      : path.join(Platform.environment['HOME'] ?? '', '.local',
+                          'share'),
+                  'OpenFader',
+                  'Recorder',
+                  'transfers')
+              : path.join(Platform.environment['APPDATA'] ?? '', 'OpenFader',
+                  'Recorder', 'transfers');
       if ((Platform.isMacOS
                   ? Platform.environment['HOME']
-                  : Platform.environment['APPDATA'])
+                  : Platform.isLinux
+                      ? (Platform.environment['XDG_DATA_HOME']
+                                  ?.startsWith('/') ==
+                              true
+                          ? Platform.environment['XDG_DATA_HOME']
+                          : Platform.environment['HOME'])
+                      : Platform.environment['APPDATA'])
               ?.isNotEmpty !=
           true) {
         throw StateError('Recorder data directory is unavailable.');
@@ -1416,9 +1431,10 @@ class _RecorderPageState extends State<RecorderPage> {
                     label:
                         Text(_transferBusy ? 'Transferring…' : 'Import take')),
                 if (!store.canAdminRemote ||
-                    !(Platform.isMacOS || Platform.isWindows))
-                  Text(
-                      'Transfer requires a local macOS or Windows recorder host.',
+                    !(Platform.isMacOS ||
+                        Platform.isWindows ||
+                        Platform.isLinux))
+                  Text('Transfer requires a local desktop recorder host.',
                       style: TextStyle(color: p.mutedText)),
                 if (store.takes.isEmpty)
                   Text('Your recorded takes will appear here.',
