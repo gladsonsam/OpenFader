@@ -8,12 +8,14 @@ import '../palette.dart';
 class WorkspaceHome extends StatelessWidget {
   final VoidCallback onMixer;
   final VoidCallback? onRecorder;
+  final VoidCallback? onQuit;
   final ValueChanged<MixerDestination> onNavigate;
   final ValueChanged<BuildContext> onLayout;
   const WorkspaceHome(
       {super.key,
       required this.onMixer,
       this.onRecorder,
+      this.onQuit,
       required this.onNavigate,
       required this.onLayout});
 
@@ -119,15 +121,22 @@ class WorkspaceHome extends StatelessWidget {
                                 () => onNavigate(MixerDestination.settings)),
                           ]),
                       const SizedBox(height: AppDesign.spaceLg),
-                      Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                              onPressed: () =>
-                                  onNavigate(MixerDestination.debug),
-                              style: TextButton.styleFrom(
-                                  backgroundColor: Colors.transparent,
-                                  foregroundColor: palette.mutedText),
-                              child: const Text('Diagnostics'))),
+                      Row(children: [
+                        Expanded(
+                            child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton(
+                                    onPressed: () =>
+                                        onNavigate(MixerDestination.debug),
+                                    style: TextButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        foregroundColor: palette.mutedText),
+                                    child: const Text('Diagnostics')))),
+                        if (onQuit != null)
+                          TextButton(
+                              onPressed: onQuit,
+                              child: const Text('Quit OpenFader')),
+                      ]),
                     ]))),
       );
     });
