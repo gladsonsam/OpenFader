@@ -27,6 +27,7 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
     Map<String, dynamic> action,
     Object captured,
   ) async {
+    _nativeLastConfirmed = false;
     if (isDisposed || _nativeBusy || !engine.connected) return;
     if (app.libraryActive || app.libraryResetting) {
       _nativeStatus = 'Wait for the local library operation to finish.';
@@ -39,7 +40,6 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
       notifyListeners();
       return;
     }
-    _nativeLastConfirmed = false;
     final run = ++_nativeRun;
     final session = engine.session;
     final access = app.controlAccessEpoch;
