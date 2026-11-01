@@ -12,9 +12,20 @@ struct _MyApplication {
   char** dart_entrypoint_arguments;
   gboolean first_frame_received;
   gboolean present_after_first_frame;
+  FlMethodChannel* desktop_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// Native accelerators and remotely activated desktop actions must follow the
+// same recorder-aware shutdown path as the tray's Quit command.
+static void quit_activated(GSimpleAction*, GVariant*, gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  if (self->desktop_channel != nullptr) {
+    fl_method_channel_invoke_method(self->desktop_channel, "requestQuit", nullptr,
+                                   nullptr, nullptr, nullptr);
+  }
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -93,6 +104,11 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->desktop_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "openfader/desktop", FL_METHOD_CODEC(codec));
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -124,6 +140,13 @@ static void my_application_startup(GApplication* application) {
   // Perform any actions required at application startup.
 
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
+
+  g_autoptr(GSimpleAction) quit = g_simple_action_new("quit", nullptr);
+  g_signal_connect(quit, "activate", G_CALLBACK(quit_activated), application);
+  g_action_map_add_action(G_ACTION_MAP(application), G_ACTION(quit));
+  const gchar* quit_accels[] = {"<Primary>q", nullptr};
+  gtk_application_set_accels_for_action(GTK_APPLICATION(application), "app.quit",
+                                       quit_accels);
 }
 
 // Implements GApplication::shutdown.
@@ -138,6 +161,7 @@ static void my_application_shutdown(GApplication* application) {
 // Implements GObject::dispose.
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
+  g_clear_object(&self->desktop_channel);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
