@@ -516,3 +516,91 @@ async fn session_push_events_loopback() {
     session.close();
     fake_task.abort();
 }
+
+#[tokio::test]
+async fn stored_show_read_handshake_completes_on_success_and_failure() {
+    for fail in [false, true] {
+        let (listener, addr) = loopback_listener().await.unwrap();
+        let (done_tx, done_rx) = oneshot::channel();
+        let fake = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut steps = Vec::new();
+            let mut done_tx = Some(done_tx);
+            loop {
+                let Ok(req) = read_frame(&mut stream).await else {
+                    break;
+                };
+                if req.command == Command::KeepAlive {
+                    continue;
+                }
+                let mut reply = response_to(&req, vec![]);
+                match req.command {
+                    Command::ShowSnapshot if req.body == 6u32.to_be_bytes() => {
+                        steps.push("ready");
+                        reply.body = [6u32.to_be_bytes(), 1u32.to_be_bytes()].concat();
+                    }
+                    Command::FileOpen => {
+                        assert_eq!(steps.last(), Some(&"ready"));
+                        steps.push("open");
+                        assert_eq!(&req.body[..4], &0x80000004u32.to_be_bytes());
+                        reply.body = [1u32.to_be_bytes(), 0u32.to_be_bytes()].concat();
+                    }
+                    Command::FileInfo => {
+                        steps.push("info");
+                        assert_eq!(req.body, [2u32.to_be_bytes(), 0u32.to_be_bytes()].concat());
+                        if fail {
+                            reply.msg_type = MessageType::Error;
+                        } else {
+                            reply.body = [
+                                2u32.to_be_bytes(),
+                                0u32.to_be_bytes(),
+                                4u32.to_be_bytes(),
+                                1u32.to_be_bytes(),
+                            ]
+                            .concat();
+                        }
+                    }
+                    Command::FileRead => {
+                        steps.push("read");
+                        assert_eq!(&req.body[12..], &4u32.to_be_bytes());
+                        reply.body = vec![0; 16];
+                        reply.body.extend_from_slice(&word_swap(b"ZIP!"));
+                    }
+                    Command::FileClose => {
+                        steps.push("close");
+                    }
+                    Command::ShowSnapshot if req.body == 10u32.to_be_bytes() => {
+                        steps.push("complete");
+                        done_tx.take().unwrap().send(steps.clone()).unwrap();
+                        break;
+                    }
+                    _ => {}
+                }
+                write_msg(&mut stream, &reply).await.unwrap();
+            }
+        });
+        let session = MackieSession::connect(&addr.to_string()).await.unwrap();
+        let result = session
+            .download_show_archive_guarded(Duration::from_secs(2), &|| true)
+            .await;
+        if fail {
+            assert!(result.is_err());
+        } else {
+            assert_eq!(result.unwrap(), b"ZIP!");
+        }
+        let steps = tokio::time::timeout(Duration::from_secs(2), done_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        if fail {
+            assert_eq!(steps, vec!["ready", "open", "info", "complete"]);
+        } else {
+            assert_eq!(
+                steps,
+                vec!["ready", "open", "info", "read", "close", "complete"]
+            );
+        }
+        session.close();
+        fake.await.unwrap();
+    }
+}

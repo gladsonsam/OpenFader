@@ -36,7 +36,7 @@ impl Dl32sDriver {
             "operations":if connected && cache.library_show_info.is_some() {if cache.library_index.is_some() {vec!["inspect","read_show","refresh","export_file","inspect_file","recall","rename","store","replace","delete"]} else {vec!["inspect","read_show","refresh","export_file","inspect_file","recall","rename"]}} else {vec!["inspect","read_show","refresh","export_file","inspect_file"]},
             "slots":slots,
             "current":if connected {cache.view.current} else {None},
-            "limitations":"Stored index is complete only after explicit ZIP refresh. Store captures native current state; readback verifies stored files, not every current edit or safes. Default 0 is protected; delete compacts positions. Firmware restore remains unproved. Export preserves the original stored-show archive; importing inspects a file without writing the mixer. Names use a conservative 63-byte UTF-8 envelope, not an asserted native UI character limit."
+            "limitations":"Stored index is complete only after a validated ZIP read. Store captures native current state; readback verifies stored files, not every current edit or safes. Default 0 is protected; delete compacts positions. Firmware restore remains unproved. Export preserves the original stored-show archive; importing inspects a file without writing the mixer. Names use a conservative 63-byte UTF-8 envelope, not an asserted native UI character limit."
         }))
     }
 
@@ -88,6 +88,8 @@ impl Dl32sDriver {
                         cache.view.slots.clear();
                         cache.view.current = None;
                         cache.view.received = false;
+                        cache.view.complete = false;
+                        cache.view.error = None;
                         cache.library_revision += 1;
                     }
                     cache.library_show_info = Some(info.body);
@@ -126,7 +128,7 @@ impl Dl32sDriver {
                 );
                 let result: anyhow::Result<(Vec<u8>, Value)> = async {
                     let bytes = session
-                        .download_file_guarded("Show.zip", Duration::from_secs(5), &authorize)
+                        .download_show_archive_guarded(Duration::from_secs(5), &authorize)
                         .await?;
                     let after = session
                         .get_show_info_guarded(Duration::from_secs(5), &valid)
@@ -144,6 +146,31 @@ impl Dl32sDriver {
                     Ok((bytes, index)) if valid() => {
                         {
                             let mut cache = self.native.lock().unwrap();
+                            // Publish only while the exact inventory and connection that
+                            // authorized the read are still current. Pushes can race the
+                            // final validation above.
+                            anyhow::ensure!(
+                                cache.view.connected
+                                    && cache.generation == self.generation.load(Ordering::Acquire)
+                                    && expected["generation"].as_u64() == Some(cache.generation)
+                                    && expected["revision"].as_u64()
+                                        == Some(cache.library_revision),
+                                "Native session/inventory changed during publication"
+                            );
+                            cache.view.slots = index["slots"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|row| {
+                                    Some(openfader_core::NativeSnapshotSlot {
+                                        slot: u32::try_from(row["slot"].as_u64()?).ok()?,
+                                        name: row["name"].as_str()?.to_owned(),
+                                    })
+                                })
+                                .collect();
+                            cache.view.received = true;
+                            cache.view.complete = true;
+                            cache.view.error = None;
                             cache.library_show_info = Some(before.body);
                             cache.library_index = Some(index.clone());
                             cache.library_revision += 1;
@@ -200,7 +227,7 @@ impl Dl32sDriver {
                 );
                 let before = crate::native_archive::NativeArchive::parse(
                     session
-                        .download_file_guarded("Show.zip", Duration::from_secs(5), &valid)
+                        .download_show_archive_guarded(Duration::from_secs(5), &valid)
                         .await?,
                 )?;
                 let fresh = crate::native_show::inspect(&before)?;
@@ -227,7 +254,7 @@ impl Dl32sDriver {
                         .await?;
                     let after = crate::native_archive::NativeArchive::parse(
                         session
-                            .download_file_guarded("Show.zip", Duration::from_secs(5), check)
+                            .download_show_archive_guarded(Duration::from_secs(5), check)
                             .await?,
                     )?;
                     let updated = crate::native_show::inspect(&after)?;
@@ -298,7 +325,7 @@ impl Dl32sDriver {
                 let baseline = if expected["stored_index"].is_object() {
                     let archive = crate::native_archive::NativeArchive::parse(
                         session
-                            .download_file_guarded("Show.zip", Duration::from_secs(5), &valid)
+                            .download_show_archive_guarded(Duration::from_secs(5), &valid)
                             .await?,
                     )?;
                     let inspected = crate::native_show::inspect(&archive)?;
@@ -322,6 +349,8 @@ impl Dl32sDriver {
                         cache.view.slots.clear();
                         cache.view.current = None;
                         cache.view.received = false;
+                        cache.view.complete = false;
+                        cache.view.error = None;
                         cache.library_revision += 1;
                     }
                     return Ok(receipt("rejected", "Native show identity changed. Nothing was mutated. Inspect and read identity again.", Value::Null));
@@ -377,7 +406,7 @@ impl Dl32sDriver {
                             .await?;
                         let after = crate::native_archive::NativeArchive::parse(
                             session
-                                .download_file_guarded("Show.zip", Duration::from_secs(5), check)
+                                .download_show_archive_guarded(Duration::from_secs(5), check)
                                 .await?,
                         )?;
                         let index = crate::native_show::inspect(&after)?;
@@ -515,4 +544,124 @@ fn verify_transition(
         anyhow::ensure!(target["slot"] == slot, "Target position missing");
     }
     Ok(())
+}
+
+/// One read-only catalogue load per connection; transport ownership is shared
+/// without holding the driver's command/session mutex during file I/O.
+pub(super) fn start_inventory_load(
+    session: std::sync::Arc<openfader_transport::mackie::MackieSession>,
+    cache: std::sync::Arc<std::sync::Mutex<crate::native::NativeCache>>,
+    generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    expected_generation: u64,
+) {
+    tokio::spawn(async move {
+        let revision = cache.lock().unwrap().library_revision;
+        let valid = || {
+            generation.load(Ordering::Acquire) == expected_generation
+                && session.is_alive()
+                && cache.lock().is_ok_and(|c| {
+                    c.generation == expected_generation
+                        && c.view.connected
+                        && c.library_revision == revision
+                })
+        };
+        let result = tokio::time::timeout(Duration::from_secs(60), async {
+            let before = session
+                .get_show_info_guarded(Duration::from_secs(5), &valid)
+                .await?;
+            anyhow::ensure!(
+                (16..=4096).contains(&before.body.len()) && before.body.len().is_multiple_of(4),
+                "unsupported show identity"
+            );
+            let bytes = session
+                .download_show_archive_guarded(Duration::from_secs(20), &valid)
+                .await?;
+            let after = session
+                .get_show_info_guarded(Duration::from_secs(5), &valid)
+                .await?;
+            anyhow::ensure!(
+                before.body == after.body && valid(),
+                "show changed while reading catalogue"
+            );
+            let archive = crate::native_archive::NativeArchive::parse(bytes)?;
+            let index = crate::native_show::inspect(&archive)?;
+            Ok::<_, anyhow::Error>((before.body, index))
+        })
+        .await;
+        let mut c = cache.lock().unwrap();
+        if generation.load(Ordering::Acquire) != expected_generation
+            || c.generation != expected_generation
+            || !c.view.connected
+            || c.library_revision != revision
+        {
+            return;
+        }
+        match result {
+            Ok(Ok((identity, index))) => {
+                publish_catalogue(&mut c, expected_generation, revision, identity, index);
+            }
+            Ok(Err(e)) => {
+                c.view.error = Some(format!(
+                    "Snapshot catalogue: {e}. Refresh the native library to retry."
+                ))
+            }
+            Err(_) => {
+                c.view.error = Some(
+                    "Snapshot catalogue timed out. Refresh the native library to retry.".into(),
+                )
+            }
+        }
+    });
+}
+
+fn publish_catalogue(
+    c: &mut crate::native::NativeCache,
+    generation: u64,
+    revision: u64,
+    identity: Vec<u8>,
+    index: Value,
+) -> bool {
+    if c.generation != generation || !c.view.connected || c.library_revision != revision {
+        return false;
+    }
+    c.view.slots = index["slots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            Some(openfader_core::NativeSnapshotSlot {
+                slot: u32::try_from(r["slot"].as_u64()?).ok()?,
+                name: r["name"].as_str()?.to_owned(),
+            })
+        })
+        .collect();
+    c.view.received = true;
+    c.view.complete = true;
+    c.view.error = None;
+    c.library_show_info = Some(identity);
+    c.library_index = Some(index);
+    c.library_revision += 1;
+    true
+}
+#[cfg(test)]
+mod catalogue_tests {
+    use super::*;
+    #[test]
+    fn catalogue_names_publish_only_to_unchanged_live_session() {
+        let mut c = crate::native::NativeCache {
+            generation: 7,
+            ..Default::default()
+        };
+        c.view.connected = true;
+        let index = json!({"slots":[{"slot":1,"name":"Sunday"},{"slot":2,"name":"Vocals 🎤"}]});
+        assert!(!publish_catalogue(&mut c, 6, 0, vec![], index.clone()));
+        assert!(!publish_catalogue(&mut c, 7, 1, vec![], index.clone()));
+        assert!(c.view.slots.is_empty());
+        assert!(publish_catalogue(&mut c, 7, 0, vec![1; 16], index.clone()));
+        assert_eq!(c.view.slots[1].name, "Vocals 🎤");
+        assert!(c.view.complete && c.view.received);
+        assert!(!publish_catalogue(&mut c, 7, 0, vec![], index.clone()));
+        c.view.connected = false;
+        assert!(!publish_catalogue(&mut c, 7, 1, vec![], index));
+    }
 }
