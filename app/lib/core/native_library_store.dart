@@ -4,6 +4,7 @@ abstract interface class NativeLibraryStore {
   NativeLibraryVm? get nativeLibrary;
   String? get nativeStatus;
   bool get nativeBusy;
+  bool get nativeLastConfirmed;
   bool get nativeWritable;
   Object get nativeContext;
   Future<void> nativeAction(Map<String, dynamic> action, Object captured);

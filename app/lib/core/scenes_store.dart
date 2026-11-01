@@ -25,6 +25,8 @@ abstract class ScenesStore extends ChangeNotifier
   @override
   bool get nativeBusy => false;
   @override
+  bool get nativeLastConfirmed => false;
+  @override
   bool get nativeWritable => false;
   @override
   Object get nativeContext => actionContext;

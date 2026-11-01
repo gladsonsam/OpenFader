@@ -735,6 +735,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       AppTab.mixer => _mixerPage(),
       AppTab.recorder => RecorderPage(
           store: _recorder,
+          nativeStore: _scenes,
           onMixer: () => _go(AppTab.mixer),
           onFx: () => _go(AppTab.fx),
           onSettings: () => _go(AppTab.settings),

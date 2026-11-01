@@ -8,6 +8,8 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
   NativeLibraryVm? _nativeLibrary;
   String? _nativeStatus;
   bool _nativeBusy = false;
+  bool _nativeLastConfirmed = false;
+  bool get nativeLastConfirmed => _nativeLastConfirmed;
   int _nativeRun = 0;
   Object? _nativeSession;
   File? _nativeArchive;
@@ -37,6 +39,7 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
       notifyListeners();
       return;
     }
+    _nativeLastConfirmed = false;
     final run = ++_nativeRun;
     final session = engine.session;
     final access = app.controlAccessEpoch;
@@ -100,6 +103,7 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
     }
     if (isDisposed || run != _nativeRun) return;
     _nativeBusy = false;
+    _nativeLastConfirmed = result['status'] == 'confirmed';
     _nativeStatus = '${result['status']}: ${result['message']}';
     // Discard stale receipts. An uncertain operation invalidates the dialog
     // guard instead of encouraging a blind repeat or optimistic slot update.
@@ -145,6 +149,7 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
   void cancelNativeAction() {
     _nativeRun++;
     app.cancelNativeLibrary(this);
+    _nativeLastConfirmed = false;
     _nativeBusy = false;
     _nativeLibrary = null;
     _nativeStatus =
