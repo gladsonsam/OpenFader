@@ -521,6 +521,22 @@ class MixerController extends ChangeNotifier {
     if (first != null) select(first);
   }
 
+  /// Channel-page swipes follow the complete bank/layer, across mixer pages,
+  /// without jumping to the master or a different strip family.
+  void moveProcessingSelection(int delta) {
+    if (delta == 0 || store.outputProcessingTarget != null) return;
+    final all = _effectiveStrips;
+    final family = store.stripKey.split('/').first;
+    final siblings =
+        all.where((s) => s.key.split('/').first == family).toList();
+    final current = siblings.indexWhere((s) => s.key == store.stripKey);
+    final next = current + delta.sign;
+    if (current < 0 || next < 0 || next >= siblings.length) return;
+    final target = siblings[next];
+    _page = all.indexWhere((s) => s.key == target.key) ~/ effectivePageSize;
+    select(_channel(target));
+  }
+
   void moveSelection(int delta) {
     final all = [...channels, master];
     final index = all.indexWhere((s) => s.key == _selectedKey);
