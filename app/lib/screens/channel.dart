@@ -316,7 +316,11 @@ class _ChannelPageState extends State<ChannelPage> {
                   kind: DynKind.comp),
             };
             final content = SingleChildScrollView(
-              key: PageStorageKey('processing-${selectedTab.name}'),
+              // Gate and Compressor share geometry and scroll position.
+              key: PageStorageKey(selectedTab == ChannelTab.gate ||
+                      selectedTab == ChannelTab.comp
+                  ? 'processing-dynamics'
+                  : 'processing-${selectedTab.name}'),
               child: KeyedSubtree(
                   key: ValueKey((store.stripKey, selectedTab)),
                   child: wide
