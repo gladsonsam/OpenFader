@@ -315,7 +315,7 @@ class _RecorderPageState extends State<RecorderPage> {
             const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
-                    'A device-local reference, separate from OpenFader scenes. Verify the mixer before recall.')),
+                    'A device-local reference, separate from OpenFader scenes. Create or manage native snapshots in Scenes, then inspect here. Verify the mixer before recall.')),
             for (final slot in view.slots)
               SimpleDialogOption(
                   onPressed: () => Navigator.pop(context, slot),
