@@ -77,6 +77,10 @@ abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   /// to their own ch only.
   ValueListenable<String> controlGroupNoteOf(int ch);
   ValueNotifier<double> faderOf(int ch);
+
+  /// Surface send fader when a mix is selected; separate from channel LR.
+  ValueNotifier<double> mixerFaderOf(int ch);
+  void setMixerFader(int ch, double value);
   ValueNotifier<bool> muteOf(int ch);
   ValueNotifier<double> panNoteOf(int ch);
   ValueNotifier<bool> soloNoteOf(int ch);

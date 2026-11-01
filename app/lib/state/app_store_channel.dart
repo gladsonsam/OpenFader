@@ -723,6 +723,12 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   String _sendName(int slot) {
+    for (final control in engine.destinationControls) {
+      final reported = control.targetName?.trim();
+      if (control.sendSlot == slot && reported != null && reported.isNotEmpty) {
+        return reported;
+      }
+    }
     final destination = paramMetadata('send${slot}_level')?['destination'];
     if (destination is Map && destination['key'] is String) {
       final key = destination['key'];
