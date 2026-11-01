@@ -9,16 +9,15 @@ class _DynTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = kind == DynKind.gate ? store.gate : store.comp;
-    final compact = MediaQuery.sizeOf(context).width < 700;
+    final compact =
+        MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
     final title = kind == DynKind.gate ? 'Gate' : 'Compressor';
     final presetKind = kind == DynKind.gate
         ? ProcessorPresetKind.gate
         : ProcessorPresetKind.compressor;
-    final knobs = _dynKnobs(kind, d)
-        .where((k) =>
-            k.prop != 'knee' &&
-            store.paramMetadata('${kind.name}_${k.prop}')?['hidden'] != true)
-        .toList();
+    // Keep the same five slots across processors, even when a provider hides
+    // a control. Shared parameters must not move when changing tabs.
+    final knobs = _dynKnobs(kind, d);
     void focus(_KnobDef k) => onFocus(_parameterFocus(
         store,
         '${kind.name}_${k.prop}',
@@ -31,14 +30,6 @@ class _DynTab extends StatelessWidget {
       focus(k);
     }
 
-    final delayRange = _controlRange(store, 'delay_ms');
-    void focusDelay() => onFocus(_parameterFocus(
-        store,
-        'delay_ms',
-        'Compressor',
-        'Delay',
-        () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
-        (v) => store.setPreamp('delay_ms', v)));
     String controlText(_KnobDef k) =>
         parameterValueLabel(
             store.paramMetadata('${kind.name}_${k.prop}'), k.value) ??
@@ -50,162 +41,100 @@ class _DynTab extends StatelessWidget {
         fallback: controlText(k),
         compact: compact,
         onChanged: (v) => apply(k, v));
-    Widget control(_KnobDef k, {bool threshold = false}) =>
-        parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
-                .isNotEmpty
-            ? choiceControl(k)
-            : Container(
-                padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
-                decoration: BoxDecoration(
-                    color: ConsolePalette.of(context).processingPanel,
-                    borderRadius: U4.rWell),
-                child: _ProcessingSlider(
-                    label: k.label,
-                    text: controlText(k),
-                    value: k.value,
-                    min: k.min,
-                    max: k.max,
-                    compact: true,
-                    fontSize: compact
-                        ? 15
-                        : (MediaQuery.sizeOf(context).width / 2048 * 22)
-                            .clamp(14.0, 22.0),
-                    color: kind == DynKind.gate
-                        ? ConsolePalette.of(context).processingBlue
-                        : ConsolePalette.of(context).processingPurple,
-                    solidFill: true,
-                    valueColor: threshold
-                        ? ConsolePalette.of(context).cyan
-                        : ConsolePalette.of(context).text1,
-                    enabled: d.ranges[k.prop] != null,
-                    onFocus: () => focus(k),
-                    onChanged: (v) => apply(k, v)));
-    Widget secondary(_KnobDef k) =>
-        parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
-                .isNotEmpty
-            ? choiceControl(k)
-            : Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                    color: ConsolePalette.of(context).processingPanel,
-                    borderRadius: U4.rWell),
-                child: Row(children: [
-                  Text(k.label,
-                      style: AppDesign.type(16,
-                          color: ConsolePalette.of(context).text7)),
-                  const SizedBox(width: 16),
-                  Expanded(
-                      child: _ProcessingSlider(
-                          label: k.label,
-                          text: controlText(k),
-                          value: k.value,
-                          min: k.min,
-                          max: k.max,
-                          showLabel: false,
-                          color: kind == DynKind.gate
-                              ? ConsolePalette.of(context).processingBlue
-                              : ConsolePalette.of(context).processingPurple,
-                          solidFill: true,
-                          enabled: d.ranges[k.prop] != null,
-                          onFocus: () => focus(k),
-                          onChanged: (v) => apply(k, v))),
-                ]));
-    final supplemental = Row(children: [
-      Expanded(
-          child: Container(
-              padding: const EdgeInsets.all(12),
+    Widget control(_KnobDef k, {bool threshold = false}) {
+      if (store.paramMetadata('${kind.name}_${k.prop}')?['hidden'] == true) {
+        return const SizedBox.shrink();
+      }
+      return parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
+              .isNotEmpty
+          ? choiceControl(k)
+          : Container(
+              padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).processingPanel,
                   borderRadius: U4.rWell),
               child: _ProcessingSlider(
-                  label: 'Temperature',
-                  text: '—',
-                  value: 0,
-                  min: 0,
-                  max: 100,
-                  enabled: false,
+                  label: k.label,
+                  text: controlText(k),
+                  value: k.value,
+                  min: k.min,
+                  max: k.max,
                   compact: true,
-                  color: ConsolePalette.of(context).processingPurple,
-                  onChanged: (_) {}))),
-      const SizedBox(width: 8),
-      Expanded(
-          child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).processingPanel,
-                  borderRadius: U4.rWell),
-              child: _ProcessingSlider(
-                  label: 'Delay',
-                  text: delayRange != null
-                      ? '${store.preamp.delayMs.toStringAsFixed(1)} ms'
-                      : '—',
-                  value: store.preamp.delayMs,
-                  min: delayRange?.first ?? 0,
-                  max: delayRange?.last ?? 1,
-                  enabled: delayRange != null,
-                  compact: true,
-                  color: ConsolePalette.of(context).processingPurple,
+                  fontSize: compact
+                      ? 15
+                      : (MediaQuery.sizeOf(context).width / 2048 * 22)
+                          .clamp(14.0, 22.0),
+                  color: kind == DynKind.gate
+                      ? ConsolePalette.of(context).processingBlue
+                      : ConsolePalette.of(context).processingPurple,
                   solidFill: true,
-                  valueColor: ConsolePalette.of(context).text1,
-                  onFocus: focusDelay,
-                  onChanged: (v) {
-                    store.setPreamp('delay_ms', v);
-                    focusDelay();
-                  }))),
-    ]);
+                  valueColor: threshold
+                      ? ConsolePalette.of(context).cyan
+                      : ConsolePalette.of(context).text1,
+                  enabled: d.ranges[k.prop] != null,
+                  onFocus: () => focus(k),
+                  onChanged: (v) => apply(k, v)));
+    }
+
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1292;
+      final optionFontSize = compact ? 14.0 : 22.0;
+      final textScaler = MediaQuery.textScalerOf(context);
+      // The knee selector has inner padding. Both processors reserve its full
+      // height so neither Presets nor the graph shifts when it is present.
+      final optionsHeight = math.max(
+              AppDesign.controlHeight,
+              textScaler.scale(optionFontSize) * 1.15 +
+                  AppDesign.spaceLg +
+                  AppDesign.spaceXs) +
+          2 * AppDesign.spaceXs;
+      final presetsWidth = compact
+          ? math.min(bounds.maxWidth / 2,
+              96 * textScaler.scale(optionFontSize) / optionFontSize)
+          : 420 * scale;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _ProcessorHeader(
             title: title,
             on: d.on,
             compact: compact,
             onToggle: () => store.setDynOn(kind, !d.on)),
-        const SizedBox(height: 8),
-        Row(children: [
-          if (!compact)
+        const SizedBox(height: AppDesign.spaceSm),
+        SizedBox(
+          height: optionsHeight,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             SizedBox(
-                width: 420 * scale,
-                child: _PresetsButton(
-                    store: store, compact: false, kind: presetKind))
-          else if (kind == DynKind.comp && compact)
-            SizedBox(
-                width: 96,
-                child: _PresetsButton(
-                    store: store, compact: true, kind: presetKind))
-          else
-            Expanded(
+                width: presetsWidth,
                 child: _PresetsButton(
                     store: store, compact: compact, kind: presetKind)),
-          if (kind == DynKind.comp &&
-              store.paramMetadata('comp_knee')?['hidden'] != true) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: AppDesign.spaceSm),
             Expanded(
-                child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                        color: ConsolePalette.of(context).chip,
-                        borderRadius: U4.rBtn),
-                    child: Row(children: [
-                      for (final soft in [true, false])
-                        Expanded(
-                            child: Semantics(
-                                toggled: d.softKnee == soft,
-                                child: _ProcessingButton(
-                                    fontSize: compact ? 14 : 22,
-                                    label: soft ? 'Soft Knee' : 'Hard Knee',
-                                    active: d.softKnee == soft,
-                                    onTap: store.supports('comp_knee') &&
-                                            d.softKnee != null
-                                        ? () => store.setCompSoftKnee(soft)
-                                        : null)))
-                    ]))),
-          ] else if (!compact)
-            const Spacer(),
-        ]),
-        const SizedBox(height: 8),
+              child: kind == DynKind.comp &&
+                      store.paramMetadata('comp_knee')?['hidden'] != true
+                  ? Container(
+                      padding: const EdgeInsets.all(AppDesign.spaceXs),
+                      decoration: BoxDecoration(
+                          color: ConsolePalette.of(context).chip,
+                          borderRadius: U4.rBtn),
+                      child: Row(children: [
+                        for (final soft in [true, false])
+                          Expanded(
+                              child: Semantics(
+                                  toggled: d.softKnee == soft,
+                                  child: _ProcessingButton(
+                                      fontSize: optionFontSize,
+                                      label: soft ? 'Soft Knee' : 'Hard Knee',
+                                      active: d.softKnee == soft,
+                                      onTap: store.supports('comp_knee') &&
+                                              d.softKnee != null
+                                          ? () => store.setCompSoftKnee(soft)
+                                          : null)))
+                      ]))
+                  : const SizedBox.shrink(),
+            ),
+          ]),
+        ),
+        const SizedBox(height: AppDesign.spaceSm),
         Opacity(
             opacity: d.on || ConsolePalette.of(context).isLight ? 1 : .55,
             child: AnimatedBuilder(
@@ -230,13 +159,17 @@ class _DynTab extends StatelessWidget {
                           : store.grDb(kind),
                       height: compact ? 282 : 700 * scale,
                       compact: compact,
-                      enabled: (prop) => d.ranges[prop] != null,
+                      enabled: (prop) =>
+                          d.ranges[prop] != null &&
+                          store.paramMetadata(
+                                  '${kind.name}_$prop')?['hidden'] !=
+                              true,
                       onFocus: (prop) =>
                           focus(knobs.firstWhere((k) => k.prop == prop)),
                       onChanged: (prop, v) =>
                           apply(knobs.firstWhere((k) => k.prop == prop), v));
                 })),
-        SizedBox(height: compact ? 8 : 20 * scale),
+        const SizedBox(height: AppDesign.spaceSm),
         if (compact) ...[
           SizedBox(height: 80, child: control(knobs.first, threshold: true)),
           const SizedBox(height: 8),
@@ -265,9 +198,7 @@ class _DynTab extends StatelessWidget {
                   borderRadius: U4.rWell),
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(children: [
-                for (var i = 0;
-                    i < (kind == DynKind.gate ? 3 : knobs.length);
-                    i++) ...[
+                for (var i = 0; i < knobs.length; i++) ...[
                   if (i > 0)
                     Container(
                         width: 1,
@@ -276,36 +207,9 @@ class _DynTab extends StatelessWidget {
                   Expanded(child: control(knobs[i], threshold: i == 0)),
                 ]
               ])),
-          if (kind == DynKind.gate && knobs.length > 3) ...[
-            SizedBox(height: 20 * scale),
-            Row(children: [
-              for (var i = 3; i < knobs.length; i++) ...[
-                if (i > 3) SizedBox(width: 20 * scale),
-                Expanded(child: secondary(knobs[i])),
-              ],
-            ]),
-          ],
         ],
         _AdvancedDynamics(
             store: store, kind: kind, compact: compact, onFocus: onFocus),
-        if (kind == DynKind.comp) ...[
-          const SizedBox(height: 12),
-          if (compact)
-            Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                    key: PageStorageKey('comp-supplemental-${store.stripKey}'),
-                    title: Text('Temperature & Delay',
-                        style: AppDesign.type(14,
-                            color: ConsolePalette.of(context).text7)),
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                    childrenPadding: const EdgeInsets.all(8),
-                    minTileHeight: 44,
-                    children: [supplemental]))
-          else
-            supplemental,
-        ],
       ]);
     });
   }
@@ -418,11 +322,42 @@ class _AdvancedDynamics extends StatelessWidget {
                 focus();
               })));
     }
+    // Input delay is a shared channel utility, not a compressor-only footer.
+    // Keep it in Advanced for both processors so their main canvas stays equal.
+    final delayRange = _controlRange(store, 'delay_ms');
+    if (delayRange != null) {
+      void focusDelay() => onFocus(_parameterFocus(
+          store,
+          'delay_ms',
+          'Input',
+          'Delay',
+          () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
+          (value) => store.setPreamp('delay_ms', value)));
+      controls.add(Container(
+          padding: AppDesign.panelPadding,
+          decoration: BoxDecoration(
+              color: palette.processingPanel, borderRadius: U4.rWell),
+          child: _ProcessingSlider(
+              label: 'Input delay',
+              text: '${store.preamp.delayMs.toStringAsFixed(1)} ms',
+              value: store.preamp.delayMs,
+              min: delayRange.first,
+              max: delayRange.last,
+              compact: true,
+              solidFill: true,
+              color: palette.cyan,
+              valueColor: palette.text1,
+              onFocus: focusDelay,
+              onChanged: (value) {
+                store.setPreamp('delay_ms', value);
+                focusDelay();
+              })));
+    }
     if (controls.isEmpty) return const SizedBox.shrink();
     return Padding(
         padding: const EdgeInsets.only(top: 12),
         child: ExpansionTile(
-            key: PageStorageKey('advanced-$prefix-${store.stripKey}'),
+            key: PageStorageKey('advanced-dynamics-${store.stripKey}'),
             title: Text('Advanced',
                 style: AppDesign.type(14, color: palette.text7)),
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),
