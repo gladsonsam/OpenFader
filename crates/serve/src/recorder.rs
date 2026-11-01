@@ -1,7 +1,7 @@
 //! Serialized desktop audio worker. The service and streams remain on its thread.
 use serde_json::{json, Value};
 use std::{collections::HashMap, path::PathBuf};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use std::{
     sync::mpsc,
     time::{Duration, Instant},
@@ -59,12 +59,20 @@ pub fn data_dir() -> Option<PathBuf> {
     {
         std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join("OpenFader/Recorder"))
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("XDG_DATA_HOME")
+            .filter(|v| !v.is_empty() && PathBuf::from(v).is_absolute())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+            .map(|base| base.join("OpenFader/Recorder"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         None
     }
 }
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 async fn worker(
     root: PathBuf,
     rx: tokio::sync::mpsc::UnboundedReceiver<(Value, oneshot::Sender<Value>)>,
@@ -73,7 +81,7 @@ async fn worker(
 ) {
     worker_with_config(root, rx, None, Some(engine), backend).await;
 }
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 async fn worker_with_config(
     root: PathBuf,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<(Value, oneshot::Sender<Value>)>,
@@ -625,18 +633,63 @@ async fn worker_with_config(
                                         s.stop().map_err(|e| e.to_string())
                                     }
                                 }
-                                "import_take" | "export_take" if client.is_some() || pending.is_some() || s.status().transport != "stopped" => {
+                                "import_take" | "export_take"
+                                    if client.is_some()
+                                        || pending.is_some()
+                                        || s.status().transport != "stopped" =>
+                                {
                                     Err("stop transport before transferring takes".to_string())
                                 }
                                 "import_take" | "export_take" => {
                                     let safe = |s: &str| {
-                                        !s.is_empty() && !s.starts_with('.') && s.len() <= 128
-                                            && s.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+                                        !s.is_empty()
+                                            && !s.starts_with('.')
+                                            && s.len() <= 128
+                                            && s.bytes().all(|c| {
+                                                c.is_ascii_alphanumeric()
+                                                    || matches!(c, b'-' | b'_' | b'.')
+                                            })
                                             && !s.ends_with('.')
-                                            && !matches!(s.split('.').next().unwrap_or("").to_ascii_uppercase().as_str(), "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9")
+                                            && !matches!(
+                                                s.split('.')
+                                                    .next()
+                                                    .unwrap_or("")
+                                                    .to_ascii_uppercase()
+                                                    .as_str(),
+                                                "CON"
+                                                    | "PRN"
+                                                    | "AUX"
+                                                    | "NUL"
+                                                    | "COM1"
+                                                    | "COM2"
+                                                    | "COM3"
+                                                    | "COM4"
+                                                    | "COM5"
+                                                    | "COM6"
+                                                    | "COM7"
+                                                    | "COM8"
+                                                    | "COM9"
+                                                    | "LPT1"
+                                                    | "LPT2"
+                                                    | "LPT3"
+                                                    | "LPT4"
+                                                    | "LPT5"
+                                                    | "LPT6"
+                                                    | "LPT7"
+                                                    | "LPT8"
+                                                    | "LPT9"
+                                            )
                                     };
-                                    match (args["take_id"].as_str(), args["transfer_name"].as_str(), args["format"].as_str()) {
-                                        (Some(take), Some(name), Some(format)) if safe(take) && safe(name) && !take.eq_ignore_ascii_case("transfers") => {
+                                    match (
+                                        args["take_id"].as_str(),
+                                        args["transfer_name"].as_str(),
+                                        args["format"].as_str(),
+                                    ) {
+                                        (Some(take), Some(name), Some(format))
+                                            if safe(take)
+                                                && safe(name)
+                                                && !take.eq_ignore_ascii_case("transfers") =>
+                                        {
                                             let transfers = root.join("transfers");
                                             std::fs::create_dir_all(&transfers).map_err(|e| e.to_string()).and_then(|_| {
                                                 openfader_audio::transfer::reject_link(&transfers).map_err(|e| e.to_string())?;
@@ -653,7 +706,10 @@ async fn worker_with_config(
                                                 }.map(|_| ()).map_err(|e| e.to_string())
                                             })
                                         }
-                                        _ => Err("valid take_id, transfer_name and format required".to_string()),
+                                        _ => {
+                                            Err("valid take_id, transfer_name and format required"
+                                                .to_string())
+                                        }
                                     }
                                 }
                                 "load_take" => args["take_id"]
@@ -758,7 +814,7 @@ async fn worker_with_config(
         let _ = reply.send(result);
     }
 }
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 async fn worker(
     _root: PathBuf,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<(Value, oneshot::Sender<Value>)>,
@@ -771,7 +827,10 @@ async fn worker(
     }
 }
 
-#[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
+#[cfg(all(
+    test,
+    any(target_os = "macos", target_os = "windows", target_os = "linux")
+))]
 mod tests {
     use super::*;
     #[cfg(unix)]

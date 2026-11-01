@@ -1,5 +1,5 @@
 //! Single-session capture subprocess. Protocol is newline-delimited JSON on stdin/stdout.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn main() {
     use openfader_audio::{DeviceInfo, RecorderService};
     use serde_json::{json, Value};
@@ -145,7 +145,7 @@ fn main() {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn main() {
     eprintln!("capture helper unsupported on this platform");
     std::process::exit(1);

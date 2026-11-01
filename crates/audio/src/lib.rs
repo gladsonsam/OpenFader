@@ -451,9 +451,9 @@ mod tests {
 
 #[cfg(target_os = "macos")]
 mod macos_devices;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod service;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub use service::{RecorderService, RecorderStatus};
 
 /// Read a bounded interval of a completed take and aggregate real PCM extrema.

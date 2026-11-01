@@ -27,6 +27,7 @@ pub mod coordinator_backend;
 pub mod engine_adapter;
 pub mod playback_client;
 mod recorder;
+pub use recorder::data_dir as recorder_data_dir;
 pub use recorder::soundcheck_backend;
 pub mod remote_access;
 pub mod remote_listener;
