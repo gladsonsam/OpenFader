@@ -295,6 +295,8 @@ impl RecorderService {
         let id = cpal::HostId::CoreAudio;
         #[cfg(target_os = "windows")]
         let id = cpal::HostId::Asio;
+        #[cfg(target_os = "linux")]
+        let id = cpal::HostId::Alsa;
         cpal::host_from_id(id).map_err(error)
     }
     pub fn devices(&self) -> io::Result<Vec<DeviceInfo>> {
@@ -302,7 +304,7 @@ impl RecorderService {
         {
             crate::macos_devices::devices()
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         {
             let mut result = Vec::new();
             for d in Self::host()?.devices().map_err(error)? {
@@ -771,13 +773,13 @@ impl RecorderService {
                 buffer_size: cpal::BufferSize::Default,
             }
         };
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let current = device.default_output_config().map_err(error)?.sample_rate();
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         if current != sample_rate {
             return Err(error("device sample rate differs from take"));
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let supported = device
             .supported_output_configs()
             .map_err(error)?
@@ -789,9 +791,9 @@ impl RecorderService {
             .ok_or_else(|| {
                 error("device does not support playback with this layout at take rate")
             })?;
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let sample_format = supported.sample_format();
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let config = supported.with_sample_rate(current).config();
         #[cfg(target_os = "macos")]
         let sample_format = cpal::SampleFormat::F32;

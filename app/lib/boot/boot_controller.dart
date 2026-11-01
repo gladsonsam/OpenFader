@@ -79,7 +79,7 @@ class BootController extends ChangeNotifier {
       _step = 1;
       notifyListeners();
       if (_api == null) {
-        if (Platform.isMacOS || Platform.isWindows) {
+        if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
           _api = await DesktopHost.start();
           _isRealEngine = true;
         } else {

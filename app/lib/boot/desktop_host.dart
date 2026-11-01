@@ -21,7 +21,9 @@ class DesktopHost implements HostTransport {
 
   static String get _directory => Platform.isMacOS
       ? '${Platform.environment['HOME']}/Library/Application Support/OpenFader/Recorder'
-      : '${Platform.environment['LOCALAPPDATA']}\\OpenFader\\Recorder';
+      : Platform.isLinux
+          ? '${(Platform.environment['XDG_DATA_HOME']?.startsWith('/') ?? false) ? Platform.environment['XDG_DATA_HOME'] : '${Platform.environment['HOME']}/.local/share'}/OpenFader/Recorder'
+          : '${Platform.environment['LOCALAPPDATA']}\\OpenFader\\Recorder';
 
   static Future<bool> _privatePath(String path,
       {required bool directory}) async {
@@ -32,8 +34,9 @@ class DesktopHost implements HostTransport {
             : FileSystemEntityType.file)) {
       return false;
     }
-    if (Platform.isMacOS) {
-      final stat = await Process.run('/usr/bin/stat', ['-f', '%u %Lp', path]);
+    if (Platform.isMacOS || Platform.isLinux) {
+      final stat = await Process.run('/usr/bin/stat',
+          Platform.isMacOS ? ['-f', '%u %Lp', path] : ['-c', '%u %a', path]);
       final user = await Process.run('/usr/bin/id', ['-u']);
       if (stat.exitCode != 0 || user.exitCode != 0) return false;
       final fields = '${stat.stdout}'.trim().split(' ');
@@ -98,7 +101,7 @@ class DesktopHost implements HostTransport {
     var host = await _discover();
     if (host != null) return host;
     final executable = Platform.environment['OPENFADER_SERVE_PATH'] ??
-        (Platform.isMacOS
+        (Platform.isMacOS || Platform.isLinux
             ? '${File(Platform.resolvedExecutable).parent.path}/openfader-serve'
             : '${File(Platform.resolvedExecutable).parent.path}\\openfader-serve.exe');
     final process = await Process.start(executable, ['--desktop-host'],

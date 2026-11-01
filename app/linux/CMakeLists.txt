@@ -126,3 +126,18 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# The recorder host and isolated capture helper live alongside the runner.
+if(DEFINED ENV{CARGO_TARGET_DIR})
+  set(OPENFADER_CARGO_TARGET "$ENV{CARGO_TARGET_DIR}")
+else()
+  set(OPENFADER_CARGO_TARGET "${CMAKE_CURRENT_SOURCE_DIR}/../../target")
+endif()
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  set(OPENFADER_RUST_PROFILE debug)
+else()
+  set(OPENFADER_RUST_PROFILE release)
+endif()
+install(PROGRAMS "${OPENFADER_CARGO_TARGET}/${OPENFADER_RUST_PROFILE}/openfader-serve"
+  "${OPENFADER_CARGO_TARGET}/${OPENFADER_RUST_PROFILE}/openfader-capture-helper"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)

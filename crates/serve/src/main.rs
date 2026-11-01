@@ -167,13 +167,13 @@ async fn main() -> anyhow::Result<()> {
 
     let sock: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(sock).await?;
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     let _desktop_owner = if desktop_host {
         Some(desktop::start(listener.local_addr()?.port())?)
     } else {
         None
     };
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     if desktop_host {
         anyhow::bail!("secure desktop host is not available on this platform");
     }

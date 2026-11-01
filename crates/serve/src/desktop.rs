@@ -1,5 +1,5 @@
 //! Private, per-user macOS desktop bootstrap. The lock stays held until exit.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod platform {
     use std::{
         fs::{self, File, OpenOptions},
@@ -21,10 +21,8 @@ mod platform {
         }
     }
     pub fn start(port: u16) -> anyhow::Result<Owner> {
-        let root = PathBuf::from(
-            std::env::var_os("HOME").ok_or_else(|| anyhow::anyhow!("HOME unavailable"))?,
-        )
-        .join("Library/Application Support/OpenFader/Recorder");
+        let root = openfader_serve::recorder_data_dir()
+            .ok_or_else(|| anyhow::anyhow!("recorder data directory unavailable"))?;
         fs::create_dir_all(&root)?;
         let meta = fs::symlink_metadata(&root)?;
         anyhow::ensure!(
@@ -78,7 +76,7 @@ mod platform {
         })
     }
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub use platform::start;
 
 #[cfg(target_os = "windows")]
