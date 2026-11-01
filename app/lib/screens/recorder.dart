@@ -293,9 +293,9 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<void> _linkSnapshot(String takeId) async {
     final native = widget.nativeStore;
-    if (native.nativeBusy || !native.nativeWritable) {
+    if (!store.canAdminRemote || native.nativeBusy || !native.nativeWritable) {
       _snapshotMessage(
-          'Connect to a writable mixer provider, then inspect its snapshots.');
+          'Connect to a local recorder and writable mixer provider, then inspect its snapshots.');
       return;
     }
     await native.nativeAction({'op': 'inspect'}, native.nativeContext);
@@ -374,7 +374,10 @@ class _RecorderPageState extends State<RecorderPage> {
     final link = _snapshotLinks[takeId];
     if (link is! Map) return true;
     final native = widget.nativeStore;
-    if (!_safeToRecall || native.nativeBusy || !native.nativeWritable) {
+    if (!store.canAdminRemote ||
+        !_safeToRecall ||
+        native.nativeBusy ||
+        !native.nativeWritable) {
       _snapshotMessage(
           'Linked snapshot unavailable. Connect to the mixer and try again.');
       return false;
@@ -509,6 +512,15 @@ class _RecorderPageState extends State<RecorderPage> {
                 SimpleDialogOption(
                     onPressed: () => Navigator.pop(context, 'native'),
                     child: const Text('Native take folder')),
+                if (!importing)
+                  SimpleDialogOption(
+                      onPressed: () => Navigator.pop(context, 'tracks'),
+                      child: const Text('Mono WAV tracks folder')),
+                if (!importing)
+                  const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                          'Multichannel WAV is limited to 4 GiB. For longer takes, export mono tracks or a native take folder.')),
               ],
             ));
     if (!mounted || format == null) return;
