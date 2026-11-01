@@ -291,6 +291,39 @@ class _RecorderPageState extends State<RecorderPage> {
   bool _takeAvailable(String id) =>
       store.takes.any((t) => t['id'] == id && t['complete'] == true);
 
+  Future<void> _unlinkSnapshot(String takeId) async {
+    final updated = Map<String, dynamic>.from(_snapshotLinks)..remove(takeId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString(_snapshotKey, jsonEncode(updated))) {
+        throw StateError('Preferences write failed');
+      }
+      if (mounted) setState(() => _snapshotLinks = updated);
+    } catch (e) {
+      _snapshotMessage('Could not remove the snapshot link: $e');
+    }
+  }
+
+  Future<bool> _continueWithoutSnapshot() async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                  title: const Text('Linked snapshot unavailable'),
+                  content: const Text(
+                      'The linked mixer snapshot cannot be verified. Continue without recalling it, or cancel to reconnect and inspect the mixer.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Continue without snapshot'))
+                  ],
+                )) ??
+        false;
+  }
+
   Future<void> _linkSnapshot(String takeId) async {
     final native = widget.nativeStore;
     if (!store.canAdminRemote || native.nativeBusy || !native.nativeWritable) {
@@ -378,9 +411,7 @@ class _RecorderPageState extends State<RecorderPage> {
         !_safeToRecall ||
         native.nativeBusy ||
         !native.nativeWritable) {
-      _snapshotMessage(
-          'Linked snapshot unavailable. Connect to the mixer and try again.');
-      return false;
+      return _continueWithoutSnapshot();
     }
     await native.nativeAction({'op': 'inspect'}, native.nativeContext);
     if (!mounted) return false;
@@ -394,9 +425,7 @@ class _RecorderPageState extends State<RecorderPage> {
         view.slots
             .any((s) => s['slot'] == link['slot'] && s['name'] == link['name']);
     if (!matches()) {
-      _snapshotMessage(
-          'Linked snapshot is unavailable or changed. Inspect and relink it for this take.');
-      return false;
+      return _continueWithoutSnapshot();
     }
     final captured = native.nativeContext;
     final recall = await showDialog<bool>(
@@ -496,6 +525,12 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<void> _transferTake({required bool importing, String? takeId}) async {
     if (_transferBusy || store.pending) return;
+    if (store.state['input_mode'] != 'live' ||
+        store.state['transport'] != 'stopped') {
+      _snapshotMessage(
+          'Stop playback and return to live before transferring a take.');
+      return;
+    }
     if (!store.canAdminRemote ||
         !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       _snapshotMessage(
@@ -515,7 +550,9 @@ class _RecorderPageState extends State<RecorderPage> {
                     child: const Text('Native take folder')),
                 SimpleDialogOption(
                     onPressed: () => Navigator.pop(context, 'tracks'),
-                    child: const Text('Mono WAV tracks folder')),
+                    child: Text(importing
+                        ? 'Mono WAV tracks folder (OpenFader export)'
+                        : 'Mono WAV tracks folder')),
                 if (!importing)
                   const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 24),
@@ -653,29 +690,28 @@ class _RecorderPageState extends State<RecorderPage> {
     }
     final take = store.takes.where((t) => t['id'] == takeId).firstOrNull;
     final takeChannels = recorderChannelCount(take);
-    final layoutChannels = recorderChannelCount(store.state);
-    if (takeChannels == 0 || layoutChannels == 0) {
+    if (takeChannels < 1 || takeChannels > 64) {
       message(
-          'Playback layout is unavailable. Select a take and configure the audio interface.');
+          'This take has an unsupported channel layout (maximum 64 tracks).');
       return;
     }
-    final requiredOutputs =
-        takeChannels > layoutChannels ? takeChannels : layoutChannels;
     setState(() => _startingPlay = true);
     try {
-      if (store.state['selected_device_id'] == null) {
-        await store.refreshDevices();
-        if (!mounted) return;
-        final devices = store.devices
-            .where(
-                (d) => (d['output_channels'] as num? ?? 0) >= requiredOutputs)
-            .toList();
-        if (devices.isEmpty) {
-          message(
-              'Connect an audio interface with at least $requiredOutputs outputs, then refresh Audio interface in Recorder settings.');
-          return;
-        }
-        final device = await showDialog<String>(
+      await store.refreshDevices();
+      if (!mounted) return;
+      final devices = store.devices
+          .where((d) =>
+              (d['output_channels'] as num? ?? 0) > 0 &&
+              (d['output_channels'] as num? ?? 0) <= 64)
+          .toList();
+      if (devices.isEmpty) {
+        message(
+            'No supported playback interface found. Connect an interface and refresh devices.');
+        return;
+      }
+      var deviceId = store.state['selected_device_id'] as String?;
+      if (!devices.any((d) => d['id'] == deviceId)) {
+        deviceId = await showDialog<String>(
             context: context,
             builder: (context) => SimpleDialog(
                     title: const Text('Choose playback interface'),
@@ -685,61 +721,192 @@ class _RecorderPageState extends State<RecorderPage> {
                             onPressed: () =>
                                 Navigator.pop(context, '${d['id']}'),
                             child: Text(
-                                '${d['name']} · ${d['output_channels']} outputs'))
+                                '${d['name']} · ${d['output_channels']} outputs · ${d['sample_rate']} Hz')),
                     ]));
-        if (device == null || !mounted) return;
-        await store.command('select_device', {'device_id': device});
+        if (deviceId == null || !mounted) return;
+        await store.command('select_device', {'device_id': deviceId});
         if (store.error != null) {
           message(store.error!);
           return;
         }
       }
-      if (!mounted || !store.connected || store.pending) return;
-      final selectedDevice = store.devices
-          .where((d) => d['id'] == store.state['selected_device_id'])
-          .firstOrNull;
-      if (selectedDevice != null &&
-          (selectedDevice['output_channels'] as num? ?? 0) < requiredOutputs) {
-        message(
-            'The selected interface needs at least $requiredOutputs outputs.');
+      if (!mounted) return;
+      final selected = devices.where((d) => d['id'] == deviceId).firstOrNull;
+      if (selected == null) {
+        message('The selected interface is unavailable.');
+        return;
+      }
+      final outputs = (selected['output_channels'] as num).toInt();
+      if (take?['sample_rate'] != selected['sample_rate']) {
+        message('The take and interface sample rates must match.');
         return;
       }
       final caps = store.state['capabilities'] as Map? ?? {};
-      if (caps['soundcheck'] != true) {
-        message(store.state['soundcheck_reason']?.toString() ??
-            store.error ??
-            'Soundcheck is unavailable for the selected interface and mixer routing. Check Recorder settings.');
-        return;
-      }
+      final choice = await showDialog<String>(
+          context: context,
+          builder: (context) => SimpleDialog(
+                  title: const Text('Choose soundcheck routing'),
+                  children: [
+                    SimpleDialogOption(
+                        onPressed: () => Navigator.pop(context, 'manual'),
+                        child: const Text(
+                            'Manual routing · any compatible interface')),
+                    if (caps['soundcheck'] == true)
+                      SimpleDialogOption(
+                          onPressed: () => Navigator.pop(context, 'automatic'),
+                          child: const Text('Automatic mixer routing')),
+                    if (caps['soundcheck'] != true)
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                              'Automatic routing unavailable: ${store.state['soundcheck_reason'] ?? 'no verified mixer profile'}')),
+                  ]));
+      if (choice == null || !mounted) return;
       if (!await _offerSnapshotRecall(takeId) ||
           !mounted ||
           store.pending ||
           !store.connected) {
         return;
       }
-      final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-                  title: const Text('Play virtual soundcheck?'),
-                  content: const Text(
-                      'Play this take through the mixer’s USB returns. Your live input routing will be saved. Use Return to live when finished.'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel')),
-                    FilledButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Play'))
-                  ]));
-      if (confirmed != true || !mounted || store.pending || !store.connected) {
-        return;
+      if (choice == 'automatic') {
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    title: const Text('Play virtual soundcheck?'),
+                    content: const Text(
+                        'Play through the mixer returns. Live input routing will be saved and restored when you return to live.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Play'))
+                    ]));
+        if (confirmed == true && mounted && !store.pending && store.connected) {
+          await store.command('enter_soundcheck', {'take_id': takeId});
+        }
+      } else {
+        final mapping =
+            List<int?>.generate(takeChannels, (i) => i < outputs ? i : null);
+        final chosen = await showDialog<List<int?>>(
+            context: context,
+            builder: (context) => StatefulBuilder(
+                builder: (context, update) => AlertDialog(
+                      title: const Text('Map tracks to interface outputs'),
+                      content: SizedBox(
+                          width: 420,
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            Text(
+                                '${selected['name']} · ${selected['sample_rate']} Hz · $outputs outputs'),
+                            const Text(
+                                'Unassigned tracks are silent. Each assigned output must be unique.'),
+                            Flexible(
+                                child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: takeChannels,
+                                    itemBuilder: (context, i) => Row(children: [
+                                          Expanded(
+                                              child: Text('Track ${i + 1}')),
+                                          DropdownButton<int?>(
+                                              value: mapping[i],
+                                              items: [
+                                                const DropdownMenuItem<int?>(
+                                                    value: null,
+                                                    child: Text('Unassigned')),
+                                                for (var n = 0;
+                                                    n < outputs;
+                                                    n++)
+                                                  DropdownMenuItem<int?>(
+                                                      value: n,
+                                                      child: Text(
+                                                          'Output ${n + 1}'))
+                                              ],
+                                              onChanged: (v) =>
+                                                  update(() => mapping[i] = v))
+                                        ])))
+                          ])),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel')),
+                        FilledButton(
+                            onPressed: () {
+                              final assigned =
+                                  mapping.whereType<int>().toList();
+                              if (assigned.isEmpty ||
+                                  assigned.toSet().length != assigned.length) {
+                                message(
+                                    'Assign at least one track and use each output only once.');
+                                return;
+                              }
+                              Navigator.pop(context, mapping);
+                            },
+                            child: const Text('Continue'))
+                      ],
+                    )));
+        if (chosen == null || !mounted) return;
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    title: const Text('Confirm manual routing'),
+                    content: const Text(
+                        'Before playing, route the mixer inputs to the selected interface returns and set safe output levels. OpenFader will not change mixer routing. You must restore live inputs yourself afterwards.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Routing is ready · play'))
+                    ]));
+        if (confirmed != true ||
+            !mounted ||
+            store.pending ||
+            !store.connected ||
+            !_takeAvailable(takeId) ||
+            store.state['selected_device_id'] != deviceId) {
+          return;
+        }
+        await store.command('enter_manual_soundcheck', {
+          'take_id': takeId,
+          'output_mapping': chosen,
+          'routing_confirmed': true,
+          'expected_device_id': deviceId
+        });
       }
-      // Entering soundcheck prepares the helper, switches routing and starts
-      // playback as one host operation. Never queue a second autoplay command.
-      await store.command('enter_soundcheck', {'take_id': takeId});
       if (store.error != null) message(store.error!);
     } finally {
       if (mounted) setState(() => _startingPlay = false);
+    }
+  }
+
+  Future<void> _returnManualLive() async {
+    if (store.pending) return;
+    await store.command('stop_manual_output');
+    if (store.error != null || !mounted) {
+      if (store.error != null) _snapshotMessage(store.error!);
+      return;
+    }
+    if (!mounted || store.pending) return;
+    final restored = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Restore live inputs'),
+              content: const Text(
+                  'Playback output is stopped. Restore the mixer’s physical live input routing yourself, then confirm below. OpenFader does not change the mixer in manual mode.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Not yet')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Live routing restored'))
+              ],
+            ));
+    if (restored == true && mounted) {
+      await store.command('return_manual_live', {'routing_restored': true});
     }
   }
 
@@ -920,6 +1087,10 @@ class _RecorderPageState extends State<RecorderPage> {
                                   child: IconButton(
                                       onPressed: enabled && needsLive
                                           ? () async {
+                                              if (s['manual_routing'] == true) {
+                                                await _returnManualLive();
+                                                return;
+                                              }
                                               final confirmed =
                                                   await showDialog<bool>(
                                                 context: context,
@@ -1251,7 +1422,23 @@ class _RecorderPageState extends State<RecorderPage> {
                       store.error ??
                           '${s['error'] ?? 'Recorder host is unavailable.'}',
                       style: TextStyle(color: p.amber))),
-            if (recovery)
+            if (recovery && s['manual_routing'] == true)
+              panel(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text('Manual routing needs attention',
+                        style: TextStyle(
+                            color: p.amber, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(
+                        'Restore the mixer’s live inputs yourself. Playback remains unavailable until you confirm.',
+                        style: TextStyle(color: p.text1)),
+                    FilledButton(
+                        onPressed: enabled ? _returnManualLive : null,
+                        child: const Text('Restore live inputs')),
+                  ])),
+            if (recovery && s['manual_routing'] != true)
               SizedBox(
                   height: 220,
                   child: SingleChildScrollView(
@@ -1515,6 +1702,11 @@ class _RecorderPageState extends State<RecorderPage> {
                                       importing: false,
                                       takeId: take['id'] as String),
                               child: const Text('Export take')),
+                          if (_snapshotLinks.containsKey(take['id']))
+                            TextButton(
+                                onPressed: () =>
+                                    _unlinkSnapshot(take['id'] as String),
+                                child: const Text('Remove snapshot link')),
                           TextButton(
                               onPressed: enabled && !recording && !soundcheck
                                   ? () => _linkSnapshot(take['id'] as String)
