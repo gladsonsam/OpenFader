@@ -2,6 +2,9 @@
 
 #include <optional>
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -51,6 +54,15 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  static const UINT update_quit = RegisterWindowMessageW(
+      L"OpenFader.UpdateQuit.72F47CF8-58B0-4C0D-848A-B1CB33E768F7");
+  if (update_quit && message == update_quit && flutter_controller_) {
+    flutter::MethodChannel<flutter::EncodableValue> channel(
+        flutter_controller_->engine()->messenger(), "openfader/desktop",
+        &flutter::StandardMethodCodec::GetInstance());
+    channel.InvokeMethod("requestQuit", nullptr);
+    return 0x4f465131;  // Acknowledges protocol support, not completion.
+  }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
