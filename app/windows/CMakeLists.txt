@@ -52,6 +52,12 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Standalone helper is extracted by Setup and has no Flutter runtime dependency.
+add_executable(openfader-update-helper WIN32 "runner/update_helper.cpp")
+target_compile_features(openfader-update-helper PRIVATE cxx_std_17)
+target_link_libraries(openfader-update-helper PRIVATE advapi32 shell32)
+
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -72,7 +78,7 @@ endif()
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
-install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+install(TARGETS ${BINARY_NAME} openfader-update-helper RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
