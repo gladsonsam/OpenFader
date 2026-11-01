@@ -645,6 +645,7 @@ async fn worker_with_config(
                                                 match (action, format) {
                                                     ("import_take", "wav") => openfader_audio::transfer::import_wav(&transfer, &take),
                                                     ("import_take", "native") => openfader_audio::transfer::copy_take(&transfer, &take),
+                                                    ("import_take", "tracks") => openfader_audio::transfer::import_tracks(&transfer, &take),
                                                     ("export_take", "wav") => openfader_audio::transfer::export_wav(&take, &transfer),
                                                     ("export_take", "native") => openfader_audio::transfer::copy_take(&take, &transfer),
                                                     ("export_take", "tracks") => openfader_audio::transfer::export_tracks(&take, &transfer),
