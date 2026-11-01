@@ -34,6 +34,19 @@ pub fn playback_output_mask(mask: Option<Vec<bool>>, channels: u16) -> std::io::
     Ok(mask)
 }
 
+/// Hold while a playback helper can open or emit audio. A recovering host must
+/// acquire this same per-recorder lock before treating old output as stopped.
+pub fn playback_guard(root: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join("playback.lock"))?;
+    file.try_lock().map_err(std::io::Error::other)?;
+    Ok(file)
+}
+
 #[cfg(test)]
 mod mask_defaults_tests {
     use super::playback_output_mask;
@@ -614,17 +627,4 @@ mod waveform_tests {
         assert!(waveform_peaks(&root, "take", 0, 5, 2).is_err());
         fs::remove_dir_all(root).unwrap();
     }
-}
-
-/// Hold while a playback helper can open or emit audio. A recovering host must
-/// acquire this same per-recorder lock before treating old output as stopped.
-pub fn playback_guard(root: &std::path::Path) -> std::io::Result<std::fs::File> {
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(root.join("playback.lock"))?;
-    file.try_lock().map_err(std::io::Error::other)?;
-    Ok(file)
 }
