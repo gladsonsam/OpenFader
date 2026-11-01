@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
 import '../core/channel_name.dart';
@@ -92,17 +91,11 @@ class MixerController extends ChangeNotifier {
   /// Horizontal scroll offset, retained across tab switches so returning
   /// home lands on the same mixer view.
   double scrollOffset = 0;
-  bool _demoSeeded = false;
-  bool _allowDemoSeed;
-  bool _seeding = false;
   bool _disposed = false;
   String _driver;
-  MixerController(this.store, {bool seedReferenceDemo = false})
-      : _allowDemoSeed = seedReferenceDemo,
-        _driver = store.engine.driver {
+  MixerController(this.store) : _driver = store.engine.driver {
     store.addListener(_changed);
     PrefsService.instance.addListener(_layersChanged);
-    scheduleMicrotask(_maybeSeedDemo);
   }
   bool get demo => store.engine.driver == 'sim';
   bool get connected => store.engine.connected;
@@ -124,6 +117,9 @@ class MixerController extends ChangeNotifier {
     }
     return '$make $model';
   }
+
+  String? get sendsOnFadersBusName =>
+      store.masterProcessingTarget.startsWith('bus/') ? store.masterName : null;
 
   String get error => store.visibleError;
   int get page => _page;
@@ -190,7 +186,7 @@ class MixerController extends ChangeNotifier {
   /// page. See AppStore: the hot path updates these in place with no
   /// global notifyListeners().
   ValueListenable<double> faderNoteOf(int? ch, bool master) =>
-      master || ch == null ? store.masterFaderNote : store.faderOf(ch);
+      master || ch == null ? store.masterFaderNote : store.mixerFaderOf(ch);
   ValueListenable<bool> muteNoteOf(int? ch, bool master) =>
       master || ch == null ? store.masterMutedNote : store.muteOf(ch);
   ValueListenable<double> panNoteOf(int ch) => store.panNoteOf(ch);
@@ -233,7 +229,7 @@ class MixerController extends ChangeNotifier {
       colorChoice: store.channelColorChoice(s.ch),
       iconChoice: store.channelIconChoice(s.ch),
       hasIconChoices: store.hasChannelIconChoices,
-      fader: store.faderOf(s.ch).value,
+      fader: store.mixerFaderOf(s.ch).value,
       pan: store.panOf(s.ch),
       muted: store.muteOf(s.ch).value,
       solo: store.soloOf(s.ch),
@@ -322,7 +318,6 @@ class MixerController extends ChangeNotifier {
       _selectedKey = null;
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
       _page = 0;
-      _allowDemoSeed = false;
     }
     for (final strip in store.strips) {
       if (strip.key != _selectedKey) continue;
@@ -353,7 +348,6 @@ class MixerController extends ChangeNotifier {
         !store.strips.any((s) => s.key == focusKey)) {
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
     }
-    _maybeSeedDemo();
     notifyListeners();
   }
 
@@ -376,39 +370,6 @@ class MixerController extends ChangeNotifier {
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
     }
     notifyListeners();
-  }
-
-  Future<void> _maybeSeedDemo() async {
-    if (_disposed ||
-        !demo ||
-        !_allowDemoSeed ||
-        _demoSeeded ||
-        _seeding ||
-        store.strips.length < 8) {
-      return;
-    }
-    _seeding = true;
-    _demoSeeded = true;
-    // Explicitly isolated to the demo driver. No reference names or values
-    // are ever written to a desk, including a driver switch during awaits.
-    final strips = store.strips.take(8).toList();
-    for (var i = 0; i < strips.length; i++) {
-      if (_disposed || !demo || !_allowDemoSeed) break;
-      final s = strips[i], ref = mixerDemoStrips[i];
-      await store.sendCommand(Cmds.param(s.ch, 'name', ref.name));
-      if (_disposed || !demo || !_allowDemoSeed) break;
-      store.setFader(s.ch, MixerFaderScale.toEngine(ref.value));
-      store.setPan(s.ch, (ref.pan - 50) / 36);
-      store.setMute(s.ch, false);
-    }
-    if (!_disposed && demo && _allowDemoSeed) {
-      store.setMasterFader(MixerFaderScale.toEngine(mixerDemoStrips[8].value));
-      store.setMasterMuted(false);
-      if (_selectedKey == null || _selectedKey == strips.first.key) {
-        select(_channel(strips[1]));
-      }
-    }
-    _seeding = false;
   }
 
   void configurePageSize(int count) {
@@ -459,7 +420,7 @@ class MixerController extends ChangeNotifier {
       store.setMasterFader(value);
     } else {
       final channel = ch.channel!;
-      store.setFader(channel, value);
+      store.setMixerFader(channel, value);
       // Stereo-locked pair: drive the mate to the SAME engine value so both
       // optimistic notifiers move together and the pair never separates
       // mid-drag. Fader only — pan/mute/solo stay independent. setFader
@@ -467,7 +428,7 @@ class MixerController extends ChangeNotifier {
       final pair = _linkedPair(channel);
       if (pair != null) {
         final mate = pair.first == channel ? pair.last : pair.first;
-        if (mate != channel) store.setFader(mate, value);
+        if (mate != channel) store.setMixerFader(mate, value);
       }
     }
   }
@@ -574,7 +535,7 @@ class MixerController extends ChangeNotifier {
       final live = ch.master
           ? store.masterFaderNote.value
           : ch.channel != null
-              ? store.faderOf(ch.channel!).value
+              ? store.mixerFaderOf(ch.channel!).value
               : ch.fader;
       setPosition(ch, MixerFaderScale.fromEngine(live) + delta);
     }
