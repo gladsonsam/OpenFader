@@ -625,6 +625,32 @@ async fn worker_with_config(
                                         s.stop().map_err(|e| e.to_string())
                                     }
                                 }
+                                "import_take" | "export_take" if client.is_some() || pending.is_some() || s.status().transport != "stopped" => {
+                                    Err("stop transport before transferring takes".to_string())
+                                }
+                                "import_take" | "export_take" => {
+                                    let safe = |s: &str| {
+                                        !s.is_empty() && !s.starts_with('.')
+                                            && !s.contains(['/', '\\', ':', '\0'])
+                                    };
+                                    match (args["take_id"].as_str(), args["transfer_name"].as_str(), args["format"].as_str()) {
+                                        (Some(take), Some(name), Some(format)) if safe(take) && safe(name) && take != "transfers" => {
+                                            let transfers = root.join("transfers");
+                                            std::fs::create_dir_all(&transfers).map_err(|e| e.to_string()).and_then(|_| {
+                                                let transfer = transfers.join(name);
+                                                let take = root.join(take);
+                                                match (action, format) {
+                                                    ("import_take", "wav") => openfader_audio::transfer::import_wav(&transfer, &take),
+                                                    ("import_take", "native") => openfader_audio::transfer::copy_take(&transfer, &take),
+                                                    ("export_take", "wav") => openfader_audio::transfer::export_wav(&take, &transfer),
+                                                    ("export_take", "native") => openfader_audio::transfer::copy_take(&take, &transfer),
+                                                    _ => return Err("format must be wav or native".to_string()),
+                                                }.map(|_| ()).map_err(|e| e.to_string())
+                                            })
+                                        }
+                                        _ => Err("valid take_id, transfer_name and format required".to_string()),
+                                    }
+                                }
                                 "load_take" => args["take_id"]
                                     .as_str()
                                     .ok_or_else(|| "take_id required".to_string())
