@@ -270,8 +270,16 @@ mixin _AppStoreMeters on _AppStoreContext {
     _send(Cmds.spectrumTarget(ch));
   }
 
+  Object? _channelSpectrumOwner;
+
   @override
-  void setChannelSpectrumActive(bool active) {
+  void setChannelSpectrumActive(bool active, {Object? owner}) {
+    // New and retiring EQ pages can overlap for one frame when swiping
+    // channels. Only the current owner may stop the analyzer subscription.
+    if (!active && owner != null && !identical(owner, _channelSpectrumOwner)) {
+      return;
+    }
+    _channelSpectrumOwner = active ? owner : null;
     if (engine.driver != 'xair') return;
     _send(Cmds.spectrumTarget(active ? _channel : null));
   }

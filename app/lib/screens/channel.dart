@@ -10,6 +10,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import '../core/channel_views.dart';
 import '../core/audio_spectrum_peaks.dart';
@@ -84,7 +85,7 @@ abstract class ChannelStore extends ChangeNotifier
           AudioSpectrumPeaks.empty());
 
   void resetAudioSpectrumPeaks() {}
-  void setChannelSpectrumActive(bool active) {}
+  void setChannelSpectrumActive(bool active, {Object? owner}) {}
   bool get hasDynamicsMeters => false;
   ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
       const AlwaysStoppedAnimation<ChannelDynamicsMetersVm?>(null);
@@ -203,12 +204,16 @@ class ChannelPage extends StatefulWidget {
   final Widget? mixerControls;
   final ValueNotifier<ChannelFocus?>? controlFocus;
 
+  /// Positive steps select the next channel in the shell's bank/layer order.
+  final ValueChanged<int>? onChannelStep;
+
   const ChannelPage(
       {super.key,
       required this.stripKey,
       required this.store,
       this.mixerControls,
-      this.controlFocus});
+      this.controlFocus,
+      this.onChannelStep});
 
   @override
   State<ChannelPage> createState() => _ChannelPageState();
@@ -219,6 +224,11 @@ class _ChannelPageState extends State<ChannelPage> {
   bool _swipeMultiTouch = false;
   double _swipeDistance = 0;
   ChannelTab? _swipeTab;
+  String? _swipeStripKey;
+  int? _swipeEpoch;
+  VelocityTracker? _swipeVelocity;
+  double _edgeSwipeDistance = 0;
+  bool _scrollStartedAtTop = false, _scrollStartedAtBottom = false;
 
   late final _focus = widget.controlFocus ?? ValueNotifier<ChannelFocus?>(null);
 
@@ -240,49 +250,134 @@ class _ChannelPageState extends State<ChannelPage> {
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
   }
 
+  ChannelTab _navigationTab(ChannelStore store) =>
+      _availableTabs(store).contains(store.tab) ? store.tab : ChannelTab.input;
+
+  void _finishSwipe(
+      ChannelStore store, Axis axis, double distance, double velocity) {
+    final start = _swipeTab;
+    _swipeTab = null;
+    _edgeSwipeDistance = 0;
+    if (!mounted ||
+        _swipeMultiTouch ||
+        start == null ||
+        _navigationTab(store) != start ||
+        store.stripKey != _swipeStripKey ||
+        store.connectionEpoch != _swipeEpoch) {
+      return;
+    }
+    if (distance.abs() < 56 &&
+        !(distance.abs() >= 24 &&
+            velocity.abs() >= 450 &&
+            velocity.sign == distance.sign)) {
+      return;
+    }
+    if (axis == Axis.horizontal) {
+      widget.onChannelStep?.call(distance < 0 ? 1 : -1);
+      return;
+    }
+    final tabs = _availableTabs(store);
+    final index = tabs.indexOf(start);
+    if (index < 0) return;
+    // The processor rail is ordered top-to-bottom: up selects the previous
+    // processor, down the next. Boundaries stop rather than wrapping.
+    final next = index + (distance < 0 ? -1 : 1);
+    if (next >= 0 && next < tabs.length) _switchTab(store, tabs[next]);
+  }
+
+  bool _trackScrollEdge(ScrollNotification notification) {
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _scrollStartedAtTop = notification.metrics.extentBefore <= .5;
+      _scrollStartedAtBottom = notification.metrics.extentAfter <= .5;
+      _edgeSwipeDistance = 0;
+    }
+    final details = switch (notification) {
+      OverscrollNotification() => notification.dragDetails,
+      ScrollUpdateNotification() => notification.dragDetails,
+      _ => null,
+    };
+    if (details == null || _swipeMultiTouch || _swipeTab == null) return false;
+    final delta = details.delta.dy;
+    // Only a fresh outward swipe that starts at a boundary can navigate.
+    // Scrolling to a boundary in the middle of a drag never changes pages.
+    final outward = (_scrollStartedAtTop &&
+            notification.metrics.extentBefore <= .5 &&
+            delta > 0) ||
+        (_scrollStartedAtBottom &&
+            notification.metrics.extentAfter <= .5 &&
+            delta < 0);
+    _edgeSwipeDistance = outward ? _edgeSwipeDistance + delta : 0;
+    return false;
+  }
+
+  void _startSwipePointer(ChannelStore store, PointerEvent event) {
+    if (_swipePointers.isEmpty) {
+      _swipeMultiTouch = false;
+      _swipeTab = _navigationTab(store);
+      _swipeStripKey = store.stripKey;
+      _swipeEpoch = store.connectionEpoch;
+      _edgeSwipeDistance = 0;
+      _scrollStartedAtTop = false;
+      _scrollStartedAtBottom = false;
+      _swipeVelocity = VelocityTracker.withKind(event.kind)
+        ..addPosition(event.timeStamp, event.position);
+    }
+    _swipePointers.add(event.pointer);
+    if (_swipePointers.length > 1) _swipeMultiTouch = true;
+  }
+
+  void _endSwipePointer(ChannelStore store, PointerEvent event,
+      {bool trackPosition = true}) {
+    if (trackPosition) {
+      _swipeVelocity?.addPosition(event.timeStamp, event.position);
+    }
+    final distance = _edgeSwipeDistance;
+    final velocity = _swipeVelocity?.getVelocity().pixelsPerSecond.dy ?? 0;
+    _swipePointers.remove(event.pointer);
+    if (distance != 0) {
+      // Let the scroll recognizer finish before replacing its page.
+      scheduleMicrotask(
+          () => _finishSwipe(store, Axis.vertical, distance, velocity));
+    }
+  }
+
   Widget _swipeNavigation(ChannelStore store, Widget child) {
     return Listener(
-      onPointerDown: (event) {
-        if (_swipePointers.isEmpty) _swipeMultiTouch = false;
-        _swipePointers.add(event.pointer);
-        if (_swipePointers.length > 1) _swipeMultiTouch = true;
-      },
-      onPointerUp: (event) => _swipePointers.remove(event.pointer),
+      onPointerDown: (event) => _startSwipePointer(store, event),
+      onPointerMove: (event) =>
+          _swipeVelocity?.addPosition(event.timeStamp, event.position),
+      onPointerUp: (event) => _endSwipePointer(store, event),
+      onPointerPanZoomStart: (event) => _startSwipePointer(store, event),
+      onPointerPanZoomUpdate: (event) => _swipeVelocity?.addPosition(
+          event.timeStamp, event.position + event.pan),
+      onPointerPanZoomEnd: (event) =>
+          _endSwipePointer(store, event, trackPosition: false),
       onPointerCancel: (event) {
         _swipePointers.remove(event.pointer);
         _swipeMultiTouch = true;
+        _swipeTab = null;
       },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        // Descendant graph and slider recognizers win over this fallback
-        // so editing a control cannot also change tabs.
-        onHorizontalDragStart: (_) {
-          _swipeDistance = 0;
-          _swipeTab = store.tab;
-        },
-        onHorizontalDragUpdate: (details) {
-          _swipeDistance += details.delta.dx;
-        },
-        onHorizontalDragEnd: (details) {
-          final start = _swipeTab;
-          _swipeTab = null;
-          if (_swipeMultiTouch || start == null || store.tab != start) return;
-          final velocity = details.primaryVelocity ?? 0;
-          if (_swipeDistance.abs() < 56 &&
-              !(_swipeDistance.abs() >= 24 &&
-                  velocity.abs() >= 450 &&
-                  velocity.sign == _swipeDistance.sign)) {
-            return;
-          }
-          final tabs = _availableTabs(store);
-          final index = tabs.indexOf(start);
-          final next = index + (_swipeDistance < 0 ? 1 : -1);
-          if (next >= 0 && next < tabs.length) {
-            _switchTab(store, tabs[next]);
-          }
-        },
-        onHorizontalDragCancel: () => _swipeTab = null,
-        child: child,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _trackScrollEdge,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          // Graph/slider recognizers retain their edits. Scroll views consume
+          // vertical drags while they have content in that direction.
+          onHorizontalDragStart: (_) => _swipeDistance = 0,
+          onHorizontalDragUpdate: (details) =>
+              _swipeDistance += details.delta.dx,
+          onHorizontalDragEnd: (details) => _finishSwipe(store, Axis.horizontal,
+              _swipeDistance, details.primaryVelocity ?? 0),
+          onVerticalDragStart: (_) => _swipeDistance = 0,
+          onVerticalDragUpdate: (details) => _swipeDistance += details.delta.dy,
+          onVerticalDragEnd: (details) => _finishSwipe(store, Axis.vertical,
+              _swipeDistance, details.primaryVelocity ?? 0),
+          child: child,
+        ),
       ),
     );
   }
@@ -340,24 +435,33 @@ class _ChannelPageState extends State<ChannelPage> {
               return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (wide)
-                      Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
-                          child: SizedBox(
-                              width: bounds.maxWidth * 178 / 1823,
-                              child: _SideMenu(
-                                  store: store,
-                                  tab: selectedTab,
-                                  onTab: (t) => _switchTab(store, t)))),
                     Expanded(
-                        child: Column(children: [
-                      Expanded(child: _swipeNavigation(store, content)),
-                      if (!wide)
-                        _BottomNav(
-                            store: store,
-                            tab: selectedTab,
-                            onTab: (t) => _switchTab(store, t)),
-                    ])),
+                        child: _swipeNavigation(
+                            store,
+                            Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (wide)
+                                    Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            8, 12, 8, 12),
+                                        child: SizedBox(
+                                            width: bounds.maxWidth * 178 / 1823,
+                                            child: _SideMenu(
+                                                store: store,
+                                                tab: selectedTab,
+                                                onTab: (t) =>
+                                                    _switchTab(store, t)))),
+                                  Expanded(
+                                      child: Column(children: [
+                                    Expanded(child: content),
+                                    if (!wide)
+                                      _BottomNav(
+                                          store: store,
+                                          tab: selectedTab,
+                                          onTab: (t) => _switchTab(store, t)),
+                                  ])),
+                                ]))),
                     SizedBox(width: stripWidth, child: widget.mixerControls),
                   ]);
             });

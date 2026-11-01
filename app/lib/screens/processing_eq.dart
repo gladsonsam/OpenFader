@@ -16,7 +16,7 @@ class _EqTabState extends State<_EqTab> {
     final session = widget.store.connectionEpoch;
     if (_spectrumSession == session) return;
     _spectrumSession = session;
-    widget.store.setChannelSpectrumActive(true);
+    widget.store.setChannelSpectrumActive(true, owner: this);
   }
 
   @override
@@ -29,7 +29,7 @@ class _EqTabState extends State<_EqTab> {
   @override
   void dispose() {
     widget.store.removeListener(_followSpectrumSession);
-    widget.store.setChannelSpectrumActive(false);
+    widget.store.setChannelSpectrumActive(false, owner: this);
     super.dispose();
   }
 

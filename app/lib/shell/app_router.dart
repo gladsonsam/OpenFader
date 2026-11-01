@@ -750,7 +750,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               stripKey: store.stripKey,
               store: store,
               mixerControls: _processingMixerControls(),
-              controlFocus: _channelFocus),
+              controlFocus: _channelFocus,
+              onChannelStep: _mixer.moveProcessingSelection),
       AppTab.scenes => U4ScenesPage(store: _scenes),
       AppTab.fx => U4FxPage(
           store: _fx,
