@@ -108,7 +108,13 @@ class MixerToolbar extends StatelessWidget {
                                                 color:
                                                     ConsolePalette.of(context)
                                                         .mutedText)),
-                                        Text(_controlLabel(focus.control),
+                                        Text(
+                                            _controlLabel(focus.control,
+                                                sendMix: channel?.master ==
+                                                        false
+                                                    ? controller
+                                                        .sendsOnFadersBusName
+                                                    : null),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: mixerType(
@@ -249,8 +255,10 @@ class _MixerConnectionStatus extends StatelessWidget {
 String _targetLabel(MixerChannel channel) =>
     channel.master && channel.name == 'Main' ? 'Main LR' : channel.name;
 
-String _controlLabel(MixerReadoutControl control) => switch (control) {
-      MixerReadoutControl.volume => 'Volume',
+String _controlLabel(MixerReadoutControl control, {String? sendMix}) =>
+    switch (control) {
+      MixerReadoutControl.volume =>
+        sendMix == null ? 'Volume' : 'Send → $sendMix',
       MixerReadoutControl.pan => 'Pan',
       MixerReadoutControl.gain => 'Gain',
     };
@@ -310,7 +318,7 @@ class _SelectedLevel extends StatelessWidget {
             ? controller.connected
                 ? 'No channel selected'
                 : 'Connecting'
-            : '${_targetLabel(ch)} ${_controlLabel(control)}, $text, activate to type a value',
+            : '${_targetLabel(ch)} ${_controlLabel(control, sendMix: ch.master ? null : controller.sendsOnFadersBusName)}, $text, activate to type a value',
         onTap: onEdit,
         child: GestureDetector(
             onTap: onEdit,
@@ -353,7 +361,7 @@ Future<void> _typeControl(BuildContext context, MixerController controller,
   final value = await showNumberEntry(
       context: context,
       title:
-          '${_targetLabel(channel)} ${_controlLabel(control)}${pan ? ' (−100 L … +100 R)' : ''}',
+          '${_targetLabel(channel)} ${_controlLabel(control, sendMix: channel.master ? null : controller.sendsOnFadersBusName)}${pan ? ' (−100 L … +100 R)' : ''}',
       initial: volume ? fmtDb(initial) : initial.toStringAsFixed(1),
       min: volume ? -60 : (pan ? -100 : gainRange!.first),
       max: volume ? 10 : (pan ? 100 : gainRange!.last),

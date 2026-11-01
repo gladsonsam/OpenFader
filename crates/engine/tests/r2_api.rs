@@ -1817,3 +1817,53 @@ async fn connect_silent_desk_fails_without_planting_addr() {
     assert_eq!(v.get("list").and_then(Value::as_array).unwrap().len(), 0);
     assert!(v.get("scanned_at").and_then(Value::as_u64).unwrap_or(0) > 0);
 }
+
+/// Destination writes must leave LR and channel identity untouched. This is
+/// entirely in-process against sim; no network discovery or hardware runs.
+#[tokio::test]
+async fn selected_send_and_bus_master_do_not_change_lr_or_names() {
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    let before = drain_snapshot(&mut client).await;
+    let before = ev_json(
+        before
+            .iter()
+            .find(|e| matches!(&*e.event, Event::State { .. }))
+            .unwrap(),
+    );
+    for (field, value) in [("send1_level", -18.0), ("send2_level", -6.0)] {
+        client
+            .send(Cmd::Param {
+                ch: 0,
+                field: field.into(),
+                value: json!(value),
+                key: None,
+            })
+            .await
+            .unwrap();
+        wait_for(&mut client, |e| matches!(e, Event::Param { ch: 0, field: f, value: v, .. } if f == field && v == &json!(value))).await;
+    }
+    for (bus, value) in [(0, 0.25), (1, 0.65)] {
+        client.send(Cmd::BusFader { bus, value }).await.unwrap();
+        wait_for(&mut client, |e| matches!(e, Event::Bus {bus: b, fader, ..} if *b == bus && (*fader-value).abs()<1e-6)).await;
+    }
+    let mut observer = engine.attach(None).await;
+    let after = drain_snapshot(&mut observer).await;
+    let after = ev_json(
+        after
+            .iter()
+            .find(|e| matches!(&*e.event, Event::State { .. }))
+            .unwrap(),
+    );
+    assert_eq!(after["main_fader"], before["main_fader"]);
+    let identity_and_lr = |state: &Value| {
+        state["strips"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["key"] != json!("bus/01") && s["key"] != json!("bus/02"))
+            .map(|s| (s["ch"].clone(), s["name"].clone(), s["fader"].clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(identity_and_lr(&after), identity_and_lr(&before));
+}
