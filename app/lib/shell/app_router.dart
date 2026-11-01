@@ -205,9 +205,40 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         var state = await api.recorderRequest('state');
         if (state['error'] != null) throw StateError('${state['error']}');
         if (state['soundcheck_pending'] == true ||
-            state['input_mode'] == 'recovery_required') {
+            (state['input_mode'] == 'recovery_required' &&
+                state['manual_routing'] != true)) {
           throw StateError(
               'Return the recorder to live mode and resolve pending routing recovery before quitting.');
+        }
+        if (state['manual_routing'] == true) {
+          if (!mounted) return false;
+          final stop = await showConsoleConfirmation(context,
+              title: 'Stop manual soundcheck?',
+              message:
+                  'Playback will stop. You will then need to restore the mixer’s live input routing before quitting.',
+              confirmLabel: 'Stop output',
+              danger: true);
+          if (!stop || !mounted) return false;
+          await _recorder.command('stop_manual_output');
+          if (_recorder.error != null) throw StateError(_recorder.error!);
+          state = await api.recorderRequest('state');
+          if (state['transport'] != 'stopped') {
+            throw StateError('Playback output could not be confirmed stopped.');
+          }
+          if (!mounted) return false;
+          final restored = await showConsoleConfirmation(context,
+              title: 'Restore live inputs',
+              message:
+                  'Playback is stopped. Restore physical live routing on the mixer, then confirm. OpenFader does not change mixer routing in manual mode.',
+              confirmLabel: 'Live routing restored');
+          if (!restored || !mounted) return false;
+          await _recorder
+              .command('return_manual_live', {'routing_restored': true});
+          if (_recorder.error != null) throw StateError(_recorder.error!);
+          state = await api.recorderRequest('state');
+          if (state['manual_routing'] == true) {
+            throw StateError('Manual routing recovery remains active.');
+          }
         }
         final transport = state['transport'];
         final needsStop = transport == 'recording' ||
@@ -550,7 +581,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   final transport = state['transport'];
                   if (transport != 'recording' &&
                       mode != 'soundcheck' &&
-                      mode != 'recovery_required') {
+                      mode != 'recovery_required' &&
+                      mode != 'manual_recovery_required') {
                     return const SizedBox.shrink();
                   }
                   return Material(
@@ -562,7 +594,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                               'Recorder: ${transport ?? 'unknown'} · ${mode ?? 'unknown'} · dropouts ${state['xruns'] ?? '—'}',
                               style: TextStyle(
                                   color: ConsolePalette.of(context).text1))),
-                      if (mode == 'soundcheck' || mode == 'recovery_required')
+                      if ((mode == 'soundcheck' ||
+                              mode == 'recovery_required') &&
+                          state['manual_routing'] != true)
                         TextButton(
                             onPressed: _recorder.pending
                                 ? null

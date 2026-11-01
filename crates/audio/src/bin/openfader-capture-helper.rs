@@ -38,10 +38,27 @@ fn main() {
         } else {
             vec![true; device.output_channels as usize]
         };
+        // Lock before READY: once the parent can ask us to play, recovery can
+        // prove this process has exited by acquiring the same lock.
+        let _playback_guard = if playback {
+            Some(openfader_audio::playback_guard(std::path::Path::new(root))?)
+        } else {
+            None
+        };
+        if let Some(session) = request.get("manual_session").and_then(Value::as_str) {
+            let marker =
+                std::fs::read_to_string(std::path::Path::new(root).join("manual-routing-pending"))?;
+            if session.is_empty() || marker != session {
+                return Err(io::Error::other("manual routing session expired"));
+            }
+        }
         let mut service = RecorderService::new(root)?;
         service.select_discovered_device(device)?;
         if playback {
             service.set_playback_mask(mask)?;
+            if let Some(mapping) = request.get("output_mapping").filter(|v| !v.is_null()) {
+                service.set_playback_mapping(serde_json::from_value(mapping.clone())?)?;
+            }
             let id = request["take_id"]
                 .as_str()
                 .ok_or_else(|| io::Error::other("missing take_id"))?;

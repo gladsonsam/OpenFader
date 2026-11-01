@@ -184,7 +184,7 @@ async fn worker_with_config(
                     Ok((returned, result)) => {
                         let state = returned.state();
                         if quarantined && !cancelled && result.is_ok()
-                            && matches!(cmd["action"].as_str(), Some("return_live" | "accept_current_routing")) && state.input_mode == "live"
+                            && matches!(cmd["action"].as_str(), Some("return_live" | "accept_current_routing" | "return_manual_live")) && state.input_mode == "live"
                             && !root.join("routing-journal.json").exists()
                             && quarantine_handle.as_ref().is_some_and(|h| h.output_terminated())
                         {
@@ -241,6 +241,7 @@ async fn worker_with_config(
                             || client.is_some()
                             || s.status().transport == "recording"
                             || root.join("routing-journal.json").exists()
+                            || root.join("manual-routing-pending").exists()
                         {
                             json!({"ok":false,"error":"recording or routing recovery active"})
                         } else {
@@ -328,6 +329,10 @@ async fn worker_with_config(
                                         .is_some_and(|h| h.output_terminated())),
                                 );
                             }
+                            o.insert(
+                                "manual_routing".into(),
+                                json!(root.join("manual-routing-pending").exists()),
+                            );
                             o.insert("soundcheck_pending".into(), json!(backend_task.is_some()));
                             o.insert("soundcheck_overdue".into(), json!(backend_overdue));
                             o.insert("disk_free_bytes".into(), Value::Null);
@@ -447,6 +452,8 @@ async fn worker_with_config(
                                         "rebind_recovery"
                                             | "return_live"
                                             | "accept_current_routing"
+                                            | "stop_manual_output"
+                                            | "return_manual_live"
                                     ) && quarantine_handle
                                         .as_ref()
                                         .is_some_and(|h| h.output_terminated())))
@@ -463,6 +470,7 @@ async fn worker_with_config(
                                 let idle = !capture_active
                                     && !quarantined
                                     && !root.join("routing-journal.json").exists()
+                                    && !root.join("manual-routing-pending").exists()
                                     && cached_backend
                                         .as_ref()
                                         .is_none_or(|(state, _)| state.input_mode == "live");
@@ -502,10 +510,11 @@ async fn worker_with_config(
                             }
                             let dispatch = backend.is_some()
                                 && match action {
-                                    "enter_soundcheck" | "accept_current_routing" => {
-                                        !capture_active
-                                    }
+                                    "enter_soundcheck"
+                                    | "enter_manual_soundcheck"
+                                    | "accept_current_routing" => !capture_active,
                                     "play" | "pause" | "seek" | "set_loop" | "rebind_recovery"
+                                    | "stop_manual_output" | "return_manual_live"
                                     | "return_live" => true,
                                     "stop" => {
                                         quarantined
@@ -521,7 +530,10 @@ async fn worker_with_config(
                                     .checked_add(1)
                                     .expect("backend operation id exhausted");
                                 let mut owned = backend.take().unwrap();
-                                if matches!(action, "enter_soundcheck" | "play") {
+                                if matches!(
+                                    action,
+                                    "enter_soundcheck" | "enter_manual_soundcheck" | "play"
+                                ) {
                                     owned.configure(helper.clone(), selected.clone());
                                 }
                                 backend_cancel = Some(owned.cancellation_handle());
@@ -543,6 +555,14 @@ async fn worker_with_config(
                                 continue;
                             }
                             let result = match cmd["action"].as_str().unwrap_or("") {
+                                "select_device"
+                                    if root.join("manual-routing-pending").exists()
+                                        || cached_backend.as_ref().is_some_and(|(state, _)| {
+                                            state.input_mode != "live"
+                                        }) =>
+                                {
+                                    Err("return to live before changing the interface".into())
+                                }
                                 "select_device" => args["device_id"]
                                     .as_str()
                                     .ok_or_else(|| "device_id required".to_string())
@@ -571,6 +591,7 @@ async fn worker_with_config(
                                         .as_ref()
                                         .is_some_and(|(state, _)| state.input_mode != "live")
                                         || root.join("routing-journal.json").exists()
+                                        || root.join("manual-routing-pending").exists()
                                     {
                                         Err("routing recovery required before recording".into())
                                     } else if pending.is_some() || client.is_some() {
@@ -634,7 +655,11 @@ async fn worker_with_config(
                                     }
                                 }
                                 "import_take" | "export_take"
-                                    if client.is_some()
+                                    if root.join("manual-routing-pending").exists()
+                                        || cached_backend.as_ref().is_some_and(|(state, _)| {
+                                            state.input_mode != "live"
+                                        })
+                                        || client.is_some()
                                         || pending.is_some()
                                         || s.status().transport != "stopped" =>
                                 {
