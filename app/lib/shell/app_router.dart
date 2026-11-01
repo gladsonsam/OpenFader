@@ -144,8 +144,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     widget.store.addListener(_syncChannelFocus);
     _showStart = widget.api is! RemoteHost &&
         PrefsService.instance.startupDest != 'last';
-    _mixer = MixerController(widget.store,
-        seedReferenceDemo: widget.initialTab == AppTab.mixer);
+    _mixer = MixerController(widget.store);
     _conn = ShellConnectionStore(widget.store);
     _routing = ShellRoutingStore(widget.store);
     _scenes = ShellScenesStore(widget.store);

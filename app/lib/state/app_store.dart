@@ -5,7 +5,7 @@
 // state notifies through ChangeNotifier.
 // Mapping gaps, honest not faked: channel writes use canonical desk leaves translated
 // in deskLeaf; EQ and dynamics edits stay disabled until the desk value arrives;
-// the bus popup picks the master bus shown without re-patching routing; binary frames
+// bus selection exposes sends on the surface and the matching master without changing routing; binary frames
 // ride the hot path while poll stays the JSON fallback.
 library;
 
@@ -253,6 +253,9 @@ class AppStore extends _AppStoreContext
     }
     for (final n in _sendParamNotes.values) {
       n.dispose();
+    }
+    for (final note in _mixerFaderNotes.values) {
+      note.dispose();
     }
     _masterFaderNote.dispose();
     _masterMutedNote.dispose();
