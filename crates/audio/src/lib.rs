@@ -1,6 +1,7 @@
 //! Durable multichannel take storage and desktop recorder service.
 
 pub mod process_supervisor;
+pub mod transfer;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -94,6 +95,10 @@ pub struct TakeManifest {
     pub frames: u64,
     pub complete: bool,
     pub segments: Vec<Segment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channel_names: Vec<String>,
+    #[serde(flatten)]
+    pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 fn invalid(message: &str) -> io::Error {
@@ -147,6 +152,9 @@ pub fn read_manifest(dir: impl AsRef<Path>) -> io::Result<TakeManifest> {
 fn validate(m: &TakeManifest) -> io::Result<()> {
     if m.version != 1 || ChannelLayout::new(m.channels).is_err() || m.sample_rate == 0 {
         return Err(invalid("unsupported take manifest"));
+    }
+    if !m.channel_names.is_empty() && m.channel_names.len() != usize::from(m.channels) {
+        return Err(invalid("invalid channel names"));
     }
     let mut frame = 0u64;
     for (i, s) in m.segments.iter().enumerate() {
@@ -212,6 +220,8 @@ impl TakeWriter {
             frames: 0,
             complete: false,
             segments: vec![],
+            channel_names: vec![],
+            metadata: Default::default(),
         };
         publish(&dir, &manifest)?;
         Ok(Self {

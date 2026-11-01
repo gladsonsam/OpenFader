@@ -650,6 +650,18 @@ async fn recorder_request(
     }
     if app.remote_audience
         && request["op"] == "command"
+        && matches!(
+            request["command"]["action"].as_str(),
+            Some("import_take" | "export_take")
+        )
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"ok":false,"error":"transfer requires local administrator"})),
+        );
+    }
+    if app.remote_audience
+        && request["op"] == "command"
         && request["command"]["action"] == "start_recording"
         && !app
             .remote
