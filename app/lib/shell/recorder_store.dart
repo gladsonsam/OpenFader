@@ -26,6 +26,7 @@ class ShellRecorderStore extends RecorderStore {
   late final RecorderCommandGate _gate = RecorderCommandGate(_notify);
   bool _uncertain = false;
   bool _observedUncertainPending = false;
+  String? _uncertainTransferInstance;
   final _random = Random.secure();
   @override
   bool get connected => _connected;
@@ -224,6 +225,7 @@ class ShellRecorderStore extends RecorderStore {
   Future<void> refresh() async {
     if (_refreshing || _disposed) return;
     _refreshing = true;
+    final transferInstance = _uncertainTransferInstance;
     _lastRefresh = DateTime.now();
     Future<(Map<String, dynamic>?, String?)> read(String path) async {
       try {
@@ -243,7 +245,17 @@ class ShellRecorderStore extends RecorderStore {
       _connected = state != null;
       if (state != null) {
         _state = state;
-        if (_uncertain && state['soundcheck_pending'] == true) {
+        if (transferInstance != null &&
+            _uncertainTransferInstance == transferInstance &&
+            host is DesktopHost &&
+            (host as DesktopHost).instanceId == transferInstance) {
+          // This state request was queued behind the transfer on the same host.
+          // Preserve the unknown-outcome error and staging for inspection.
+          _uncertainTransferInstance = null;
+          _uncertain = false;
+        } else if (_uncertain &&
+            _uncertainTransferInstance == null &&
+            state['soundcheck_pending'] == true) {
           _observedUncertainPending = true;
         } else if (_uncertain &&
             _observedUncertainPending &&
@@ -302,6 +314,8 @@ class ShellRecorderStore extends RecorderStore {
       final id = List.generate(
               16, (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'))
           .join();
+      final commandInstance =
+          host is DesktopHost ? (host as DesktopHost).instanceId : null;
       try {
         if (action == 'start_recording' &&
             host?.supportsAdministration == true &&
@@ -330,6 +344,10 @@ class ShellRecorderStore extends RecorderStore {
         }
       } on TimeoutException catch (e) {
         _uncertain = true;
+        if ((action == 'import_take' || action == 'export_take') &&
+            commandInstance != null) {
+          _uncertainTransferInstance = commandInstance;
+        }
         _error =
             'Command $action response timed out: $e. Host outcome is unknown; waiting for host state.';
       } catch (e) {
