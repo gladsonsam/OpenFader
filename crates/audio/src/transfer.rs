@@ -32,6 +32,22 @@ fn stage(parent: &Path) -> io::Result<Stage> {
         }
     }
 }
+/// Reject symbolic links and Windows reparse points at a transfer boundary.
+pub fn reject_link(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    #[cfg(windows)]
+    let reparse = {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    };
+    #[cfg(not(windows))]
+    let reparse = false;
+    if metadata.file_type().is_symlink() || reparse {
+        Err(invalid("symbolic links and reparse points are not allowed"))
+    } else {
+        Ok(())
+    }
+}
 fn no_target(path: &Path) -> io::Result<()> {
     if path.symlink_metadata().is_ok() {
         Err(io::Error::new(
@@ -184,11 +200,14 @@ fn parse(f: &mut File) -> io::Result<Wav> {
     })
 }
 fn validate_take(dir: &Path) -> io::Result<TakeManifest> {
+    reject_link(dir)?;
+    reject_link(&dir.join("manifest.json"))?;
     let m = read_manifest(dir)?;
     if !m.complete || m.frames == 0 {
         return Err(invalid("take incomplete or empty"));
     }
     for s in &m.segments {
+        reject_link(&dir.join(&s.file))?;
         let mut f = File::open(dir.join(&s.file))?;
         let w = parse(&mut f)?;
         if w.rate != m.sample_rate
@@ -205,6 +224,7 @@ fn validate_take(dir: &Path) -> io::Result<TakeManifest> {
 /// Import 16/24/32-bit integer PCM WAV into a new native take directory.
 pub fn import_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
     no_target(destination)?;
+    reject_link(source)?;
     let mut input = File::open(source)?;
     let wav = parse(&mut input)?;
     input.seek(SeekFrom::Start(wav.offset))?;
@@ -257,6 +277,69 @@ pub fn copy_take(source: &Path, destination: &Path) -> io::Result<TakeManifest> 
     commit_dir(&staged, destination)?;
     Ok(m)
 }
+/// Export numbered mono PCM WAV tracks and an ordered manifest in a new folder.
+pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
+    no_target(destination)?;
+    let m = validate_take(source)?;
+    let mono = ChannelLayout::new(1)?;
+    if m.frames > (u32::MAX as u64 - 37) / 3 {
+        return Err(invalid("a mono track exceeds WAV size limit"));
+    }
+    let tmp = stage(parent(destination)?)?;
+    let staged = tmp.0.join("content");
+    fs::create_dir(&staged)?;
+    let mut outputs = Vec::new();
+    let mut entries = Vec::new();
+    for index in 0..m.channels {
+        let filename = format!("track-{:02}.wav", index + 1);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(staged.join(&filename))?;
+        header(&mut file, m.sample_rate, m.frames, mono)?;
+        entries.push(serde_json::json!({"channel":index + 1,"name":m.channel_names.get(index as usize),"file":filename}));
+        outputs.push(file);
+    }
+    let channels = usize::from(m.channels);
+    let mut block = vec![0u8; channels * 3 * 1024];
+    let mut track = vec![0u8; 3 * 1024];
+    for segment in &m.segments {
+        let mut input = File::open(source.join(&segment.file))?;
+        input.seek(SeekFrom::Start(44))?;
+        let mut remaining = segment.frames;
+        while remaining > 0 {
+            let frames = remaining.min(1024) as usize;
+            input.read_exact(&mut block[..frames * channels * 3])?;
+            for (channel, output) in outputs.iter_mut().enumerate() {
+                for frame in 0..frames {
+                    let offset = (frame * channels + channel) * 3;
+                    track[frame * 3..frame * 3 + 3].copy_from_slice(&block[offset..offset + 3]);
+                }
+                output.write_all(&track[..frames * 3])?;
+            }
+            remaining -= frames as u64;
+        }
+    }
+    for mut file in outputs {
+        if m.frames % 2 != 0 {
+            file.write_all(&[0])?;
+            file.seek(SeekFrom::Start(4))?;
+            file.write_all(&(36u32 + (m.frames as u32 * 3) + 1).to_le_bytes())?;
+        }
+        file.sync_all()?;
+    }
+    let manifest = serde_json::json!({"version":1,"sample_rate":m.sample_rate,"frames":m.frames,"tracks":entries});
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(staged.join("manifest.json"))?;
+    serde_json::to_writer_pretty(&mut file, &manifest).map_err(io::Error::other)?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    commit_dir(&staged, destination)?;
+    Ok(m)
+}
+
 /// Export a complete take as 24-bit interleaved PCM WAV, preserving names in an optional OpenFader chunk.
 pub fn export_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
     no_target(destination)?;
@@ -338,6 +421,18 @@ mod tests {
         let mut m = w.finish().unwrap();
         m.channel_names = vec!["Kick".into(), "Vox".into(), "Synth".into()];
         publish(&source, &m).unwrap();
+        let tracks = root.join("tracks");
+        export_tracks(&source, &tracks).unwrap();
+        let listing: serde_json::Value =
+            serde_json::from_reader(File::open(tracks.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(listing["tracks"][1]["name"], "Vox");
+        let mut mono = File::open(tracks.join("track-02.wav")).unwrap();
+        let parsed = parse(&mut mono).unwrap();
+        assert_eq!((parsed.channels, parsed.frames, parsed.rate), (1, 3, 44100));
+        mono.seek(SeekFrom::Start(parsed.offset)).unwrap();
+        let mut data = [0u8; 9];
+        mono.read_exact(&mut data).unwrap();
+        assert_eq!(data, [254, 255, 255, 244, 1, 0, 43, 0, 0]);
         let wav = root.join("out.wav");
         export_wav(&source, &wav).unwrap();
         let imported = root.join("imported");
