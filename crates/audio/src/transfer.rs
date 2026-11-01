@@ -277,6 +277,94 @@ pub fn copy_take(source: &Path, destination: &Path) -> io::Result<TakeManifest> 
     commit_dir(&staged, destination)?;
     Ok(m)
 }
+/// Import an OpenFader numbered mono-track folder into a new take.
+pub fn import_tracks(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
+    no_target(destination)?;
+    reject_link(source)?;
+    reject_link(&source.join("manifest.json"))?;
+    let listing: serde_json::Value =
+        serde_json::from_reader(File::open(source.join("manifest.json"))?)
+            .map_err(|_| invalid("invalid tracks manifest"))?;
+    if listing["version"].as_u64() != Some(1) {
+        return Err(invalid("unsupported tracks manifest"));
+    }
+    let entries = listing["tracks"]
+        .as_array()
+        .ok_or_else(|| invalid("missing tracks"))?;
+    let channels = u16::try_from(entries.len()).map_err(|_| invalid("invalid track count"))?;
+    let layout = ChannelLayout::new(channels)?;
+    let rate = listing["sample_rate"]
+        .as_u64()
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(|| invalid("invalid sample rate"))?;
+    let frames = listing["frames"]
+        .as_u64()
+        .filter(|&v| v > 0)
+        .ok_or_else(|| invalid("invalid frame count"))?;
+    let mut inputs = Vec::new();
+    let mut names = Vec::new();
+    let mut has_names = false;
+    for (index, entry) in entries.iter().enumerate() {
+        let filename = format!("track-{:02}.wav", index + 1);
+        if entry["channel"].as_u64() != Some(index as u64 + 1)
+            || entry["file"].as_str() != Some(&filename)
+        {
+            return Err(invalid("invalid track order or filename"));
+        }
+        let name = match &entry["name"] {
+            serde_json::Value::Null => String::new(),
+            serde_json::Value::String(v) => {
+                has_names = true;
+                v.clone()
+            }
+            _ => return Err(invalid("invalid track name")),
+        };
+        let path = source.join(filename);
+        reject_link(&path)?;
+        let mut file = File::open(path)?;
+        let wav = parse(&mut file)?;
+        if wav.channels != 1 || wav.rate != rate || wav.frames != frames {
+            return Err(invalid("track rate or length differs"));
+        }
+        file.seek(SeekFrom::Start(wav.offset))?;
+        inputs.push((file, usize::from(wav.bits / 8)));
+        names.push(name);
+    }
+    let tmp = stage(parent(destination)?)?;
+    let staged = tmp.0.join("content");
+    let mut writer = TakeWriter::create_with_layout(
+        &staged,
+        rate,
+        (u32::MAX as u64 - 36) / layout.frame_bytes(),
+        layout,
+    )?;
+    let mut remaining = frames;
+    let mut raw = vec![0u8; 4096];
+    while remaining > 0 {
+        let count = remaining.min(1024) as usize;
+        let mut samples = vec![0i32; count * usize::from(channels)];
+        for (channel, (file, bytes)) in inputs.iter_mut().enumerate() {
+            file.read_exact(&mut raw[..count * *bytes])?;
+            for (frame, b) in raw[..count * *bytes].chunks_exact(*bytes).enumerate() {
+                samples[frame * usize::from(channels) + channel] = match *bytes {
+                    2 => i32::from(i16::from_le_bytes([b[0], b[1]])) << 8,
+                    3 => i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8,
+                    _ => i32::from_le_bytes([b[0], b[1], b[2], b[3]]) >> 8,
+                };
+            }
+        }
+        writer.append_interleaved(&samples)?;
+        remaining -= count as u64;
+    }
+    let mut manifest = writer.finish()?;
+    if has_names {
+        manifest.channel_names = names;
+    }
+    publish(&staged, &manifest)?;
+    commit_dir(&staged, destination)?;
+    Ok(manifest)
+}
+
 /// Export numbered mono PCM WAV tracks and an ordered manifest in a new folder.
 pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
     no_target(destination)?;
@@ -400,6 +488,12 @@ pub fn export_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest>
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn waveform_bytes(dir: &Path, m: &TakeManifest) -> Vec<u8> {
+        m.segments
+            .iter()
+            .flat_map(|s| fs::read(dir.join(&s.file)).unwrap().into_iter().skip(44))
+            .collect()
+    }
     fn fixture() -> PathBuf {
         let p = std::env::temp_dir().join(format!(
             "openfader-transfer-test-{}-{}",
@@ -426,6 +520,21 @@ mod tests {
         let listing: serde_json::Value =
             serde_json::from_reader(File::open(tracks.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(listing["tracks"][1]["name"], "Vox");
+        let tracks_import = root.join("tracks-import");
+        let track_manifest = import_tracks(&tracks, &tracks_import).unwrap();
+        assert_eq!(track_manifest.channel_names, m.channel_names);
+        let listing_path = tracks.join("manifest.json");
+        let mut bad_listing: serde_json::Value =
+            serde_json::from_reader(File::open(&listing_path).unwrap()).unwrap();
+        bad_listing["frames"] = 4.into();
+        serde_json::to_writer(File::create(&listing_path).unwrap(), &bad_listing).unwrap();
+        assert!(import_tracks(&tracks, &root.join("mismatched")).is_err());
+        assert!(!root.join("mismatched").exists());
+
+        assert_eq!(
+            waveform_bytes(&tracks_import, &track_manifest),
+            waveform_bytes(&source, &m)
+        );
         let mut mono = File::open(tracks.join("track-02.wav")).unwrap();
         let parsed = parse(&mut mono).unwrap();
         assert_eq!((parsed.channels, parsed.frames, parsed.rate), (1, 3, 44100));
