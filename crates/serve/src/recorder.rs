@@ -630,13 +630,16 @@ async fn worker_with_config(
                                 }
                                 "import_take" | "export_take" => {
                                     let safe = |s: &str| {
-                                        !s.is_empty() && !s.starts_with('.')
-                                            && !s.contains(['/', '\\', ':', '\0'])
+                                        !s.is_empty() && !s.starts_with('.') && s.len() <= 128
+                                            && s.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+                                            && !s.ends_with('.')
+                                            && !matches!(s.split('.').next().unwrap_or("").to_ascii_uppercase().as_str(), "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9")
                                     };
                                     match (args["take_id"].as_str(), args["transfer_name"].as_str(), args["format"].as_str()) {
-                                        (Some(take), Some(name), Some(format)) if safe(take) && safe(name) && take != "transfers" => {
+                                        (Some(take), Some(name), Some(format)) if safe(take) && safe(name) && !take.eq_ignore_ascii_case("transfers") => {
                                             let transfers = root.join("transfers");
                                             std::fs::create_dir_all(&transfers).map_err(|e| e.to_string()).and_then(|_| {
+                                                openfader_audio::transfer::reject_link(&transfers).map_err(|e| e.to_string())?;
                                                 let transfer = transfers.join(name);
                                                 let take = root.join(take);
                                                 match (action, format) {
@@ -644,7 +647,8 @@ async fn worker_with_config(
                                                     ("import_take", "native") => openfader_audio::transfer::copy_take(&transfer, &take),
                                                     ("export_take", "wav") => openfader_audio::transfer::export_wav(&take, &transfer),
                                                     ("export_take", "native") => openfader_audio::transfer::copy_take(&take, &transfer),
-                                                    _ => return Err("format must be wav or native".to_string()),
+                                                    ("export_take", "tracks") => openfader_audio::transfer::export_tracks(&take, &transfer),
+                                                    _ => return Err("format must be wav, native, or tracks".to_string()),
                                                 }.map(|_| ()).map_err(|e| e.to_string())
                                             })
                                         }
