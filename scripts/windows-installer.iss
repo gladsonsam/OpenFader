@@ -81,6 +81,7 @@ begin
     exit;
   end;
   if not FileIsAvailable(ExpandConstant('{app}\openfader.exe')) or
-     not FileIsAvailable(ExpandConstant('{app}\openfader-serve.exe')) then
+     not FileIsAvailable(ExpandConstant('{app}\openfader-serve.exe')) or
+     not FileIsAvailable(ExpandConstant('{app}\openfader-capture-helper.exe')) then
     Result := 'OpenFader is still running. Open it from the system tray and choose Quit, then run Setup again. If a recording is active, finish or stop it when prompted.';
 end;
