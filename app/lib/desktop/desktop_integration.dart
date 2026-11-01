@@ -65,7 +65,7 @@ class DesktopIntegration with WindowListener, TrayListener {
         if (Platform.isLinux) await desktop._watchLinuxTray();
       } catch (error) {
         desktop._trayReady = false;
-        debugPrint('Tray unavailable; closing will minimize: $error');
+        debugPrint('Tray unavailable; Hide to tray will minimize: $error');
       }
     }
     return desktop;
@@ -93,6 +93,7 @@ class DesktopIntegration with WindowListener, TrayListener {
       if (!_trayReady) return;
       await trayManager.setContextMenu(Menu(items: [
         MenuItem(key: 'show', label: 'Show OpenFader'),
+        MenuItem(key: 'hide', label: 'Hide to tray'),
         MenuItem(label: _status, disabled: true),
         MenuItem.separator(),
         MenuItem(key: 'quit', label: 'Quit OpenFader'),
@@ -324,7 +325,9 @@ class DesktopIntegration with WindowListener, TrayListener {
   }
 
   @override
-  void onWindowClose() => unawaited(_hide());
+  // Window managers send the same close request for the title-bar button and
+  // shortcuts such as Omarchy's Super+Q. Linux uses guarded quit for both.
+  void onWindowClose() => unawaited(Platform.isLinux ? requestQuit() : _hide());
   @override
   void onWindowBlur() => _cancelPointers();
   @override
@@ -354,6 +357,7 @@ class DesktopIntegration with WindowListener, TrayListener {
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
     if (menuItem.key == 'show') unawaited(show());
+    if (menuItem.key == 'hide') unawaited(_hide());
     if (menuItem.key == 'quit') unawaited(requestQuit());
   }
 }
