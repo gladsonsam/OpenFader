@@ -6,7 +6,7 @@ use super::*;
 type InputBulkMap = std::collections::HashMap<(u16, String), (String, Value)>;
 
 impl Engine {
-    pub(super) async fn patch_xair_guarded(
+    pub(super) async fn patch_input_guarded(
         &self,
         strip: u16,
         target: &str,
@@ -14,9 +14,9 @@ impl Engine {
         context: &Option<(String, u64, String, Option<Value>)>,
         writer: &str,
     ) -> anyhow::Result<crate::drivers::RoutingPatch> {
-        let (driver, generation, _, guard) = context.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("xair: input route requires a current routing selection")
-        })?;
+        let (driver, generation, _, guard) = context
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("input route requires a current routing selection"))?;
         let check = |members: &[StripId]| -> anyhow::Result<()> {
             anyhow::ensure!(
                 self.active_driver() == *driver
@@ -253,7 +253,8 @@ impl Engine {
             None
         };
         for r in self.routing_snapshot_on(&driver, input_bulk.as_ref()).await {
-            let guard = if driver == "xair" {
+            let drv = self.drv(&driver);
+            let guard = if drv.input_patch_requires_guard() {
                 input_bulk
                     .as_ref()
                     .and_then(|m| m.get(&(r.strip, r.target.clone())))
@@ -261,33 +262,12 @@ impl Engine {
             } else {
                 None
             };
-            if driver == "xair" {
-                let Some(guard) = guard.as_ref() else {
-                    continue;
-                };
-                let value = match r.target.as_str() {
-                    "analog" => guard
-                        .get("analog")
-                        .and_then(Value::as_i64)
-                        .map(|n| match n {
-                            0..=15 => ("Mic", n + 1),
-                            16..=17 => ("Aux", n - 15),
-                            18 => ("", 0),
-                            _ => ("?", -1),
-                        }),
-                    "usb" => guard
-                        .get("usb")
-                        .and_then(Value::as_i64)
-                        .map(|n| ("USB", n + 1)),
-                    "bank" => guard
-                        .get("bank")
-                        .and_then(Value::as_i64)
-                        .map(|n| ("Bank", n + 1)),
-                    _ => None,
-                };
-                if value != Some((r.group.as_str(), i64::from(r.index))) {
-                    continue;
-                }
+            if drv.input_patch_requires_guard()
+                && !guard.as_ref().is_some_and(|guard| {
+                    drv.input_route_guard_matches(&r.target, &r.group, r.index, guard)
+                })
+            {
+                continue;
             }
             destinations.push(PatchEntry {
                 guard,

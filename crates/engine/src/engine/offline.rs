@@ -55,12 +55,12 @@ impl Engine {
         let changes = self.offline.read().unwrap().changes.clone();
         // Offline rows carry only a display label, not the XR18's three-field
         // route guard. Reject before applying or clearing any changes.
-        if self.active_driver() == "xair"
+        if self.active_drv().input_patch_requires_guard()
             && changes
                 .iter()
                 .any(|c| c.id == "patch" || c.id.starts_with("patch/"))
         {
-            anyhow::bail!("XR18 offline routing changes need a fresh routing selection");
+            anyhow::bail!("offline routing changes need a fresh routing selection");
         }
         let strict = self.active_drv().fx_flavor() == FxFlavor::Design;
         // Same provenance rule as recall: sim applies to real in-memory

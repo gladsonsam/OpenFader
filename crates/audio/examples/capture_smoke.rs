@@ -1,6 +1,6 @@
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use openfader_audio::{RecorderService, CHANNELS};
+    use openfader_audio::RecorderService;
     use std::{
         fs, thread,
         time::{Duration, SystemTime, UNIX_EPOCH},
@@ -17,10 +17,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             d.id, d.name, d.input_channels, d.output_channels, d.sample_rate
         );
     }
+    let device_id = std::env::args()
+        .nth(1)
+        .ok_or("pass a device ID from the list above as the first argument")?;
     let device = devices
         .iter()
-        .find(|d| d.name.to_ascii_lowercase().contains("xr18"))
-        .ok_or("XR18 18-in/18-out device not found")?;
+        .find(|d| d.id == device_id)
+        .ok_or("device ID not found")?;
+    if device.input_channels == 0 {
+        return Err("selected device has no supported input channels".into());
+    }
     service.select_device(&device.id)?;
     service.start_recording("smoke").map_err(|e| {
         format!("capture could not start (check microphone permission and device access): {e}")
@@ -33,13 +39,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if m.frames == 0 || !m.complete {
         return Err("capture produced no complete frames; check microphone permission".into());
     }
+    let channels = usize::from(m.channels);
     for segment in &m.segments {
         let data = fs::read(root.join("smoke").join(&segment.file))?;
         if &data[..4] != b"RIFF"
             || &data[8..12] != b"WAVE"
-            || u16::from_le_bytes([data[22], data[23]]) != CHANNELS as u16
+            || u16::from_le_bytes([data[22], data[23]]) != m.channels
             || u16::from_le_bytes([data[34], data[35]]) != 24
-            || data.len() != 44 + segment.frames as usize * CHANNELS * 3
+            || data.len() != 44 + segment.frames as usize * channels * 3
         {
             return Err("invalid WAV header or frame alignment".into());
         }
