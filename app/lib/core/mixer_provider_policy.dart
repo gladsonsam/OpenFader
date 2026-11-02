@@ -1,4 +1,22 @@
+import 'dart:convert';
+
 import 'channel_views.dart';
+
+typedef ProviderSourceMode = ({
+  String target,
+  String group,
+  String port,
+  int mode
+});
+typedef ProviderDelay = ({
+  int unit,
+  int steps,
+  num value,
+  num min,
+  num max,
+  bool on,
+  bool editable
+});
 
 /// Presentation and safety adaptations for provider-specific wire semantics.
 /// Unknown providers never acquire an analyser or infer a master DSP target.
@@ -34,6 +52,10 @@ abstract class MixerProviderPolicy {
   bool skipRecalledField(String field, Map<String, dynamic> values) => false;
   bool validRawPreset(String field, double value) => true;
   bool eqQEditable(EqFilterShape? shape) => true;
+  ProviderSourceMode? decodeSourceMode(Object? raw) => null;
+  Object? encodeSourceMode(ChannelSourceModeVm snapshot, int mode) => null;
+  ProviderDelay? decodeDelay(Object? raw, double? currentUnit) => null;
+  Object? encodeDelay(ChannelDelayVm snapshot, double value) => null;
 }
 
 class XairProviderPolicy extends MixerProviderPolicy {
@@ -109,6 +131,95 @@ class WingProviderPolicy extends MixerProviderPolicy {
   int get legacyAuxCount => 16;
   @override
   bool get hpfInResponse => false;
+  static const _sourceCodes = ['M', 'ST', 'M/S'];
+  static const _delayCodes = ['M', 'FT', 'MS', 'SMP'];
+  @override
+  ProviderSourceMode? decodeSourceMode(Object? raw) {
+    if (raw is! String) return null;
+    final parts = raw.split(':');
+    if (parts.length != 2) return null;
+    final mode = _sourceCodes.indexOf(parts[1]);
+    final port = parts[0].split('/');
+    if (mode < 0 || port.length != 2 || int.tryParse(port[1]) == null) {
+      return null;
+    }
+    return (target: parts[0], group: port[0], port: port[1], mode: mode);
+  }
+
+  @override
+  Object? encodeSourceMode(ChannelSourceModeVm snapshot, int mode) {
+    if (mode < 0 ||
+        mode >= _sourceCodes.length ||
+        snapshot.mode < 0 ||
+        snapshot.mode >= _sourceCodes.length) {
+      return null;
+    }
+    return '${snapshot.target}:${_sourceCodes[snapshot.mode]}>${_sourceCodes[mode]}';
+  }
+
+  @override
+  ProviderDelay? decodeDelay(Object? raw, double? currentUnit) {
+    if (raw is! String) return null;
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map) return null;
+      final unit = data['unit'],
+          value = data['value'],
+          min = data['min'],
+          max = data['max'],
+          steps = data['steps'];
+      if (unit is! int ||
+          unit < 0 ||
+          unit >= _delayCodes.length ||
+          value is! num ||
+          min is! num ||
+          max is! num ||
+          steps is! int ||
+          steps < 0 ||
+          !value.isFinite ||
+          !min.isFinite ||
+          !max.isFinite ||
+          min >= max ||
+          value < min ||
+          value > max ||
+          data['on'] is! bool ||
+          data['editable'] is! bool ||
+          currentUnit != unit) {
+        return null;
+      }
+      return (
+        unit: unit,
+        value: value,
+        min: min,
+        max: max,
+        steps: steps,
+        on: data['on'] as bool,
+        editable: data['editable'] as bool
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Object? encodeDelay(ChannelDelayVm snapshot, double value) {
+    if (snapshot.unit < 0 ||
+        snapshot.unit >= _delayCodes.length ||
+        !value.isFinite ||
+        value < snapshot.min ||
+        value > snapshot.max) {
+      return null;
+    }
+    final step = snapshot.steps > 1
+        ? (snapshot.max - snapshot.min) / (snapshot.steps - 1)
+        : 0.0;
+    final snapped = step > 0
+        ? (snapshot.min + ((value - snapshot.min) / step).round() * step)
+            .clamp(snapshot.min, snapshot.max)
+        : value;
+    return '${_delayCodes[snapshot.unit]}:$snapped';
+  }
+
   @override
   String parameterLeaf(String leaf) => leaf.startsWith('provider:')
       ? 'wing:${leaf.substring('provider:'.length)}'

@@ -24,7 +24,7 @@ bool channelProcessingField(String field) =>
 
 const channelProcessingScope =
     'EQ / high-pass filter, gate and compressor settings, including enable flags, '
-    'where advertised for this channel family. Inactive DL32S shelf Q stays unchanged.';
+    'where advertised for this channel family. Inactive settings stay unchanged.';
 const channelProcessingExclusions =
     'Identity (name, icon, color), trim, polarity, mic preamp gain / 48V, source '
     'routing, stereo link, levels, pan, mute / solo, sends and assignments stay unchanged. '
