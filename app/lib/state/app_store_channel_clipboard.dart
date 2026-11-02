@@ -287,10 +287,8 @@ extension _ChannelClipboard on _AppStorePresets {
         final error =
             _channelProcessingReady(target) ?? _presetRecallError(recall);
         if (error != null) throw StateError(error);
-        final band = RegExp(r'^eq([1-4])_q$').firstMatch(field);
-        if (copy.driver == 'dl32s' &&
-            band != null &&
-            copy.values['eq${band[1]}_type'] != 2) {
+        if (mixerProviderPolicy(copy.driver)
+            .skipRecalledField(field, copy.values)) {
           skipped.add(field);
           continue;
         }

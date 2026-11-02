@@ -358,60 +358,61 @@ class _EqTabState extends State<_EqTab> {
                   fallback: 'Loading…',
                   compact: true,
                   onChanged: (value) => store.cmdParam('hpf_slope', value))),
-        if (store.paramApplies('wing:hcf_on')) ...[
+        if (store.paramApplies('provider:hcf_on')) ...[
           const SizedBox(height: 14),
           _InputPreampControl(
               store: store,
-              leaf: 'wing:hcf_freq',
+              leaf: 'provider:hcf_freq',
               label: 'High cut',
               section: 'Input filters',
               onFocus: widget.onFocus,
               trailing: _ProcessingButton(
                   label: 'On',
-                  active: store.paramBool('wing:hcf_on') == true,
+                  active: store.paramBool('provider:hcf_on') == true,
                   semanticsLabel: 'High cut enabled',
-                  onTap: store.supports('wing:hcf_on')
-                      ? () => store.cmdParam(
-                          'wing:hcf_on', store.paramBool('wing:hcf_on') != true)
+                  onTap: store.supports('provider:hcf_on')
+                      ? () => store.cmdParam('provider:hcf_on',
+                          store.paramBool('provider:hcf_on') != true)
                       : null)),
           const SizedBox(height: 7),
           _ParameterChoices(
               store: store,
-              leaf: 'wing:hcf_slope',
+              leaf: 'provider:hcf_slope',
               label: 'High cut slope',
               fallback: 'Loading…',
               compact: true,
-              onChanged: (value) => store.cmdParam('wing:hcf_slope', value)),
+              onChanged: (value) =>
+                  store.cmdParam('provider:hcf_slope', value)),
         ],
-        if (store.paramApplies('wing:filter_model')) ...[
+        if (store.paramApplies('provider:filter_model')) ...[
           const SizedBox(height: 14),
           Row(children: [
             Expanded(
                 child: _ParameterChoices(
                     store: store,
-                    leaf: 'wing:filter_model',
+                    leaf: 'provider:filter_model',
                     label: 'Tool filter',
                     fallback: 'Loading…',
                     compact: true,
                     onChanged: (value) =>
-                        store.cmdParam('wing:filter_model', value))),
+                        store.cmdParam('provider:filter_model', value))),
             const SizedBox(width: 8),
             _ProcessingButton(
                 label: 'On',
-                active: store.paramBool('wing:filter_on') == true,
+                active: store.paramBool('provider:filter_on') == true,
                 semanticsLabel: 'Tool filter enabled',
-                onTap: store.supports('wing:filter_on')
-                    ? () => store.cmdParam('wing:filter_on',
-                        store.paramBool('wing:filter_on') != true)
+                onTap: store.supports('provider:filter_on')
+                    ? () => store.cmdParam('provider:filter_on',
+                        store.paramBool('provider:filter_on') != true)
                     : null),
           ]),
           for (final control in const [
-            ('wing:filter_tilt', 'Tilt'),
-            ('wing:filter_low', 'Low contour'),
-            ('wing:filter_high', 'High process'),
-            ('wing:filter_ap1_freq', 'Frequency'),
-            ('wing:filter_ap2_freq', 'Frequency'),
-            ('wing:filter_ap2_q', 'Q'),
+            ('provider:filter_tilt', 'Tilt'),
+            ('provider:filter_low', 'Low contour'),
+            ('provider:filter_high', 'High process'),
+            ('provider:filter_ap1_freq', 'Frequency'),
+            ('provider:filter_ap2_freq', 'Frequency'),
+            ('provider:filter_ap2_q', 'Q'),
           ])
             if (store.paramMetadata(control.$1)?['hidden'] != true)
               Padding(

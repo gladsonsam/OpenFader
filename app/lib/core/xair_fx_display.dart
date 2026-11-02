@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'fx_position_scale.dart';
 
 // X AIR Edit's de-esser display uses stored positions, not a DSP unit.
 // Preserve the float32 receive arithmetic before truncating the position.
@@ -19,7 +20,7 @@ double xairDeesserEntry(double display) {
 
 double _f32(double v) => (Float32List(1)..[0] = v)[0];
 
-class XairHallScale {
+class XairHallScale implements FxPositionScale {
   const XairHallScale(
     this.min,
     this.max,
@@ -28,9 +29,14 @@ class XairHallScale {
     this.unit,
     this.precision,
   );
-  final double min, max;
+  @override
+  final double min;
+  @override
+  final double max;
+  @override
   final int steps;
   final bool logarithmic;
+  @override
   final String unit;
   final int precision;
 
@@ -105,13 +111,16 @@ class XairHallScale {
         _ => null,
       };
 
+  @override
   int position(double normalized) =>
       _f32(_f32(normalized) * _f32(steps + 0.5)).truncate().clamp(0, steps);
   double get _logStep =>
       _f32(_f32(math.log(_f32(_f32(max) / _f32(min)))) / steps);
+  @override
   double display(int p) => logarithmic
       ? _f32(_f32(min) * _f32(math.exp(_f32(_logStep * p))))
       : _f32(_f32(min) + _f32(_f32(_f32(_f32(max) - _f32(min)) * p) / steps));
+  @override
   double entry(double value) {
     if (!logarithmic && min == 0 && max == 50 && steps == 50) {
       return xairDeesserEntry(value);
@@ -123,6 +132,7 @@ class XairHallScale {
     return _f32(raw + 0.5).truncate().clamp(0, steps) / steps;
   }
 
+  @override
   String text(int p) {
     final number = display(p).toStringAsFixed(precision);
     return unit.isEmpty ? number : '$number $unit';

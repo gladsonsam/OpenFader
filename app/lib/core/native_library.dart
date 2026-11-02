@@ -12,7 +12,7 @@ class NativeLibraryVm {
       (guard['slots'] as List).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>>? get scopeFields {
     final fields = guard['scope_fields'];
-    if (fields is! List || fields.length != 59) return null;
+    if (fields is! List || fields.isEmpty) return null;
     final result = <Map<String, dynamic>>[];
     for (var i = 0; i < fields.length; i++) {
       final field = fields[i];
@@ -20,12 +20,8 @@ class NativeLibraryVm {
           field['index'] != i ||
           field['label'] is! String ||
           (field['label'] as String).isEmpty ||
-          !const [
-            'Channels and outputs',
-            'FX',
-            'Parameters',
-            'Globals',
-          ].contains(field['group'])) {
+          field['group'] is! String ||
+          (field['group'] as String).isEmpty) {
         return null;
       }
       result.add(field);
@@ -35,7 +31,9 @@ class NativeLibraryVm {
 
   bool hasScope(Map<String, dynamic> slot) =>
       slot['scope'] is String &&
-      RegExp(r'^[+-]{59}$').hasMatch(slot['scope'] as String);
+      scopeFields != null &&
+      (slot['scope'] as String).length == scopeFields!.length &&
+      RegExp(r'^[+-]+$').hasMatch(slot['scope'] as String);
   bool supports(String op) => (guard['operations'] as List).contains(op);
   static NativeLibraryVm? parse(Object? raw) {
     if (raw is! Map<String, dynamic> ||
