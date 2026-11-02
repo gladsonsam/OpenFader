@@ -226,3 +226,56 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
         expected,
     })
 }
+
+#[cfg(test)]
+mod preflight_routing_tests {
+    use super::preflight;
+    use serde_json::Value;
+    fn readback() -> Value {
+        serde_json::json!({"model":"XR18", "firmware":"1.20", "aux_usb_pair":8, "aux_bank":1, "input_links":(vec![false; 8]),
+            "sends": (0..18).map(|i| serde_json::json!({"source":i,"tap":0})).collect::<Vec<_>>(),
+            "inputs": (0..16).map(|i| serde_json::json!({"analog":i,"usb":i,"bank":0})).collect::<Vec<_>>()})
+    }
+    #[test]
+    fn linked_pair_is_one_guarded_change_and_repatch_is_rejected() {
+        let mut data = readback();
+        data["input_links"][3] = true.into();
+        let plan = preflight(&data).unwrap();
+        assert_eq!(
+            plan.plan
+                .iter()
+                .filter(|(key, _)| key == "input_pair/6/bank")
+                .count(),
+            1
+        );
+        assert!(!plan
+            .plan
+            .iter()
+            .any(|(key, _)| key == "input/6/bank" || key == "input/7/bank"));
+        data["inputs"][7]["usb"] = 3.into();
+        assert!(preflight(&data).is_err());
+        data["inputs"][7]["usb"] = 7.into();
+        data["inputs"][7]["bank"] = 1.into();
+        assert!(preflight(&data).is_err());
+    }
+    #[test]
+    fn assessed_plan_excludes_live_usb_and_uses_analog_patch() {
+        let mut data = readback();
+        data["inputs"][0]["analog"] = 4.into();
+        data["inputs"][1]["bank"] = 1.into();
+        let p = preflight(&data).unwrap();
+        assert!(p.plan.contains(&("input/0/usb".into(), 4)));
+        assert!(!p.keys.iter().any(|k| k.starts_with("input/1/")));
+        assert_eq!(p.expected[&0].analog, 4);
+        assert!(!p.output_mask[1]);
+        assert!(p.output_mask[4]);
+        data["inputs"][1]["usb"] = 4.into();
+        assert!(preflight(&data).is_err());
+        data["inputs"][1]["usb"] = 1.into();
+        data["sends"][4]["tap"] = 1.into();
+        assert!(preflight(&data).is_err());
+        data = readback();
+        data["firmware"] = "1.19".into();
+        assert!(preflight(&data).is_err());
+    }
+}

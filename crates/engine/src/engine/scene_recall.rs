@@ -733,7 +733,7 @@ impl Engine {
                     continue;
                 }
                 let value = s.params.get(id).expect("key just listed");
-                let id = super::models::canonical_send_field(&driver, id).into_owned();
+                let id = drv.canonical_send_field(id).into_owned();
                 let pv = json_to_param_value(value)?;
                 // Best-effort per param on hardware (a desk that went
                 // silent mid-recall must not abort the rest); strict on

@@ -12,7 +12,7 @@ impl Engine {
         value: ParamValue,
         writer: &str,
     ) -> anyhow::Result<bool> {
-        if driver != "xair"
+        if !self.drv(driver).guarded_bus_writes()
             || !self.driver_topology(driver).iter().any(|family| {
                 family.kind == openfader_core::StripKind::Bus
                     && usize::from(ch) >= family.first
@@ -56,7 +56,7 @@ impl Engine {
         driver: &str,
         field: &str,
     ) -> anyhow::Result<Vec<StripId>> {
-        let field = super::super::models::canonical_send_field(driver, field);
+        let field = self.drv(driver).canonical_send_field(field);
         let Some(rest) = field.strip_prefix("send") else {
             return Ok(Vec::new());
         };
@@ -366,8 +366,7 @@ impl Engine {
                 let driver = self.active_driver();
                 let generation = self.connection_gen.load(Ordering::Acquire);
                 let ch = self.resolve_strip(ch, key.as_deref())?;
-                let field =
-                    super::super::models::canonical_send_field(&driver, &field).into_owned();
+                let field = self.drv(&driver).canonical_send_field(&field).into_owned();
                 let pv = match &value {
                     Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
                     Value::Bool(b) => ParamValue::Bool(*b),
@@ -419,13 +418,13 @@ impl Engine {
                             }
                         }
                     }
-                    if linked && driver != "xair" {
+                    if linked && !self.drv(&driver).guarded_link_writes() {
                         let level = self.active_drv().get_fader(StripId(ch)).await?;
                         for member in pair {
                             policy.allow_fader(StripId(member), level)?;
                         }
                     }
-                    let changes = if driver == "xair" {
+                    let changes = if self.drv(&driver).guarded_link_writes() {
                         let check = |members: &[StripId]| -> anyhow::Result<()> {
                             anyhow::ensure!(
                                 self.active_driver() == driver
@@ -533,7 +532,7 @@ impl Engine {
                         }
                     }
                 }
-                let is_xair_bus = driver == "xair"
+                let is_guarded_bus = self.drv(&driver).guarded_bus_writes()
                     && self.driver_topology(&driver).iter().any(|family| {
                         family.kind == openfader_core::StripKind::Bus
                             && usize::from(ch) >= family.first
@@ -541,8 +540,8 @@ impl Engine {
                     });
                 let from = self.offline_from(StripId(ch), &field).await;
                 if expected.is_some()
-                    || (driver == "xair" && !send_members.is_empty())
-                    || is_xair_bus
+                    || (self.drv(&driver).guarded_send_writes() && !send_members.is_empty())
+                    || is_guarded_bus
                 {
                     let empty = BTreeMap::new();
                     let expected = expected.as_ref().unwrap_or(&empty);
@@ -578,10 +577,10 @@ impl Engine {
                         }
                         Ok(())
                     };
-                    if driver == "xair"
-                        && (matches!(field.as_str(), "gain" | "phantom")
-                            || !send_members.is_empty()
-                            || is_xair_bus)
+                    if (self.drv(&driver).guarded_preamp_writes()
+                        && matches!(field.as_str(), "gain" | "phantom"))
+                        || (self.drv(&driver).guarded_send_writes() && !send_members.is_empty())
+                        || is_guarded_bus
                     {
                         drv.set_param_guarded_checked(
                             StripId(ch),
