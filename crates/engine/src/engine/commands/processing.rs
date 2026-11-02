@@ -163,8 +163,8 @@ impl Engine {
                     .map(Value::String)
                     .unwrap_or(Value::Null);
                 self.validate_routing_context(&routing_context, &from)?;
-                let patch = if drv.name() == "xair" {
-                    self.patch_xair_guarded(
+                let patch = if drv.input_patch_requires_guard() {
+                    self.patch_input_guarded(
                         strip,
                         &target,
                         Some((&group, index)),
@@ -210,8 +210,8 @@ impl Engine {
                     .map(Value::String)
                     .unwrap_or(Value::Null);
                 self.validate_routing_context(&routing_context, &from)?;
-                let patch = if drv.name() == "xair" {
-                    self.patch_xair_guarded(strip, &target, None, &routing_context, writer)
+                let patch = if drv.input_patch_requires_guard() {
+                    self.patch_input_guarded(strip, &target, None, &routing_context, writer)
                         .await?
                 } else {
                     drv.patch_target_clear(StripId(strip), &target).await?

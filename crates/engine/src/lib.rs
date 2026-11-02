@@ -46,6 +46,3 @@ pub use engine::SPECTRUM_CHANNELS;
 
 /// Legacy simulator GR fanout budget (hardware uses its whole topology).
 pub use engine::GR_CHANNELS;
-
-/// XR18 soundcheck routing assessment supplied by its protocol driver.
-pub use openfader_proto_xair::soundcheck_profile as xair_soundcheck_profile;

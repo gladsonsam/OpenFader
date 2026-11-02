@@ -315,13 +315,13 @@ impl Engine {
                             });
                         }
                     }
-                    if drv.name() == "xair" && !engine.reads_suspended.load(Ordering::Acquire) {
+                    if let Some(param) = drv
+                        .automix_gain_param()
+                        .filter(|_| !engine.reads_suspended.load(Ordering::Acquire))
+                    {
                         let generation = spectrum_generation;
                         for ch in 0..drv.channel_count() {
-                            let db = match drv
-                                .get_param(StripId(ch as u16), "xair:automix_gain")
-                                .await
-                            {
+                            let db = match drv.get_param(StripId(ch as u16), param).await {
                                 Ok(ParamValue::Float(value)) if value.is_finite() => Some(value),
                                 _ => None,
                             };

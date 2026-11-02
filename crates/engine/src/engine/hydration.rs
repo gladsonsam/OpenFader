@@ -4,14 +4,6 @@ use super::*;
 
 type FillResult = anyhow::Result<ParamValue>;
 
-fn initial_read_timeout(driver: &str) -> Duration {
-    if driver == "xair" {
-        openfader_transport::session::CONNECT_BURST_TIMEOUT
-    } else {
-        openfader_transport::session::DEFAULT_QUERY_TIMEOUT
-    }
-}
-
 /// One concurrent fill read's outcome: a finished query (ok or desk
 /// error), a pair the desk already pushed while the fill was opening
 /// (skip without cost), or an exhausted deadline (stop the fill).
@@ -219,9 +211,9 @@ impl Engine {
         if let Ok((fader, muted)) = tokio::time::timeout(
             deadline
                 .saturating_duration_since(sampled)
-                .min(initial_read_timeout(driver)),
+                .min(drv.initial_read_timeout()),
             async {
-                if driver == "xair" {
+                if drv.concurrent_initial_master_reads() {
                     let (fader, muted) = tokio::join!(drv.get_main_fader(), drv.get_main_mute());
                     (fader.ok(), muted.ok())
                 } else {
@@ -253,7 +245,7 @@ impl Engine {
             if let Ok(Ok((fader, muted))) = tokio::time::timeout(
                 deadline
                     .saturating_duration_since(sampled)
-                    .min(initial_read_timeout(driver)),
+                    .min(drv.initial_read_timeout()),
                 read,
             )
             .await
@@ -295,7 +287,7 @@ impl Engine {
             if let Ok(Ok((fader, muted))) = tokio::time::timeout(
                 deadline
                     .saturating_duration_since(sampled)
-                    .min(initial_read_timeout(driver)),
+                    .min(drv.initial_read_timeout()),
                 read,
             )
             .await
@@ -412,7 +404,7 @@ impl Engine {
                     // The background poller retries under the normal budget.
                     let budget = deadline
                         .saturating_duration_since(started)
-                        .min(initial_read_timeout(&driver));
+                        .min(self.drv(&driver).initial_read_timeout());
                     if budget.is_zero() {
                         return FillRead::Stop;
                     }

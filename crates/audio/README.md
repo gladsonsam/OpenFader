@@ -20,9 +20,7 @@ service.set_loop(start: u64, end: u64, enabled: bool) -> Result<()>
 ```
 
 Calls must be serialized by the host. Device IDs come from CPAL and should be
-persisted as opaque strings. Selection requires a device reporting at least 18
-inputs and outputs. Capture and playback currently require 18-channel `f32`
-streams at the device's current default sample rate. Playback is silent until
+persisted as opaque strings. Capture uses the selected device’s reported input layout; playback uses its output layout and the take’s channel mapping. Stream configuration must be supported at the device’s current default sample rate. Playback is silent until
 `play()`; routing is the host's responsibility. No mixer control commands are
 sent. `status()` reports transport, frame position, captured frames, xruns and
 errors; call `stop` after a capture error and `recover_take` before inspecting
@@ -30,7 +28,7 @@ an interrupted take. Recovery retains only the last durable checkpoint and
 finalizes the recovered manifest so it can be loaded. Checkpointing and stream transitions can block;
 call these methods away from a UI or real-time audio thread.
 
-`TakeWriter` stores complete interleaved 18-channel, 24-bit PCM frames in
+`TakeWriter` stores complete interleaved, layout-specific 24-bit PCM frames in
 synchronized WAV segments. Storage runs on a worker fed by a bounded,
 preallocated queue; a capture overflow fails the take rather than silently
 joining discontinuous audio. Playback reads ahead on a worker, with an output
@@ -44,9 +42,7 @@ position. Device or worker errors silence playback and appear in status; stop
 returns the failure and releases the worker. Stream callbacks perform no heap
 allocation, disk I/O or blocking locks.
 
-Run `cargo run -p openfader-audio --example capture_smoke --locked` with an XR18
-connected to record five seconds into a new temporary directory and verify WAV
-headers and frame alignment. On macOS microphone permission must be granted to
+Run `cargo run -p openfader-audio --example capture_smoke --locked` to list devices, then repeat with a device ID as the final argument to record five seconds into a new temporary directory and verify WAV headers and frame alignment. On macOS microphone permission must be granted to
 the hosting executable. The example does not create an output stream.
 
 Windows ASIO builds use pinned CPAL 0.17.3 and require Steinberg's [ASIO SDK](https://www.steinberg.net/asiosdk),

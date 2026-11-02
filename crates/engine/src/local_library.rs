@@ -26,14 +26,18 @@
 //!   failures preserve disk and memory; a post-replace directory-sync/stat
 //!   failure swaps memory (the rename landed) but latches `uncertain` and
 //!   blocks further writes: never a silent rollback, never a silent reset.
-//! - Validation is structural only: provider parameter IDs/names are never
-//!   dropped for belonging to another driver, and no tight driver geometry
-//!   is enforced. Recall still validates against the destination driver at
-//!   recall time. The byte/count caps below are explicit generous resource
-//!   guards that ERROR, never silent truncation.
+//! - Structural validation retains provider parameter IDs and names. Known
+//!   provider-native stored domains also use their archive schema adapter;
+//!   recall validates against the destination driver. The byte/count caps
+//!   below are explicit resource guards that ERROR, never silent truncation.
 //!
 //! The current-number marker stays session-only (loading never recalls
 //! audio); this kernel never touches the mixer.
+
+#[path = "provider_library_validation.rs"]
+mod provider_library_validation;
+
+use provider_library_validation::policy_for_provider;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -1039,34 +1043,18 @@ pub(crate) fn validate_stored_output_eq(eq: &StoredOutputEq, what: &str) -> Resu
         {
             return Err(format!("{what}: invalid target or gains"));
         }
-        if eq.provider == "xair"
-            && (!matches!(
-                row.target.as_str(),
-                "bus/01" | "bus/02" | "bus/03" | "bus/04" | "bus/05" | "bus/06" | "main"
-            ) || row.mode > 2
-                || row.gains_db.len() != 31
-                || row.gains_db.iter().any(|g| {
-                    !(-15.0..=15.0).contains(g) || (g * 2.0 - (g * 2.0).round()).abs() > 1e-4
-                }))
-        {
-            return Err(format!("{what}: invalid XR18 output EQ"));
-        }
     }
-    if eq.provider == "xair" && seen.len() != 7 {
-        return Err(format!("{what}: incomplete XR18 output EQ roster"));
-    }
+    policy_for_provider(&eq.provider).output_eq(eq, what)?;
     Ok(())
 }
 
 pub(crate) fn validate_stored_rta(rta: &StoredRta, what: &str) -> Result<(), String> {
     check_name(&rta.provider, &format!("{what}.provider"))?;
     check_name_len(&rta.provider, MAX_FX_TYPE_LEN, &format!("{what}.provider"))?;
-    if !rta.decay.is_finite()
-        || (rta.provider == "xair" && (rta.detector > 1 || !(0.0..=1.0).contains(&rta.decay)))
-    {
+    if !rta.decay.is_finite() {
         return Err(format!("{what}: invalid RTA settings"));
     }
-    Ok(())
+    policy_for_provider(&rta.provider).rta(rta, what)
 }
 
 pub(crate) fn validate_stored_monitor(monitor: &StoredMonitor, what: &str) -> Result<(), String> {
@@ -1086,24 +1074,8 @@ pub(crate) fn validate_stored_monitor(monitor: &StoredMonitor, what: &str) -> Re
         if !ids.insert(&row.id) || !row.value.is_finite() {
             return Err(format!("{what}: duplicate ID or nonfinite value"));
         }
-        if monitor.provider == "xair" {
-            let max = match row.id.as_str() {
-                "level" | "trim" | "dim_gain" => None,
-                "source" => Some(14.0),
-                "channel_mode" | "bus_mode" | "dim" | "mono" | "mute" | "dim_pfl" => Some(1.0),
-                _ => return Err(format!("{what}: unknown XR18 monitor ID")),
-            };
-            if match max {
-                Some(max) => row.value.fract() != 0.0 || !(0.0..=max).contains(&row.value),
-                None => !(0.0..=1.0).contains(&row.value),
-            } {
-                return Err(format!("{what}: invalid XR18 monitor value"));
-            }
-        }
     }
-    if monitor.provider == "xair" && ids.len() != 10 {
-        return Err(format!("{what}: incomplete XR18 monitor roster"));
-    }
+    policy_for_provider(&monitor.provider).monitor(monitor, what)?;
     Ok(())
 }
 
@@ -1120,11 +1092,8 @@ fn validate_output_taps(taps: &StoredOutputTaps, what: &str) -> Result<(), Strin
         if !targets.insert(&value.target) {
             return Err(format!("{what}: duplicate target"));
         }
-        if taps.provider == "xair" && value.tap > 10 {
-            return Err(format!("{what}: tap out of range"));
-        }
     }
-    Ok(())
+    policy_for_provider(&taps.provider).output_taps(taps, what)
 }
 
 fn validate_mute_groups(groups: &StoredMuteGroups, what: &str) -> Result<(), String> {
@@ -1141,11 +1110,8 @@ fn validate_mute_groups(groups: &StoredMuteGroups, what: &str) -> Result<(), Str
     if groups.memberships.len() > MAX_STRIPS_PER_SCENE {
         return Err(format!("{what}: too many memberships"));
     }
-    if groups.provider == "xair" && (count != 4 || groups.memberships.len() != 31) {
-        return Err(format!(
-            "{what}: XR18 requires four masters and 31 strip memberships"
-        ));
-    }
+    let policy = policy_for_provider(&groups.provider);
+    policy.mute_groups(groups, what)?;
     let max_mask = if count == 32 {
         u32::MAX
     } else {
@@ -1156,7 +1122,7 @@ fn validate_mute_groups(groups: &StoredMuteGroups, what: &str) -> Result<(), Str
     for member in &groups.memberships {
         check_key(Some(&member.key), &format!("{what}.key"))?;
         if openfader_core::parse_strip_key(&member.key).is_none()
-            && !(groups.provider == "xair" && member.key == "aux")
+            && !policy.accepts_extra_strip_key(&member.key)
         {
             return Err(format!("{what}: invalid strip key {:?}", member.key));
         }

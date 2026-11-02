@@ -190,6 +190,43 @@ pub trait DynDriver: Send + Sync {
     fn param_defs(&self) -> &'static [ParamDef] {
         &[]
     }
+    /// Optional per-channel automix gain parameter used by telemetry.
+    fn automix_gain_param(&self) -> Option<&'static str> {
+        None
+    }
+    /// Timeout budget and concurrency policy for initial master readback.
+    fn initial_read_timeout(&self) -> std::time::Duration {
+        openfader_transport::session::DEFAULT_QUERY_TIMEOUT
+    }
+    fn concurrent_initial_master_reads(&self) -> bool {
+        false
+    }
+    fn capture_input_links_with_global(&self) -> bool {
+        false
+    }
+    fn guarded_bus_writes(&self) -> bool {
+        false
+    }
+    fn guarded_link_writes(&self) -> bool {
+        false
+    }
+    fn guarded_send_writes(&self) -> bool {
+        false
+    }
+    fn guarded_preamp_writes(&self) -> bool {
+        false
+    }
+    fn canonical_send_field<'a>(&self, field: &'a str) -> std::borrow::Cow<'a, str> {
+        std::borrow::Cow::Borrowed(field)
+    }
+    /// Fields invalidated together by provider preamp updates.
+    fn preamp_invalidation_fields(&self, _source: bool) -> &'static [&'static str] {
+        &[]
+    }
+    /// Number of input strips addressed by provider preamp invalidations.
+    fn preamp_invalidation_count(&self) -> usize {
+        0
+    }
     /// Derived metadata remains readable but must not become a recall write.
     fn param_read_only(&self, _param: &str) -> bool {
         false
@@ -772,6 +809,20 @@ pub trait DynDriver: Send + Sync {
     /// Fresh provider-owned soundcheck preflight, or None when unsupported.
     async fn soundcheck_readback(&self) -> anyhow::Result<Option<serde_json::Value>> {
         Ok(None)
+    }
+    /// Whether input patch writes require a current opaque route guard.
+    fn input_patch_requires_guard(&self) -> bool {
+        false
+    }
+    /// Validate a displayed row against its captured provider route state.
+    fn input_route_guard_matches(
+        &self,
+        _target: &str,
+        _group: &str,
+        _index: u8,
+        _guard: &serde_json::Value,
+    ) -> bool {
+        true
     }
     /// Optional provider-owned opaque input-route state for guarded commands.
     async fn input_route_guard(
@@ -1891,6 +1942,38 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     async fn set_fx_insert(&self, slot: u8, enabled: bool) -> anyhow::Result<()> {
         openfader_proto_xair::XAirDriver::set_fx_insert(self, slot, enabled).await
     }
+    fn capture_input_links_with_global(&self) -> bool { true }
+    fn guarded_bus_writes(&self) -> bool { true }
+    fn guarded_link_writes(&self) -> bool { true }
+    fn guarded_send_writes(&self) -> bool { true }
+    fn guarded_preamp_writes(&self) -> bool { true }
+    fn canonical_send_field<'a>(&self, field: &'a str) -> std::borrow::Cow<'a, str> {
+        if let Some(n) = field.strip_prefix("aux").and_then(|s| s.strip_suffix("_level")) {
+            if matches!(n, "1" | "2" | "3" | "4" | "5" | "6") {
+                return std::borrow::Cow::Owned(format!("send{n}_level"));
+            }
+        }
+        std::borrow::Cow::Borrowed(field)
+    }
+    fn input_patch_requires_guard(&self) -> bool { true }
+    fn input_route_guard_matches(&self, target: &str, group: &str, index: u8, guard: &serde_json::Value) -> bool {
+        let value = match target {
+            "analog" => guard.get("analog").and_then(serde_json::Value::as_i64).map(|n| match n {
+                0..=15 => ("Mic", n + 1), 16..=17 => ("Aux", n - 15), 18 => ("", 0), _ => ("?", -1),
+            }),
+            "usb" => guard.get("usb").and_then(serde_json::Value::as_i64).map(|n| ("USB", n + 1)),
+            "bank" => guard.get("bank").and_then(serde_json::Value::as_i64).map(|n| ("Bank", n + 1)),
+            _ => None,
+        };
+        value == Some((group, i64::from(index)))
+    }
+    fn preamp_invalidation_fields(&self, source: bool) -> &'static [&'static str] {
+        if source { &["source", "xair:preamp_state", "gain", "phantom"] } else { &["gain", "phantom"] }
+    }
+    fn preamp_invalidation_count(&self) -> usize { 16 }
+    fn automix_gain_param(&self) -> Option<&'static str> { Some("xair:automix_gain") }
+    fn initial_read_timeout(&self) -> std::time::Duration { openfader_transport::session::CONNECT_BURST_TIMEOUT }
+    fn concurrent_initial_master_reads(&self) -> bool { true }
     fn param_read_only(&self, param: &str) -> bool {
         // The bool loses the distinction between groups X and Y; snapshots
         // capture and restore the group enum instead. The source label is

@@ -141,7 +141,8 @@ impl Engine {
         let global = drv.read_link_settings().await?;
         check()?;
         let mut inputs = Vec::new();
-        if driver == "xair" && global.is_some() && !drv.param_read_only("link") {
+        if drv.capture_input_links_with_global() && global.is_some() && !drv.param_read_only("link")
+        {
             let topo = self.driver_topology(driver);
             let mut seen = BTreeSet::new();
             for pair in drv.stereo_pairs() {

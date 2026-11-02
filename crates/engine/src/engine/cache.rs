@@ -3,17 +3,8 @@
 use super::*;
 
 impl Engine {
-    fn invalidate_xair_preamp(&self, ch: u16, received: Instant, source: bool) {
-        let candidates: Vec<String> = if source {
-            vec![
-                "source".into(),
-                "xair:preamp_state".into(),
-                "gain".into(),
-                "phantom".into(),
-            ]
-        } else {
-            vec!["gain".into(), "phantom".into()]
-        };
+    fn invalidate_preamp(&self, ch: u16, received: Instant, source: bool) {
+        let candidates = self.active_drv().preamp_invalidation_fields(source);
         let mut fields = Vec::new();
         {
             let mut sync = self.sync_state.lock().unwrap();
@@ -21,7 +12,8 @@ impl Engine {
                 return;
             }
             let mut cache = self.param_cache.write().unwrap();
-            for field in candidates {
+            for &field in candidates {
+                let field = field.to_string();
                 let key = (ch, field.clone());
                 if sync
                     .received
@@ -82,19 +74,20 @@ impl Engine {
             return;
         }
         if param == "_preamp_dirty" || param == "_preamp_routes_dirty" {
-            if self.active_driver() != "xair" {
+            let count = self.active_drv().preamp_invalidation_count();
+            if count == 0 {
                 return;
             }
             if ch == u16::MAX {
-                for strip in 0..16 {
-                    self.invalidate_xair_preamp(strip, received, param == "_preamp_routes_dirty");
+                for strip in 0..count.min(u16::MAX as usize) as u16 {
+                    self.invalidate_preamp(strip, received, param == "_preamp_routes_dirty");
                 }
-            } else if ch < 16 {
-                self.invalidate_xair_preamp(ch, received, true);
+            } else if usize::from(ch) < count {
+                self.invalidate_preamp(ch, received, true);
             }
             return;
         }
-        if param == "source" && self.active_driver() == "xair" {
+        if param == "source" && self.active_drv().preamp_invalidation_count() > 0 {
             let previous = self
                 .param_cache
                 .read()
@@ -103,7 +96,7 @@ impl Engine {
                 .and_then(|values| values.get("source"))
                 .cloned();
             if previous.is_some_and(|old| old != param_value_json(pv)) {
-                self.invalidate_xair_preamp(ch, received, true);
+                self.invalidate_preamp(ch, received, true);
             }
         }
         if param == "_sync_dirty" {
