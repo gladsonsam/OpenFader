@@ -86,13 +86,13 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   double? paramNum(String leaf) {
-    final v = ps.optimisticValue(_maps, _channel, AppStore.deskLeaf(leaf));
+    final v = ps.optimisticValue(_maps, _channel, _providerLeaf(engine, leaf));
     return v is num ? v.toDouble() : null;
   }
 
   @override
   bool? paramBool(String leaf) {
-    final v = ps.optimisticValue(_maps, _channel, AppStore.deskLeaf(leaf));
+    final v = ps.optimisticValue(_maps, _channel, _providerLeaf(engine, leaf));
     return v is bool ? v : null;
   }
 
@@ -101,10 +101,12 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   Map<String, dynamic>? paramMetadata(String leaf) {
-    final desk = AppStore.deskLeaf(leaf);
+    final desk = _providerLeaf(engine, leaf);
     final metadata =
         parameterPresentation(engine.parameterMetadata[desk], paramNum);
-    if (desk == 'gain' && engine.driver == 'xair' && metadata != null) {
+    if (desk == 'gain' &&
+        mixerProviderPolicy(engine.driver).requiresRoutedPreamp &&
+        metadata != null) {
       final range = preampGainRange;
       if (range == null) return {...metadata, 'available': false};
       return {...metadata, 'min': range.first, 'max': range.last};
@@ -114,19 +116,20 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   bool paramApplies(String leaf) =>
-      _stripParamApplies(_channel, AppStore.deskLeaf(leaf));
+      _stripParamApplies(_channel, _providerLeaf(engine, leaf));
 
   @override
   String? localAccessMessage(String leaf) =>
-      _accessParamAllowed(_channel, AppStore.deskLeaf(leaf))
+      _accessParamAllowed(_channel, _providerLeaf(engine, leaf))
           ? null
           : 'Limited on this device';
 
   @override
   bool supports(String leaf) {
-    final desk = AppStore.deskLeaf(leaf);
+    final desk = _providerLeaf(engine, leaf);
     if (!paramApplies(leaf)) return false;
-    if (engine.driver == 'xair' && (desk == 'gain' || desk == 'phantom')) {
+    if (mixerProviderPolicy(engine.driver).requiresRoutedPreamp &&
+        (desk == 'gain' || desk == 'phantom')) {
       if ((desk == 'gain' ? preampGainAvailable : preampPhantomAvailable) !=
           true) {
         return false;
@@ -157,7 +160,7 @@ mixin _AppStoreChannel on _AppStoreContext {
     if (eqQ != null) {
       final band = int.parse(eqQ[1]!);
       final shape = EqFilterShape.fromValue(_eqPresentationType(band));
-      if (engine.driver == 'dl32s' && shape != EqFilterShape.bell ||
+      if (!mixerProviderPolicy(engine.driver).eqQEditable(shape) ||
           paramMetadata('eq${band}_type')?['curve'] == 'fixed_shelf' &&
               (shape == EqFilterShape.lowShelf ||
                   shape == EqFilterShape.highShelf)) {
@@ -165,7 +168,7 @@ mixin _AppStoreChannel on _AppStoreContext {
       }
     }
     return engine.supportedParams.contains(desk) &&
-        (engine.driver == 'sim' ||
+        (mixerProviderPolicy(engine.driver).offlineValues ||
             (engine.connected && engine.valueKnown(_channel, desk)));
   }
 
@@ -184,7 +187,7 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   void cmdParam(String leaf, Object value) {
-    final desk = AppStore.deskLeaf(leaf);
+    final desk = _providerLeaf(engine, leaf);
     if (desk == 'name') return; // Use the captured-target rename contract.
     if (!supports(desk)) return;
     if (value is num && !value.isFinite) return;
@@ -197,12 +200,7 @@ mixin _AppStoreChannel on _AppStoreContext {
     // DSP edits (including delayed ChannelWrites flushes) use the current
     // driver limits. Hydration remains untouched, even outside these limits.
     final isDspRange = desk == 'hpf_freq' ||
-        desk == 'wing:hcf_freq' ||
-        desk == 'wing:input_balance' ||
-        desk == 'wing:width' ||
-        desk.startsWith('wing:filter_') &&
-            desk != 'wing:filter_on' &&
-            desk != 'wing:filter_model' ||
+        mixerProviderPolicy(engine.driver).isProviderDspRange(desk) ||
         RegExp(r'^eq[1-8]_(freq|gain|q)$').hasMatch(desk) ||
         RegExp(r'^(gate|comp)_(thr|range|att|hold|rel|ratio|knee|makeup|filter_freq|mix)$')
             .hasMatch(desk);
@@ -211,12 +209,8 @@ mixin _AppStoreChannel on _AppStoreContext {
     var coerced = range == null
         ? value
         : (value as num).toDouble().clamp(range.first, range.last);
-    // WING's native source controls have 61 width and 181 balance steps.
-    if (desk == 'wing:width' && coerced is num) {
-      coerced = (coerced / 5).round() * 5.0;
-    } else if (desk == 'wing:input_balance' && coerced is num) {
-      coerced = (coerced * 10).round() / 10;
-    }
+    coerced =
+        mixerProviderPolicy(engine.driver).quantizeParameter(desk, coerced);
     // Capture at enqueue time: navigation must not retarget a queued edit.
     final ch = _channel;
     _maps.confirmed.putIfAbsent(ch, () => {});
@@ -382,39 +376,33 @@ mixin _AppStoreChannel on _AppStoreContext {
       cmdParam('view${group + 1}_assign', on);
 
   @override
-  void setCompSoftKnee(bool soft) => cmdParam(
-      'comp_knee', engine.driver == 'dl32s' ? (soft ? 0 : 1) : (soft ? 3 : 0));
+  void setCompSoftKnee(bool soft) =>
+      cmdParam('comp_knee', mixerProviderPolicy(engine.driver).compKnee(soft));
 
   List<double>? eqPreviewFor(int channel) {
     Object? value(String leaf) =>
-        ps.optimisticValue(_maps, channel, AppStore.deskLeaf(leaf));
+        ps.optimisticValue(_maps, channel, _providerLeaf(engine, leaf));
     double? number(String leaf) {
       final v = value(leaf);
       return v is num && v.isFinite ? v.toDouble() : null;
     }
 
     bool applies(String leaf) =>
-        _stripParamApplies(channel, AppStore.deskLeaf(leaf));
+        _stripParamApplies(channel, _providerLeaf(engine, leaf));
     final on = value('eq_on');
     if (on is! bool) return null;
     if (!on) return eqResponseDb(const ChannelEqVm(on: false));
-    final count =
-        (number('wing:eq_bands')?.toInt() ?? (applies('eq6_gain') ? 6 : 4))
-            .clamp(4, 8);
-    final cutModel = engine.driver == 'xair'
-        ? EqCutModel.xairButterworth96k
-        : EqCutModel.unavailable;
+    final count = mixerProviderPolicy(engine.driver).eqBandCount(
+        mixerProviderPolicy(engine.driver).eqBandCountLeaf == null
+            ? null
+            : number(mixerProviderPolicy(engine.driver).eqBandCountLeaf!),
+        applies('eq6_gain'));
+    final cutModel = mixerProviderPolicy(engine.driver).cutModel;
     final bands = <EqBandVm>[];
     for (var b = 1; b <= count; b++) {
       final native = number('eq${b}_type')?.toInt();
-      final type = engine.driver == 'dl32s'
-          ? switch (native) {
-              2 => EqFilterShape.bell.value,
-              3 => EqFilterShape.lowShelf.value,
-              4 => EqFilterShape.highShelf.value,
-              _ => null,
-            }
-          : native;
+      final type =
+          mixerProviderPolicy(engine.driver).eqPresentationType(native);
       final shape = EqFilterShape.fromValue(type);
       final f = number('eq${b}_freq');
       if (shape?.hasResponseModel(
@@ -440,15 +428,13 @@ mixin _AppStoreChannel on _AppStoreContext {
           type: type,
           cutModel: cutModel,
           bellModel: _eqBellModel,
-          shelfModel: engine.driver == 'xair'
-              ? EqShelfModel.xair96k
-              : EqShelfModel.standard,
-          shelfUsesQ:
-              engine.driver != 'dl32s' && metadata?['curve'] != 'fixed_shelf'));
+          shelfModel: mixerProviderPolicy(engine.driver).shelfModel,
+          shelfUsesQ: mixerProviderPolicy(engine.driver).shelfUsesQ &&
+              metadata?['curve'] != 'fixed_shelf'));
     }
     var hpfOn = false;
     var hpfF = 80.0;
-    if (engine.driver != 'wing' && applies('hpf_on')) {
+    if (mixerProviderPolicy(engine.driver).hpfInResponse && applies('hpf_on')) {
       final enabled = value('hpf_on');
       if (enabled is! bool) return null;
       hpfOn = enabled;
@@ -462,25 +448,21 @@ mixin _AppStoreChannel on _AppStoreContext {
         on: true,
         hpfOn: hpfOn,
         hpfF: hpfF,
-        hpfInResponse: engine.driver != 'wing',
+        hpfInResponse: mixerProviderPolicy(engine.driver).hpfInResponse,
         bands: bands));
   }
 
   int? _eqPresentationType(int band) {
     final native = paramNum('eq${band}_type')?.toInt();
-    if (engine.driver != 'dl32s') return native;
-    // Only live-verified DL32S shapes. Preserve raw values in the engine.
-    return switch (native) {
-      2 => EqFilterShape.bell.value,
-      3 => EqFilterShape.lowShelf.value,
-      4 => EqFilterShape.highShelf.value,
-      _ => null,
-    };
+    return mixerProviderPolicy(engine.driver).eqPresentationType(native);
   }
 
   List<ParameterChoice> _eqTypeChoices(int band) {
     final choices = parameterChoices(paramMetadata('eq${band}_type'));
-    if (choices.isNotEmpty && engine.driver != 'dl32s') return choices;
+    if (choices.isNotEmpty &&
+        mixerProviderPolicy(engine.driver).useNativeEqChoices) {
+      return choices;
+    }
     if (band == 1 || band == _eqBandCount) {
       return [
         (
@@ -495,12 +477,9 @@ mixin _AppStoreChannel on _AppStoreContext {
     return const [];
   }
 
-  EqCutModel get _eqCutModel => engine.driver == 'xair'
-      ? EqCutModel.xairButterworth96k
-      : EqCutModel.unavailable;
+  EqCutModel get _eqCutModel => mixerProviderPolicy(engine.driver).cutModel;
 
-  EqBellModel get _eqBellModel =>
-      engine.driver == 'xair' ? EqBellModel.xair96k : EqBellModel.standard;
+  EqBellModel get _eqBellModel => mixerProviderPolicy(engine.driver).bellModel;
 
   bool _eqFixedCut(int band) =>
       _eqCutModel == EqCutModel.xairButterworth96k &&
@@ -508,7 +487,8 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   String? get _eqResponseNote {
     final notes = [
-      if (paramApplies('wing:filter_model')) 'EQ curve excludes input filters.',
+      if (paramApplies('provider:filter_model'))
+        'EQ curve excludes input filters.',
       if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1)).any(
           (type) =>
               EqFilterShape.fromValue(type)?.hasResponseModel(
@@ -524,9 +504,11 @@ mixin _AppStoreChannel on _AppStoreContext {
     return parameterRange(paramMetadata(leaf));
   }
 
-  int get _eqBandCount =>
-      (paramNum('wing:eq_bands')?.toInt() ?? (paramApplies('eq6_gain') ? 6 : 4))
-          .clamp(4, 8);
+  int get _eqBandCount => mixerProviderPolicy(engine.driver).eqBandCount(
+      mixerProviderPolicy(engine.driver).eqBandCountLeaf == null
+          ? null
+          : paramNum(mixerProviderPolicy(engine.driver).eqBandCountLeaf!),
+      paramApplies('eq6_gain'));
 
   @override
   ChannelEqVm get eq => ChannelEqVm(
@@ -534,17 +516,9 @@ mixin _AppStoreChannel on _AppStoreContext {
         hpfF: paramNum('hpf_freq') ?? 80,
         hpfRange: _editableRange('hpf_freq'),
         hpfOn: paramBool('hpf_on') ?? false,
-        hpfSlope: engine.driver == 'wing'
-            ? (paramNum('hpf_slope') == null
-                ? 12
-                : const [
-                    6,
-                    12,
-                    18,
-                    24
-                  ][paramNum('hpf_slope')!.toInt().clamp(0, 3)])
-            : 12,
-        hpfInResponse: engine.driver != 'wing',
+        hpfSlope:
+            mixerProviderPolicy(engine.driver).hpfSlope(paramNum('hpf_slope')),
+        hpfInResponse: mixerProviderPolicy(engine.driver).hpfInResponse,
         responseNote: _eqResponseNote,
         selectedBand: _eqBand,
         bands: [
@@ -586,10 +560,8 @@ mixin _AppStoreChannel on _AppStoreContext {
               q: paramNum('eq${b}_q') ?? 1,
               cutModel: _eqCutModel,
               bellModel: _eqBellModel,
-              shelfModel: engine.driver == 'xair'
-                  ? EqShelfModel.xair96k
-                  : EqShelfModel.standard,
-              shelfUsesQ: engine.driver != 'dl32s' &&
+              shelfModel: mixerProviderPolicy(engine.driver).shelfModel,
+              shelfUsesQ: mixerProviderPolicy(engine.driver).shelfUsesQ &&
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,
               type: _eqPresentationType(b),
@@ -644,9 +616,8 @@ mixin _AppStoreChannel on _AppStoreContext {
       mix: paramNum('${p}_mix'),
       auto: paramBool('${p}_auto'),
       softKnee: kind == DynKind.comp && paramNum('comp_knee') != null
-          ? (engine.driver == 'dl32s'
-              ? paramNum('comp_knee') == 0
-              : paramNum('comp_knee')! > 0)
+          ? mixerProviderPolicy(engine.driver)
+              .isSoftKnee(paramNum('comp_knee')!)
           : null,
     );
   }
@@ -714,11 +685,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   String _sendMuteLeaf(int slot) {
-    final auxCount = engine.driver == 'wing'
-        ? 16
-        : engine.driver == 'dl32s'
-            ? 8
-            : 6;
+    final auxCount = mixerProviderPolicy(engine.driver).legacyAuxCount;
+    if (auxCount == 0) return '';
     return slot <= auxCount ? 'aux${slot}_mute' : 'fx${slot - auxCount}_mute';
   }
 
@@ -738,11 +706,8 @@ mixin _AppStoreChannel on _AppStoreContext {
       if (destination['label'] is String) return destination['label'] as String;
     }
 
-    final auxCount = engine.driver == 'wing'
-        ? 16
-        : engine.driver == 'dl32s'
-            ? 8
-            : 6;
+    final auxCount = mixerProviderPolicy(engine.driver).legacyAuxCount;
+    if (auxCount == 0) return 'Send $slot';
     final kind = slot <= auxCount ? 'bus' : 'fxsnd';
     final index = slot <= auxCount ? slot - 1 : slot - auxCount - 1;
     for (final family in engine.topology) {
@@ -812,9 +777,7 @@ mixin _AppStoreChannel on _AppStoreContext {
         !_eqTypeChoices(band).any((choice) => choice.value == shape.value)) {
       return;
     }
-    final native = engine.driver == 'dl32s' && shape == EqFilterShape.lowShelf
-        ? 3
-        : shape.value;
+    final native = mixerProviderPolicy(engine.driver).eqNativeType(shape);
     cmdParam(leaf, native);
   }
 

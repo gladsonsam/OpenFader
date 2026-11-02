@@ -25,8 +25,6 @@ mixin _AppStoreAccess on _AppStoreContext {
     'source_b',
     'source_select',
     'usbreturn',
-    'wing:source_auto',
-    'wing:source_mode',
   };
   static const _micPreampFields = {'gain', 'phantom'};
   @override
@@ -99,7 +97,7 @@ mixin _AppStoreAccess on _AppStoreContext {
 
   static final _sendField = RegExp(r'^send([1-9]\d*)_(.+)$');
   static final _dspField = RegExp(
-    r'^(eq\d*_|gate_|comp_|hpf_|lpf_|geq|peq|delay_|wing:(eq_|filter_|hcf_))',
+    r'^(eq\d*_|gate_|comp_|hpf_|lpf_|geq|peq|delay_)',
   );
   static final _presetDspFields = {
     for (final kind in ProcessorPresetKind.values)
@@ -108,7 +106,9 @@ mixin _AppStoreAccess on _AppStoreContext {
   static final _legacySendField = RegExp(r'^(aux|fx)([1-9]\d*)_(level|mute)$');
 
   bool _isDsp(String field) =>
-      _dspField.hasMatch(field) || _presetDspFields.contains(field);
+      _dspField.hasMatch(field) ||
+      _presetDspFields.contains(field) ||
+      mixerProviderPolicy(engine.driver).isDspField(field);
 
   String? _sendTarget(int slot) {
     final metadata = engine.parameterMetadata['send${slot}_level'];
@@ -126,7 +126,8 @@ mixin _AppStoreAccess on _AppStoreContext {
   @override
   bool _accessParamAllowed(int ch, String field) {
     if (_blockedAccess.isEmpty) return true;
-    if (_inputRoutingFields.contains(field) &&
+    if ((_inputRoutingFields.contains(field) ||
+            mixerProviderPolicy(engine.driver).isInputRoutingField(field)) &&
         !accessFamilyAllowed(AccessFamily.inputRouting)) {
       return false;
     }

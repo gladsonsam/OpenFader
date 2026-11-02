@@ -3,11 +3,12 @@ part of 'app_store.dart';
 // Input source topology, routed preamp context and input delay views.
 mixin _AppStoreInput on _AppStoreContext {
   Map<String, dynamic>? _activePreampStateFor(int channel) {
-    if (engine.driver != 'xair') return null;
+    final leaf = mixerProviderPolicy(engine.driver).preampStateLeaf;
+    if (leaf == null) return null;
     final active = ps.optimisticValue(_maps, channel, 'source');
-    final raw = ps.optimisticValue(_maps, channel, 'xair:preamp_state');
+    final raw = ps.optimisticValue(_maps, channel, leaf);
     if (!engine.valueKnown(channel, 'source') ||
-        !engine.valueKnown(channel, 'xair:preamp_state') ||
+        !engine.valueKnown(channel, leaf) ||
         active is! String ||
         raw is! String) {
       return null;
@@ -60,7 +61,8 @@ mixin _AppStoreInput on _AppStoreContext {
 
   @override
   ChannelSourceModeVm? get sourceMode {
-    final raw = ps.optimisticValue(_maps, _channel, 'wing:source_mode');
+    final raw = ps.optimisticValue(
+        _maps, _channel, _providerLeaf(engine, 'provider:source_mode'));
     if (raw is! String) return null;
     final parts = raw.split(':');
     if (parts.length != 2) return null;
@@ -85,9 +87,9 @@ mixin _AppStoreInput on _AppStoreContext {
         }
       }
     }
-    final editable = supports('wing:source_mode') &&
-        paramBool('wing:source_mode_writable') == true &&
-        supports('wing:source_mode_writable');
+    final editable = supports('provider:source_mode') &&
+        paramBool('provider:source_mode_writable') == true &&
+        supports('provider:source_mode_writable');
     return ChannelSourceModeVm(context: (
       engine.session,
       controlAccessEpoch,
@@ -112,23 +114,28 @@ mixin _AppStoreInput on _AppStoreContext {
       return;
     }
     final code = const ['M', 'ST', 'M/S'][mode];
-    cmdParam('wing:source_mode', '${snapshot.target}:${snapshot.code}>$code');
+    cmdParam(
+        'provider:source_mode', '${snapshot.target}:${snapshot.code}>$code');
   }
 
   @override
   bool get hasDelay {
-    final scopes = engine.parameterMetadata['wing:delay_state']?['scopes'];
+    final scopes =
+        engine.parameterMetadata[_providerLeaf(engine, 'provider:delay_state')]
+            ?['scopes'];
     final family = _presetFamily(_channel);
     final tags = family?['params_scope'];
     final kinds = tags is List ? tags : [family?['kind']];
-    return engine.supportedParams.contains('wing:delay_state') &&
+    return engine.supportedParams
+            .contains(_providerLeaf(engine, 'provider:delay_state')) &&
         scopes is List &&
         scopes.any(kinds.contains);
   }
 
   @override
   ChannelDelayVm? get delay {
-    final raw = ps.optimisticValue(_maps, _channel, 'wing:delay_state');
+    final raw = ps.optimisticValue(
+        _maps, _channel, _providerLeaf(engine, 'provider:delay_state'));
     if (raw is! String) return null;
     try {
       final data = jsonDecode(raw);
@@ -154,7 +161,7 @@ mixin _AppStoreInput on _AppStoreContext {
           value > max ||
           data['on'] is! bool ||
           data['editable'] is! bool ||
-          paramNum('wing:delay_unit') != unit) {
+          paramNum('provider:delay_unit') != unit) {
         return null;
       }
       return ChannelDelayVm(
@@ -165,7 +172,8 @@ mixin _AppStoreInput on _AppStoreContext {
           min: min.toDouble(),
           max: max.toDouble(),
           on: data['on'] as bool,
-          editable: data['editable'] == true && supports('wing:delay_value'));
+          editable:
+              data['editable'] == true && supports('provider:delay_value'));
     } catch (_) {
       return null;
     }
@@ -188,7 +196,7 @@ mixin _AppStoreInput on _AppStoreContext {
         ? (live.min + ((value - live.min) / step).round() * step)
             .clamp(live.min, live.max)
         : value;
-    cmdParam('wing:delay_value', '${snapshot.code}:$snapped');
+    cmdParam('provider:delay_value', '${snapshot.code}:$snapped');
   }
 
   @override
@@ -217,9 +225,7 @@ mixin _AppStoreInput on _AppStoreContext {
       // The view model uses the displayed A/B index, 0=A / 1=B.
       selected: selected == null
           ? null
-          : engine.driver == 'dl32s'
-              ? 1 - selected
-              : selected,
+          : mixerProviderPolicy(engine.driver).sourceSelection(selected),
       usbReturn: paramNum('usbreturn')?.toInt(),
       levelDb: _levelDb.value,
     );
@@ -230,8 +236,8 @@ mixin _AppStoreInput on _AppStoreContext {
   @override
   void setSourceSelected(int selected) {
     if (selected == 0 || selected == 1) {
-      cmdParam(
-          'source_select', engine.driver == 'dl32s' ? 1 - selected : selected);
+      cmdParam('source_select',
+          mixerProviderPolicy(engine.driver).sourceSelection(selected));
     }
   }
 }

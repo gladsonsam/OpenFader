@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
 import '../core/channel_name.dart';
+import '../core/mixer_provider_policy.dart';
 import '../core/access_limits.dart';
 import '../screens/channel.dart' show ChannelTab;
 import '../core/channel_views.dart' show parameterRange;
@@ -395,7 +396,9 @@ class MixerController extends ChangeNotifier {
       store.openOutputProcessing(target);
       return store.outputProcessingTarget == target;
     }
-    if (store.engine.driver != 'xair') return false;
+    if (!mixerProviderPolicy(store.engine.driver).masterChannelProcessing) {
+      return false;
+    }
     final strip = store.engine.strips.where((s) => s.key == target).firstOrNull;
     if (strip == null) return false;
     store.openChannel(strip.ch);
@@ -463,12 +466,12 @@ class MixerController extends ChangeNotifier {
         !store.canEditControl(index, 'gain') ||
         !store.engine.capsReady ||
         !store.engine.supportedParams.contains('gain') ||
-        (store.engine.driver != 'sim' &&
+        (!mixerProviderPolicy(store.engine.driver).offlineValues &&
             (!store.engine.connected ||
                 !store.engine.valueKnown(index, 'gain')))) {
       return null;
     }
-    return store.engine.driver == 'xair'
+    return mixerProviderPolicy(store.engine.driver).requiresRoutedPreamp
         ? store.preampGainRangeFor(index)
         : parameterRange(store.paramMetadata('gain'));
   }
@@ -477,7 +480,7 @@ class MixerController extends ChangeNotifier {
       ch.channel != null &&
       !ch.master &&
       store.canEditControl(ch.channel!, 'phantom') &&
-      (store.engine.driver != 'xair' ||
+      (!mixerProviderPolicy(store.engine.driver).requiresRoutedPreamp ||
           store.preampPhantomAvailableFor(ch.channel!) == true);
 
   void setGain(MixerChannel ch, double value) {

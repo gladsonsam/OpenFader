@@ -82,12 +82,8 @@ extension _InputProcessorRecall on _AppStorePresets {
         if (error != null) throw StateError(error);
         error = _presetValueError(target, field, preset.values[field]);
         if (error != null) throw StateError(error);
-        final band = RegExp(r'^eq([1-4])_q$').firstMatch(field);
-        if (target.driver == 'dl32s' &&
-            band != null &&
-            preset.values['eq${band[1]}_type'] != 2) {
-          // DL32S Q is inactive outside bell mode. Keep the saved Q in the
-          // library and explicitly report it as not recalled.
+        if (mixerProviderPolicy(target.driver)
+            .skipRecalledField(field, preset.values)) {
           skipped.add(field);
           continue;
         }
@@ -95,7 +91,8 @@ extension _InputProcessorRecall on _AppStorePresets {
         // unconfirmed edits before taking this processor's write lock.
         _coalescer.cancel('param:${target.channel}:$field');
         final value = preset.values[field]!;
-        final row = (snapshot['rows'] as List).firstWhere((r) => r['id'] == field);
+        final row =
+            (snapshot['rows'] as List).firstWhere((r) => r['id'] == field);
         if (ps.valuesEqual(row['value'], value)) {
           // A no-op is verified by the captured provider state. Revalidate
           // its whole block without writing an unchanged desk setting.

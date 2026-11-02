@@ -22,6 +22,7 @@ import '../core/routing_access.dart';
 import '../settings/prefs.dart';
 
 import '../core/channel_views.dart';
+import '../core/mixer_provider_policy.dart';
 import '../core/output_processing.dart';
 import '../core/output_meters.dart';
 import '../core/output_presets.dart';
@@ -64,6 +65,9 @@ part 'app_store_input.dart';
 part 'app_store_destinations.dart';
 part 'app_store_outputs.dart';
 part 'app_store_output_presets.dart';
+
+String _providerLeaf(EngineState engine, String leaf) =>
+    mixerProviderPolicy(engine.driver).parameterLeaf(AppStore.deskLeaf(leaf));
 
 double _linToDb(double l) => (l <= 0 || !l.isFinite)
     ? double.negativeInfinity

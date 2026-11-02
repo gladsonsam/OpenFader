@@ -89,18 +89,28 @@ mixin _AppStorePresets on _AppStoreContext {
   int _inputCatalogueRevision = 0;
   _ChannelProcessingCopy? _channelClipboard;
   _PresetRecall? _channelRecall;
-  final Expando<_ChannelProcessingPlan> _channelPlans = Expando<_ChannelProcessingPlan>();
+  final Expando<_ChannelProcessingPlan> _channelPlans =
+      Expando<_ChannelProcessingPlan>();
 
   @override
-  ChannelProcessingTarget? captureChannelProcessingTarget(ChannelNameTarget target) => _captureChannelProcessingTarget(target);
+  ChannelProcessingTarget? captureChannelProcessingTarget(
+          ChannelNameTarget target) =>
+      _captureChannelProcessingTarget(target);
   @override
-  String? channelProcessingError(ChannelProcessingTarget target, {bool paste = false}) => _channelProcessingError(target, paste: paste);
+  String? channelProcessingError(ChannelProcessingTarget target,
+          {bool paste = false}) =>
+      _channelProcessingError(target, paste: paste);
   @override
-  Future<String?> copyChannelProcessing(ChannelProcessingTarget target) => _copyChannelProcessing(target);
+  Future<String?> copyChannelProcessing(ChannelProcessingTarget target) =>
+      _copyChannelProcessing(target);
   @override
-  Future<ChannelProcessingPaste> prepareChannelProcessingPaste(ChannelProcessingTarget target) => _prepareChannelProcessingPaste(target);
+  Future<ChannelProcessingPaste> prepareChannelProcessingPaste(
+          ChannelProcessingTarget target) =>
+      _prepareChannelProcessingPaste(target);
   @override
-  Future<ProcessorPresetResult> pasteChannelProcessing(ChannelProcessingPaste proposal) => _pasteChannelProcessing(proposal);
+  Future<ProcessorPresetResult> pasteChannelProcessing(
+          ChannelProcessingPaste proposal) =>
+      _pasteChannelProcessing(proposal);
   @override
   void cancelChannelProcessing() => _cancelChannelProcessing();
 
@@ -166,8 +176,12 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   void _observeInputPresetCatalogue() {
-    final catalogue = jsonEncode([engine.topology, engine.stereoPairs,
-      engine.supportedParams.toList()..sort(), engine.parameterMetadata]);
+    final catalogue = jsonEncode([
+      engine.topology,
+      engine.stereoPairs,
+      engine.supportedParams.toList()..sort(),
+      engine.parameterMetadata
+    ]);
     if (_inputCatalogue != catalogue) {
       _inputCatalogue = catalogue;
       _inputCatalogueRevision++;
@@ -227,7 +241,8 @@ mixin _AppStorePresets on _AppStoreContext {
         .any((field) => !_accessParamAllowed(target.channel, field))) {
       return 'This processor is limited on this device.';
     }
-    if (locked || _presetDisposed ||
+    if (locked ||
+        _presetDisposed ||
         _presetTargets[target] != _presetGeneration ||
         !engine.connected ||
         engine.session != target.session ||
@@ -271,7 +286,9 @@ mixin _AppStorePresets on _AppStoreContext {
   String? _presetReadyError(ProcessorPresetTarget target) {
     final unavailable = presetTargetError(target);
     if (unavailable != null) return unavailable;
-    if (_presetRecalls.values.any((r) => r.target.channel == target.channel && (r.processing || r.target.kind == target.kind))) {
+    if (_presetRecalls.values.any((r) =>
+        r.target.channel == target.channel &&
+        (r.processing || r.target.kind == target.kind))) {
       return 'Wait for the current ${target.kind.label} recall to finish.';
     }
     // Pending processor edits include bypass flags, even though they are never
@@ -303,10 +320,10 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   bool _presetEditingBlocked(int channel, String field) =>
-      _presetRecalls.values.any((recall) =>
-          recall.target.channel == channel &&
-            (field == 'link' ||
-                recall.contains(field)),
+      _presetRecalls.values.any(
+        (recall) =>
+            recall.target.channel == channel &&
+            (field == 'link' || recall.contains(field)),
       );
 
   String? _presetValueError(
@@ -351,13 +368,8 @@ mixin _AppStorePresets on _AppStoreContext {
             value != value.roundToDouble())) {
       return 'The saved setting ${_presetSettingLabel(field)} is outside the mixer’s supported range.';
     }
-    // DL32S exposes narrower raw binary domains than the canonical catalogue.
-    // Preserve integers without assuming modern/vintage or soft/hard labels.
-    if (target.driver == 'dl32s' &&
-        const {'eq_mode', 'gate_mode', 'comp_mode', 'comp_knee'}
-            .contains(field) &&
-        value != 0 &&
-        value != 1) {
+    if (!mixerProviderPolicy(target.driver)
+        .validRawPreset(field, value.toDouble())) {
       return 'The saved setting ${_presetSettingLabel(field)} must be 0 or 1 for this mixer.';
     }
     return null;
@@ -544,18 +556,23 @@ mixin _AppStorePresets on _AppStoreContext {
     _pollPresetRecalls(_nowMs());
     for (final recall in _presetRecalls.values) {
       final waiting = recall.waiting;
-      if (waiting == null || waiting.requestId != frame['request_id'] ||
-          waiting.epoch != frame['epoch'] || recall.error != null ||
+      if (waiting == null ||
+          waiting.requestId != frame['request_id'] ||
+          waiting.epoch != frame['epoch'] ||
+          recall.error != null ||
           waiting.done.isCompleted) {
         continue;
       }
       final snapshot = frame['snapshot'];
       final message = frame['message'];
       if (message is String || snapshot is! Map<String, dynamic>) {
-        recall.stop(message is String ? message : 'No verified processor result arrived; result uncertain.');
+        recall.stop(message is String
+            ? message
+            : 'No verified processor result arrived; result uncertain.');
       } else {
         try {
-          _validateInputSnapshot(recall.target, snapshot, processing: recall.processing);
+          _validateInputSnapshot(recall.target, snapshot,
+              processing: recall.processing);
         } catch (error) {
           recall.stop('$error');
           continue;
@@ -575,7 +592,6 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   Future<ProcessorPresetResult> recallProcessorPreset(
-      ProcessorPresetTarget target, String id) =>
+          ProcessorPresetTarget target, String id) =>
       _recallInputProcessor(target, id: id);
-
 }

@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../engine.dart';
-import '../core/xair_fx_display.dart';
+import '../core/fx_position_scale.dart';
 import '../core/access_limits.dart';
 import '../screens/fx.dart';
 import 'store_adapter.dart';
@@ -45,8 +45,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
 
   @override
   List<DestinationControlVm> get destinationControls => List.unmodifiable(
-    engine.destinationControls.where((control) => control.surface == 'fx'),
-  );
+        engine.destinationControls.where((control) => control.surface == 'fx'),
+      );
   @override
   bool destinationControlIsCurrent(DestinationControlVm control) =>
       app.destinationControlIsCurrent(control);
@@ -54,7 +54,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   Future<String?> setDestinationControl(
     DestinationControlVm control,
     double value,
-  ) => app.setDestinationControl(control, value);
+  ) =>
+      app.setDestinationControl(control, value);
 
   @override
   Future<String?> tapDestinationControl(DestinationControlVm control) async {
@@ -103,24 +104,22 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   // A provider-native catalogue owns the rack presentation, including sim.
   // Keep legacy numbered/design racks for providers without that contract.
-  List<FxSlotVm> get slots =>
-      engine.destinationControls.any(
+  List<FxSlotVm> get slots => engine.destinationControls.any(
         (control) => control.surface == 'fx' && control.id == 'algorithm',
       )
-      ? const []
-      : [
-          for (final s in _raw)
-            FxSlotVm(
-              slot: s.slot,
-              name: 'FX ${s.slot}',
-              type:
-                  _typeMetadata(s.type)?['id'] as String? ??
-                  (s.type.isEmpty ? '—' : s.type),
-              on: s.on,
-              bypass: s.bypass,
-              ret: s.returnLabel,
-            ),
-        ];
+          ? const []
+          : [
+              for (final s in _raw)
+                FxSlotVm(
+                  slot: s.slot,
+                  name: 'FX ${s.slot}',
+                  type: _typeMetadata(s.type)?['id'] as String? ??
+                      (s.type.isEmpty ? '—' : s.type),
+                  on: s.on,
+                  bypass: s.bypass,
+                  ret: s.returnLabel,
+                ),
+            ];
 
   @override
   int get selected => _sel.clamp(0, _raw.isEmpty ? 0 : _raw.length - 1);
@@ -152,17 +151,14 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
-    final hall = XairHallScale.fromMetadata(metadata);
+    final hall = fxPositionScale(engine.driver, metadata);
     if (hall != null) return hall.text(hall.position(normalized));
-    if (metadata?['scale'] == 'xair_deesser_steps') {
-      return xairDeesserPosition(normalized).toStringAsFixed(1);
-    }
     final choices = metadata?['choices'];
     if (choices is List && choices.isNotEmpty) {
       final index = (normalized * (choices.length - 1)).round().clamp(
-        0,
-        choices.length - 1,
-      );
+            0,
+            choices.length - 1,
+          );
       final choice = choices[index];
       if (choice is Map && choice['label'] is String) {
         return choice['label'] as String;
@@ -207,9 +203,10 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         if (parameter is Map<String, dynamic> && parameter['id'] is String)
           parameter['id'] as String: parameter,
     };
-    final unknownIds =
-        c.params.keys.where((id) => !definitions.containsKey(id)).toList()
-          ..sort();
+    final unknownIds = c.params.keys
+        .where((id) => !definitions.containsKey(id))
+        .toList()
+      ..sort();
     final ids = [
       for (final id in definitions.keys)
         if (c.params.containsKey(id)) id,
@@ -225,36 +222,30 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       final rawMin = (meta?['min'] as num?)?.toDouble();
       final rawMax = (meta?['max'] as num?)?.toDouble();
       final scale = meta?['scale'];
-      final hall = XairHallScale.fromMetadata(meta);
-      final valid =
-          rawMin != null &&
+      final hall = fxPositionScale(engine.driver, meta);
+      final valid = rawMin != null &&
           rawMax != null &&
           rawMin.isFinite &&
           rawMax.isFinite &&
           rawMax > rawMin &&
-          (hall != null ||
-              scale == 'lin' ||
-              scale == 'xair_deesser_steps' ||
-              scale == 'log' && rawMin > 0);
+          (hall != null || scale == 'lin' || scale == 'log' && rawMin > 0);
       final min = choices.isNotEmpty
           ? 0.0
           : valid
-          ? rawMin
-          : 0.0;
+              ? rawMin
+              : 0.0;
       final max = choices.isNotEmpty
           ? (choices.length - 1).toDouble()
           : valid
-          ? rawMax
-          : 100.0;
+              ? rawMax
+              : 100.0;
       final value = hall != null
           ? hall.display(hall.position(normalized))
-          : scale == 'xair_deesser_steps'
-          ? xairDeesserPosition(normalized)
           : choices.isNotEmpty
-          ? (normalized * max).roundToDouble()
-          : valid && scale == 'log'
-          ? min * math.pow(max / min, normalized)
-          : min + (max - min) * normalized;
+              ? (normalized * max).roundToDouble()
+              : valid && scale == 'log'
+                  ? min * math.pow(max / min, normalized)
+                  : min + (max - min) * normalized;
       return FxKnobVm(
         id: id,
         label: definitions[id]?['label'] as String? ?? id,
@@ -265,28 +256,20 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         max: 1,
         value: hall != null
             ? hall.position(normalized) / hall.steps
-            : scale == 'xair_deesser_steps'
-            ? xairDeesserPosition(normalized) / 50
             : c.params[id]!.clamp(0.0, 1.0),
         text: _parameterText(normalized, meta),
         entryMin: min,
         entryMax: max,
         entryValue: value,
         choices: choices,
-        increment: hall != null
-            ? 1 / hall.steps
-            : scale == 'xair_deesser_steps'
-            ? 0.02
-            : 0.01,
+        increment: hall != null ? 1 / hall.steps : 0.01,
         normalize: (value) => max == min
             ? 0
             : hall != null
-            ? hall.entry(value)
-            : scale == 'xair_deesser_steps'
-            ? xairDeesserEntry(value)
-            : choices.isEmpty && valid && scale == 'log'
-            ? math.log(value / min) / math.log(max / min)
-            : (value - min) / (max - min),
+                ? hall.entry(value)
+                : choices.isEmpty && valid && scale == 'log'
+                    ? math.log(value / min) / math.log(max / min)
+                    : (value - min) / (max - min),
       );
     }
 
@@ -307,7 +290,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         .whereType<Map>()
         .where((p) => p['id'] == id)
         .firstOrNull;
-    final scale = XairHallScale.fromMetadata(param);
+    final scale = fxPositionScale(engine.driver, param);
     return scale != null && scale.unit == 'ms' ? id : null;
   }
 
@@ -390,7 +373,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     final position = params
         .whereType<Map>()
         .where((param) => param['id'] == id)
-        .map(XairHallScale.fromMetadata)
+        .map((param) => fxPositionScale(engine.driver, param))
         .firstOrNull;
     final canonical = position != null
         ? (value * position.steps).round() / position.steps
@@ -421,7 +404,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       return;
     }
     final params = _typeMetadata(_cur!.type)?['params'] as List? ?? const [];
-    final scale = XairHallScale.fromMetadata(
+    final scale = fxPositionScale(
+      engine.driver,
       params.whereType<Map>().where((p) => p['id'] == id).firstOrNull,
     )!;
     final now = _tapClock.elapsedMilliseconds;

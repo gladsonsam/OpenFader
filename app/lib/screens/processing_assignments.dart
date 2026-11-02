@@ -199,7 +199,7 @@ class _InputAssignments extends StatelessWidget {
         const SizedBox(height: 12),
         _AutomixWeight(store: store, onFocus: onFocus),
       ],
-      if (store.paramApplies('xair:automix_gain')) ...[
+      if (store.paramApplies('provider:automix_gain')) ...[
         const SizedBox(height: 12),
         _AutomixGainMeter(store: store, onFocus: onFocus),
       ],

@@ -227,7 +227,7 @@ class _InputTab extends StatelessWidget {
             ]
           ]),
       ],
-      if (store.paramApplies('wing:input_mode')) ...[
+      if (store.paramApplies('provider:input_mode')) ...[
         const SizedBox(height: 12),
         if (store.sourceMode?.editable == true)
           _ProcessingButton(
@@ -237,18 +237,18 @@ class _InputTab extends StatelessWidget {
               onTap: () => _editSourceMode(context))
         else
           Text(
-              'Input mode · ${_choiceText(store, 'wing:input_mode', 'Loading…')}',
+              'Input mode · ${_choiceText(store, 'provider:input_mode', 'Loading…')}',
               style:
                   AppDesign.type(14, color: ConsolePalette.of(context).text7)),
       ],
-      if (store.paramApplies('wing:source_auto')) ...[
+      if (store.paramApplies('provider:source_auto')) ...[
         const SizedBox(height: 7),
         _ProcessingButton(
             label: 'Auto alternate source',
-            active: store.paramBool('wing:source_auto') == true,
-            onTap: store.supports('wing:source_auto')
-                ? () => store.cmdParam('wing:source_auto',
-                    store.paramBool('wing:source_auto') != true)
+            active: store.paramBool('provider:source_auto') == true,
+            onTap: store.supports('provider:source_auto')
+                ? () => store.cmdParam('provider:source_auto',
+                    store.paramBool('provider:source_auto') != true)
                 : null),
       ],
       SizedBox(height: wide ? 88 : 14),
@@ -269,19 +269,19 @@ class _InputTab extends StatelessWidget {
                 active: pre.invert,
                 semanticsLabel: 'Invert polarity',
                 onTap: store.supports('polarity') ? store.toggleInvert : null)),
-      if (store.paramApplies('wing:input_balance')) ...[
+      if (store.paramApplies('provider:input_balance')) ...[
         const SizedBox(height: 7),
         _InputPreampControl(
             store: store,
-            leaf: 'wing:input_balance',
+            leaf: 'provider:input_balance',
             label: 'Input balance',
             onFocus: onFocus),
       ],
-      if (store.paramApplies('wing:width')) ...[
+      if (store.paramApplies('provider:width')) ...[
         const SizedBox(height: 7),
         _InputPreampControl(
             store: store,
-            leaf: 'wing:width',
+            leaf: 'provider:width',
             label: 'Stereo width',
             section: 'Stereo',
             onFocus: onFocus),
@@ -351,16 +351,17 @@ class _InputTab extends StatelessWidget {
             child: Text('No send slots on this desk.',
                 style: AppDesign.type(14,
                     color: ConsolePalette.of(context).text7))),
-      if (store.supports('wing:send_tap'))
+      if (store.supports('provider:send_tap'))
         Padding(
             padding: const EdgeInsets.only(top: 12),
             child: _ParameterChoices(
                 store: store,
-                leaf: 'wing:send_tap',
+                leaf: 'provider:send_tap',
                 label: 'Pre tap source',
                 fallback: 'Loading…',
                 compact: true,
-                onChanged: (value) => store.cmdParam('wing:send_tap', value))),
+                onChanged: (value) =>
+                    store.cmdParam('provider:send_tap', value))),
       for (final send in store.sends)
         Padding(
             padding:
@@ -458,11 +459,11 @@ class _InputDelayControl extends StatelessWidget {
       const SizedBox(height: 7),
       _ParameterChoices(
           store: store,
-          leaf: 'wing:delay_unit',
+          leaf: 'provider:delay_unit',
           label: 'Delay unit',
           fallback: 'Loading…',
           compact: true,
-          onChanged: (value) => store.cmdParam('wing:delay_unit', value)),
+          onChanged: (value) => store.cmdParam('provider:delay_unit', value)),
     ]);
   }
 }
