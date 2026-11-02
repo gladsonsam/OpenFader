@@ -77,3 +77,27 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
 - Screens render through store contracts (`ChannelStore`, `ConnectionStore`);
   `AppShell` implements them over the engine. Constructor injection only —
   screens never import `state/app_store.dart`.
+
+## Mixer independence (binding)
+
+- Generic application, UI, state, engine, audio and shared code consumes
+  provider/driver capability contracts and descriptors. Use the connected
+  provider's actual channel counts, ranges and native option sets. Do not
+  assume a default mixer, branch on a branded model, or bake in 18/32-channel,
+  FX or other model-specific layouts in shared paths.
+- Keep protocol mappings, native identifiers, quirks, discovery ports and
+  validation beside the owning driver or adapter. Model selection, registry
+  labels, explicitly named simulation fixtures and hardware diagnostics may
+  identify a model. Adding a mixer should require a driver/provider integration,
+  not rewrites of shared screens or features.
+- Recording, import, export and manual virtual soundcheck must work independently
+  of a network mixer, subject to actual OS driver, sample-rate and hardware
+  channel limits. Snapshots, native files and routing are optional capabilities;
+  automatic routing remains gated by a verified profile. When a capability is
+  unavailable, expose its reason visibly. Never report fake success, invent
+  mappings or rename vendor-specific behavior as generic.
+- For each relevant change or audit, examine semantic coupling beyond brand
+  searches, including defaults, counts, ranges, option sets and assumptions in
+  shared flows. Validate against multiple differing descriptors or fixtures
+  using the existing gates; do not add frontend tests or expand desk protocol
+  tests without the owner's instruction.
