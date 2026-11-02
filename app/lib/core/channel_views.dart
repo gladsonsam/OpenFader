@@ -814,7 +814,6 @@ class ChannelSourceModeVm {
       required this.sourceLabel,
       required this.mode,
       required this.editable});
-  String get code => const ['M', 'ST', 'M/S'][mode];
   String get label => const ['Mono', 'Stereo', 'Mid/side'][mode];
 }
 
@@ -833,7 +832,6 @@ class ChannelDelayVm {
       required this.max,
       required this.on,
       required this.editable});
-  String get code => const ['M', 'FT', 'MS', 'SMP'][unit];
   String get unitLabel => const ['m', 'ft', 'ms', 'samples'][unit];
 }
 

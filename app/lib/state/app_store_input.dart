@@ -63,26 +63,19 @@ mixin _AppStoreInput on _AppStoreContext {
   ChannelSourceModeVm? get sourceMode {
     final raw = ps.optimisticValue(
         _maps, _channel, _providerLeaf(engine, 'provider:source_mode'));
-    if (raw is! String) return null;
-    final parts = raw.split(':');
-    if (parts.length != 2) return null;
-    final mode = const ['M', 'ST', 'M/S'].indexOf(parts[1]);
-    final target = parts[0];
-    final port = target.split('/');
-    if (mode < 0 ||
-        port.length != 2 ||
-        int.tryParse(port[1]) == null ||
-        source.srcName != '${port[0]} ${port[1]}') {
+    final decoded = mixerProviderPolicy(engine.driver).decodeSourceMode(raw);
+    if (decoded == null ||
+        source.srcName != '${decoded.group} ${decoded.port}') {
       return null;
     }
-    var label = '${port[0]} ${port[1]}';
+    var label = '${decoded.group} ${decoded.port}';
     final groups = engine.routingCaps['groups'];
     if (groups is List) {
       for (final group in groups) {
         if (group is Map &&
-            group['key'] == port[0] &&
+            group['key'] == decoded.group &&
             group['label'] is String) {
-          label = '${group['label']} ${port[1]}';
+          label = '${group['label']} ${decoded.port}';
           break;
         }
       }
@@ -90,32 +83,35 @@ mixin _AppStoreInput on _AppStoreContext {
     final editable = supports('provider:source_mode') &&
         paramBool('provider:source_mode_writable') == true &&
         supports('provider:source_mode_writable');
-    return ChannelSourceModeVm(context: (
-      engine.session,
-      controlAccessEpoch,
-      _channel,
-      source.sourceA,
-      source.sourceB,
-      source.selected,
-      raw,
-      editable
-    ), target: target, sourceLabel: label, mode: mode, editable: editable);
+    return ChannelSourceModeVm(
+        context: (
+          engine.session,
+          controlAccessEpoch,
+          _channel,
+          source.sourceA,
+          source.sourceB,
+          source.selected,
+          raw,
+          editable
+        ),
+        target: decoded.target,
+        sourceLabel: label,
+        mode: decoded.mode,
+        editable: editable);
   }
 
   @override
   void setSourceMode(ChannelSourceModeVm snapshot, int mode) {
     final current = sourceMode;
-    if (mode < 0 ||
-        mode > 2 ||
-        current == null ||
+    if (current == null ||
         !current.editable ||
         current.context != snapshot.context ||
         current.mode == mode) {
       return;
     }
-    final code = const ['M', 'ST', 'M/S'][mode];
-    cmdParam(
-        'provider:source_mode', '${snapshot.target}:${snapshot.code}>$code');
+    final encoded =
+        mixerProviderPolicy(engine.driver).encodeSourceMode(snapshot, mode);
+    if (encoded != null) cmdParam('provider:source_mode', encoded);
   }
 
   @override
@@ -136,47 +132,25 @@ mixin _AppStoreInput on _AppStoreContext {
   ChannelDelayVm? get delay {
     final raw = ps.optimisticValue(
         _maps, _channel, _providerLeaf(engine, 'provider:delay_state'));
-    if (raw is! String) return null;
-    try {
-      final data = jsonDecode(raw);
-      if (data is! Map) return null;
-      final unit = data['unit'],
-          value = data['value'],
-          min = data['min'],
-          max = data['max'],
-          steps = data['steps'];
-      if (unit is! int ||
-          unit < 0 ||
-          unit > 3 ||
-          value is! num ||
-          min is! num ||
-          max is! num ||
-          steps is! int ||
-          steps < 0 ||
-          !value.isFinite ||
-          !min.isFinite ||
-          !max.isFinite ||
-          min >= max ||
-          value < min ||
-          value > max ||
-          data['on'] is! bool ||
-          data['editable'] is! bool ||
-          paramNum('provider:delay_unit') != unit) {
-        return null;
-      }
-      return ChannelDelayVm(
-          context: (engine.session, _channel, unit, min, max, steps),
-          unit: unit,
-          steps: steps,
-          value: value.toDouble(),
-          min: min.toDouble(),
-          max: max.toDouble(),
-          on: data['on'] as bool,
-          editable:
-              data['editable'] == true && supports('provider:delay_value'));
-    } catch (_) {
-      return null;
-    }
+    final report = mixerProviderPolicy(engine.driver)
+        .decodeDelay(raw, paramNum('provider:delay_unit'));
+    if (report == null) return null;
+    return ChannelDelayVm(
+        context: (
+          engine.session,
+          _channel,
+          report.unit,
+          report.min,
+          report.max,
+          report.steps
+        ),
+        unit: report.unit,
+        steps: report.steps,
+        value: report.value.toDouble(),
+        min: report.min.toDouble(),
+        max: report.max.toDouble(),
+        on: report.on,
+        editable: report.editable && supports('provider:delay_value'));
   }
 
   @override
@@ -190,13 +164,8 @@ mixin _AppStoreInput on _AppStoreContext {
         value > live.max) {
       return;
     }
-    final step =
-        live.steps > 1 ? (live.max - live.min) / (live.steps - 1) : 0.0;
-    final snapped = step > 0
-        ? (live.min + ((value - live.min) / step).round() * step)
-            .clamp(live.min, live.max)
-        : value;
-    cmdParam('provider:delay_value', '${snapshot.code}:$snapped');
+    final encoded = mixerProviderPolicy(engine.driver).encodeDelay(live, value);
+    if (encoded != null) cmdParam('provider:delay_value', encoded);
   }
 
   @override
@@ -221,8 +190,7 @@ mixin _AppStoreInput on _AppStoreContext {
           raw is String && raw.trim().isNotEmpty ? raw : 'Source unavailable',
       sourceA: paramNum('source_a')?.toInt(),
       sourceB: paramNum('source_b')?.toInt(),
-      // DL32S wire selector is 1=A / 0=B, verified against the desk.
-      // The view model uses the displayed A/B index, 0=A / 1=B.
+      // The provider converts its selector into the displayed A/B index.
       selected: selected == null
           ? null
           : mixerProviderPolicy(engine.driver).sourceSelection(selected),
