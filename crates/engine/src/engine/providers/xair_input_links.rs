@@ -1,21 +1,22 @@
 //! XR18 shared input-link preparation and verified recall.
-use super::*;
+use super::super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) struct InputLink {
+pub(in crate::engine) struct InputLink {
     pair: [u16; 2],
     wanted: bool,
 }
 
 impl Engine {
-    pub(super) async fn prepare_scene_input_links(
+    pub(in crate::engine) async fn prepare_scene_input_links(
         &self,
+        driver: &str,
         scene: &StoredScene,
         scope: Option<&RecallScope>,
         topo: &[openfader_core::StripFamily],
         check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<Vec<InputLink>> {
-        let drv = self.drv("xair");
+        let drv = self.drv(driver);
         if drv.param_read_only("link")
             || scope.is_some_and(|s| !s.allows_param_for(drv.as_ref(), "link"))
         {
@@ -68,22 +69,23 @@ impl Engine {
                 }
             }
             if let Some(wanted) = wanted {
-                self.read_scene_input_link(pair, check).await?;
+                self.read_scene_input_link(driver, pair, check).await?;
                 result.push(InputLink { pair, wanted });
             }
         }
         Ok(result)
     }
 
-    pub(super) async fn read_scene_input_link(
+    pub(in crate::engine) async fn read_scene_input_link(
         &self,
+        driver: &str,
         pair: [u16; 2],
         check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<bool> {
         let mut state = None;
         for member in pair {
             check()?;
-            let value = self.drv("xair").get_param(StripId(member), "link").await?;
+            let value = self.drv(driver).get_param(StripId(member), "link").await?;
             check()?;
             let ParamValue::Bool(value) = value else {
                 anyhow::bail!("snapshot input link unavailable");
@@ -97,20 +99,21 @@ impl Engine {
         Ok(state.unwrap())
     }
 
-    pub(super) async fn restore_scene_input_links(
+    pub(in crate::engine) async fn restore_scene_input_links(
         &self,
+        driver_writer: (&str, &str),
         links: &[InputLink],
         check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
         affected: &std::sync::Mutex<BTreeSet<u16>>,
-        writer: &str,
         topo: &[openfader_core::StripFamily],
         out: &mut Vec<Event>,
     ) -> anyhow::Result<()> {
+        let (driver, writer) = driver_writer;
         for link in links {
             let operation = async {
-                if self.read_scene_input_link(link.pair, check).await? != link.wanted {
+                if self.read_scene_input_link(driver, link.pair, check).await? != link.wanted {
                     check()?;
-                    self.drv("xair")
+                    self.drv(driver)
                         .set_param_guarded_checked(
                             StripId(link.pair[0]),
                             "link",
@@ -134,7 +137,11 @@ impl Engine {
                 for attempt in 0..5 {
                     check()?;
                     let query_started = Instant::now();
-                    if self.read_scene_input_link(link.pair, check).await.ok() == Some(link.wanted)
+                    if self
+                        .read_scene_input_link(driver, link.pair, check)
+                        .await
+                        .ok()
+                        == Some(link.wanted)
                     {
                         verified = Some(query_started);
                         break;
@@ -174,14 +181,15 @@ impl Engine {
         Ok(())
     }
 
-    pub(super) async fn verify_scene_input_links(
+    pub(in crate::engine) async fn verify_scene_input_links(
         &self,
+        driver: &str,
         links: &[InputLink],
         check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         for link in links {
             let state = self
-                .read_scene_input_link(link.pair, check)
+                .read_scene_input_link(driver, link.pair, check)
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}; mixer may be partly changed"))?;
             anyhow::ensure!(
