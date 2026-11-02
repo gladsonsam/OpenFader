@@ -7,13 +7,13 @@ extension _ControlGroupInfluence on _AppStoreContext {
   String _controlGroupInfluence(int channel) {
     final labels = <String>[];
     final toDb =
-        engine.driver == 'sim' ? posToDb : lawForDriver(engine.driver).toDb;
+        engine.driver == 'sim' ? posToDb : lawForDriver(engine.driver)?.toDb;
     final member = engine.strips.where((s) => s.ch == channel).firstOrNull;
     if (member == null) return '';
-    var known = engine.valueKnown(channel, 'fader');
+    var known = toDb != null && engine.valueKnown(channel, 'fader');
     var level = _stripFaderValue(channel, member.fader);
     var off = level <= 0;
-    var effective = toDb(level);
+    var effective = toDb?.call(level) ?? 0.0;
     var muted = _stripMuteValue(channel, member.muted);
     var muteKnown = engine.valueKnown(channel, 'mute');
     var group = 1;
@@ -38,7 +38,7 @@ extension _ControlGroupInfluence on _AppStoreContext {
         if (engine.valueKnown(master.ch, 'fader')) {
           level = _stripFaderValue(master.ch, master.fader);
           off |= level <= 0;
-          effective += toDb(level);
+          if (toDb != null) effective += toDb(level);
         } else {
           known = false;
         }

@@ -387,11 +387,13 @@ class _FaderValue extends StatelessWidget {
         builder: (context, fader, _) {
           final text = fmtDb(fader);
           return Semantics(
-              button: true,
-              label: 'Channel fader, $text dB, activate to type a value',
-              onTap: () => _type(context),
+              button: fader.isFinite,
+              label: fader.isFinite
+                  ? 'Channel fader, $text dB, activate to type a value'
+                  : 'Channel fader unavailable',
+              onTap: fader.isFinite ? () => _type(context) : null,
               child: GestureDetector(
-                  onTap: () => _type(context),
+                  onTap: fader.isFinite ? () => _type(context) : null,
                   behavior: HitTestBehavior.opaque,
                   child: SizedBox(
                       height: 44,
