@@ -38,7 +38,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > /tmp/release-draft; then
             test "$(cat /tmp/release-draft)" = true
           else
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "OpenFader ${GITHUB_REF_NAME#v}" --notes "XR18 hardware tested. Mackie VSC is unavailable pending USB proof. The Windows installer is unsigned. The Android APK uses the persistent development signing key and is not signed for Play Store distribution."
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "OpenFader ${GITHUB_REF_NAME#v}" --notes "The Windows installer is unsigned. The Android APK uses the persistent development signing key and is not signed for Play Store distribution."
           fi
 
   build:
