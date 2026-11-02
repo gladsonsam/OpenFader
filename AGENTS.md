@@ -19,6 +19,8 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
   telemetry, destinations, libraries and presets by responsibility.
 - `app/lib/core/output_*.dart` — injected output processing/preset contracts;
   output screens and widgets consume provider descriptors.
+- `app/lib/core/mixer_provider_policy.dart` — typed neutral contracts and named
+  provider policies consumed by generic state and screens.
 - `app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
   with `ConsolePalette.of(context)` in widgets; pass snapshots into painters and
   compare them in `shouldRepaint`. UI colors must not be global mutable state.
@@ -28,7 +30,11 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
 - `app/lib/engine.dart` — `Cmds` protocol + `EngineState`. `FakeSimEngine`
   must speak the same protocol as the native engine.
 - `app/assets/brand/` — approved logo SVG/PNGs + opaque app icon source.
-- `crates/` — `engine core transport flutter_bridge proto-xair proto-dl32s sim serve cli`.
+- `crates/` — `engine core audio transport flutter_bridge proto-xair proto-dl32s sim serve cli`.
+- `crates/engine/src/engine/providers/` — driver-owned scene and selector
+  adapters, including their validation, writes and readback.
+- `crates/engine/src/provider_library_validation.rs` — registered native archive schemas.
+- `crates/engine/src/drivers.rs` — central driver registry and hooks, also consumed by CLI.
 - `crates/proto-dl32s/src/lib.rs` — driver composition; sibling modules own
   lifecycle, inputs, assignments, preamps, metadata, telemetry, FX, destinations
   and output processing. Keep protocol mappings beside their owning module.
@@ -85,6 +91,13 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
   provider's actual channel counts, ranges and native option sets. Do not
   assume a default mixer, branch on a branded model, or bake in 18/32-channel,
   FX or other model-specific layouts in shared paths.
+- Existing vendor-specific branches in shared paths are migration debt, not a
+  precedent for new coupling. Migrate them toward provider contracts as the
+  affected paths are changed; do not claim unverified hardware support.
+- An unsupported or unknown provider must not silently inherit another mixer's
+  fader law, control ranges or native options. Register and advertise the law
+  and capabilities; where absent, make affected controls and readouts
+  unavailable. Do not casually modify existing laws.
 - Keep protocol mappings, native identifiers, quirks, discovery ports and
   validation beside the owning driver or adapter. Model selection, registry
   labels, explicitly named simulation fixtures and hardware diagnostics may
