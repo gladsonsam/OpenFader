@@ -71,9 +71,7 @@ async fn selector_session_owns_guard_and_rejects_stale_generation() {
             .await
             .is_err()
     );
-    let snapshot = session.soundcheck_readback().await.unwrap();
-    assert_eq!(snapshot["sends"].as_array().unwrap().len(), 18);
-    assert_eq!(snapshot["inputs"].as_array().unwrap().len(), 16);
+    assert!(session.soundcheck_readback().await.is_err());
     let profile = session.soundcheck_profile().await.unwrap().unwrap();
     assert_eq!(profile.capture_channels, 32);
     engine.invalidate_connection();

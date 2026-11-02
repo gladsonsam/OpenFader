@@ -155,7 +155,10 @@ impl Engine {
                         "input link capture topology invalid"
                     );
                 }
-                inputs.push((pair, self.read_scene_input_link(pair, &check).await?));
+                inputs.push((
+                    pair,
+                    self.read_scene_input_link(driver, pair, &check).await?,
+                ));
             }
             anyhow::ensure!(
                 seen.len()
@@ -183,7 +186,7 @@ impl Engine {
         let topo = self.driver_topology(driver);
         for (pair, value) in &before.inputs {
             anyhow::ensure!(
-                self.read_scene_input_link(*pair, &check).await? == *value,
+                self.read_scene_input_link(driver, *pair, &check).await? == *value,
                 "input links changed during capture"
             );
             for member in pair {
