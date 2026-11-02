@@ -11,16 +11,21 @@ extension _StripValues on _AppStoreContext {
     return scopes is List && scopes.any(kinds.contains);
   }
 
-  // Engine state, confirmations and pending edits stay in protocol units.
-  // Only UI exposure/writes cross this boundary. SIM already uses the UI
-  // law; lawForDriver('sim') would incorrectly select the X-Air fallback.
-  double _protocolFaderToUi(double value) => engine.driver == 'sim'
-      ? value
-      : dbToPos(lawForDriver(engine.driver).toDb(value));
+  // Unknown laws cannot safely be converted to or from UI dB positions.
+  bool get _hasFaderLaw =>
+      engine.driver == 'sim' || lawForDriver(engine.driver) != null;
 
-  double _uiFaderToProtocol(double value) => engine.driver == 'sim'
-      ? value
-      : lawForDriver(engine.driver).fromDb(posToDb(value));
+  double _protocolFaderToUi(double value) {
+    if (engine.driver == 'sim') return value;
+    final law = lawForDriver(engine.driver);
+    return law == null ? double.nan : dbToPos(law.toDb(value));
+  }
+
+  double _uiFaderToProtocol(double value) {
+    if (engine.driver == 'sim') return value;
+    final law = lawForDriver(engine.driver);
+    return law == null ? double.nan : law.fromDb(posToDb(value));
+  }
 
   // Presentation resolves pending edits before confirmed values, even when an
   // older echo has already replaced the engine strip. Keep protocol units here.
