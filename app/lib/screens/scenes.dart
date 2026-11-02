@@ -113,7 +113,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   NativeLibrarySection(store: store),
-                  if (store.nativeSnapshots.driver != 'xair') ...[
+                  if (store.nativeSnapshots.supported) ...[
                     const SizedBox(height: 10),
                     _NativeSnapshotsSection(view: store.nativeSnapshots),
                   ],
@@ -456,7 +456,8 @@ class _NativeSnapshotsSection extends StatelessWidget {
           : 'Snapshot reports unsupported',
       NativeSnapshotsStatus.unavailable => 'Unavailable while disconnected',
       NativeSnapshotsStatus.loading => 'Loading mixer snapshots…',
-      NativeSnapshotsStatus.ready => view.complete ? 'Stored mixer snapshots' : 'Observed slots (partial)',
+      NativeSnapshotsStatus.ready =>
+        view.complete ? 'Stored mixer snapshots' : 'Observed slots (partial)',
     };
     String? reportedName;
     for (final slot in view.slots) {
@@ -474,7 +475,8 @@ class _NativeSnapshotsSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SectionTitle('Mixer snapshots'),
-          Text(view.error ?? message, style: TextStyle(fontSize: 12, color: palette.text7)),
+          Text(view.error ?? message,
+              style: TextStyle(fontSize: 12, color: palette.text7)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
             const SizedBox(height: AppDesign.spaceSm),
             Text(
