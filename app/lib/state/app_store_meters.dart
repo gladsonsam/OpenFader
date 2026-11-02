@@ -111,7 +111,9 @@ mixin _AppStoreMeters on _AppStoreContext {
   @override
   void _syncSpectrum() {
     // Legacy synthetic bins remain exclusively on the demo path.
-    final bins = engine.driver == 'sim' ? engine.spectrum[_channel] : null;
+    final bins = mixerProviderPolicy(engine.driver).syntheticSpectrum
+        ? engine.spectrum[_channel]
+        : null;
     _spectrum.value =
         engine.connected && bins != null ? List.of(bins) : const [];
     final frame = engine.audioSpectrum;
@@ -267,9 +269,7 @@ mixin _AppStoreMeters on _AppStoreContext {
 
   @override
   void setSpectrumTarget(int? ch) {
-    // DL32S analysis is passive: neither entry nor meter navigation acquires
-    // a named source or writes the desk's shared analyser selector.
-    if (engine.driver == 'dl32s') return;
+    if (!mixerProviderPolicy(engine.driver).meterSpectrumTarget) return;
     engine.clearAudioSpectrum();
     engine.spectrum.clear();
     _spectrum.value = const [];
@@ -288,7 +288,7 @@ mixin _AppStoreMeters on _AppStoreContext {
       return;
     }
     _channelSpectrumOwner = active ? owner : null;
-    if (engine.driver != 'xair') return;
+    if (!mixerProviderPolicy(engine.driver).channelSpectrumTarget) return;
     _send(Cmds.spectrumTarget(active ? _channel : null));
   }
 
