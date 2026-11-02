@@ -802,37 +802,46 @@ const tapLabels = <int, String>{
   5: 'GRP',
 };
 
+typedef ChannelModeChoice = ({int value, String label});
+
 /// Captured shared source and mode, bound to the current input/connection.
 class ChannelSourceModeVm {
   final Object context;
   final String target, sourceLabel;
   final int mode;
+  final List<ChannelModeChoice> choices;
   final bool editable;
   const ChannelSourceModeVm(
       {required this.context,
       required this.target,
       required this.sourceLabel,
       required this.mode,
+      required this.choices,
       required this.editable});
-  String get label => const ['Mono', 'Stereo', 'Mid/side'][mode];
+  String get label =>
+      choices.where((choice) => choice.value == mode).firstOrNull?.label ??
+      'Unavailable';
 }
 
 /// One coherent native delay snapshot, bound to strip, unit and live domain.
 class ChannelDelayVm {
   final Object context;
   final int unit, steps;
+  final String unitLabel;
+  final int precision;
   final double value, min, max;
   final bool on, editable;
   const ChannelDelayVm(
       {required this.context,
       required this.unit,
+      required this.unitLabel,
+      required this.precision,
       required this.steps,
       required this.value,
       required this.min,
       required this.max,
       required this.on,
       required this.editable});
-  String get unitLabel => const ['m', 'ft', 'ms', 'samples'][unit];
 }
 
 class ChannelPreampVm {
