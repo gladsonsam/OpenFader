@@ -25,6 +25,7 @@ abstract final class MixerFaderScale {
           : -math.pow((.758 - v) / .758, 1.45).toDouble() * 80;
   static double toEngine(double position) => dbToPos(db(position.clamp(0, 1)));
   static double fromEngine(double value) {
+    if (!value.isFinite) return 0;
     final d = posToDb(value);
     if (!d.isFinite) return 0;
     return (d >= 0

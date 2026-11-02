@@ -305,7 +305,8 @@ class _SelectedLevel extends StatelessWidget {
               context,
               control == MixerReadoutControl.pan
                   ? panText(value)
-                  : '${fmtDb(value)} dB'));
+                  : '${fmtDb(value)} dB',
+              enabled: control == MixerReadoutControl.pan || value.isFinite));
 
   Widget _value(BuildContext context, String text, {bool enabled = true}) {
     final ch = channel;

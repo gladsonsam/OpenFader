@@ -47,13 +47,19 @@ class _MixerFaderState extends State<MixerFader> {
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
-            increasedValue:
-                '${fmtDb(MixerFaderScale.toEngine(position + .01))} dB',
-            decreasedValue:
-                '${fmtDb(MixerFaderScale.toEngine(position - .01))} dB',
-            slider: true,
-            onIncrease: () => widget.onPosition(position + .01),
-            onDecrease: () => widget.onPosition(position - .01),
+            increasedValue: !ch.fader.isFinite
+                ? null
+                : '${fmtDb(MixerFaderScale.toEngine(position + .01))} dB',
+            decreasedValue: !ch.fader.isFinite
+                ? null
+                : '${fmtDb(MixerFaderScale.toEngine(position - .01))} dB',
+            slider: ch.fader.isFinite,
+            onIncrease: ch.fader.isFinite
+                ? () => widget.onPosition(position + .01)
+                : null,
+            onDecrease: ch.fader.isFinite
+                ? () => widget.onPosition(position - .01)
+                : null,
             child: DecoratedBox(
                 decoration: BoxDecoration(
                     color: ConsolePalette.of(context).well,
@@ -78,62 +84,63 @@ class _MixerFaderState extends State<MixerFader> {
                       child: widget.showMeter
                           ? MixerMeter(level: ch.meter, stereo: ch.master)
                           : const SizedBox.shrink()),
-                  Positioned(
-                      left: geometry.x -
-                          geometry.capWidth / 2 -
-                          geometry.touchPad,
-                      top: y - geometry.capHeight / 2 - geometry.touchPad,
-                      width: geometry.capWidth + geometry.touchPad * 2,
-                      height: geometry.capHeight + geometry.touchPad * 2,
-                      child: Tooltip(
-                          message: '${ch.levelLabel} · double-tap for unity',
-                          triggerMode: TooltipTriggerMode.manual,
-                          child: Listener(
-                              onPointerDown: (_) {
-                                widget.onTouch?.call();
-                                setState(() => _held = true);
-                              },
-                              onPointerUp: (_) => _release(),
-                              onPointerCancel: (_) => _release(),
-                              child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTapCancel: () {
-                                    if (_drag == null) _release();
-                                  },
-                                  onTap: widget.onSelect,
-                                  onDoubleTap: widget.onUnity,
-                                  onVerticalDragStart: (_) {
-                                    setState(() {
-                                      _held = true;
-                                      _drag = position;
-                                    });
-                                    widget.onSelect();
-                                  },
-                                  onVerticalDragUpdate: (d) {
-                                    final next = ((_drag ?? position) -
-                                            d.delta.dy / geometry.travel)
-                                        .clamp(0.0, 1.0);
-                                    setState(() => _drag = next);
-                                    widget.onPosition(next);
-                                  },
-                                  onVerticalDragEnd: (_) => _release(),
-                                  onVerticalDragCancel: _release,
-                                  child: Padding(
-                                      padding:
-                                          EdgeInsets.all(geometry.touchPad),
-                                      child: AnimatedScale(
-                                          scale: scale,
-                                          duration:
-                                              MediaQuery.disableAnimationsOf(
-                                                      context)
-                                                  ? Duration.zero
-                                                  : const Duration(
-                                                      milliseconds: 40),
-                                          curve: Curves.easeOutCubic,
-                                          child: CustomPaint(
-                                              painter: _CapPainter(
-                                                  palette: ConsolePalette.of(
-                                                      context))))))))),
+                  if (ch.fader.isFinite)
+                    Positioned(
+                        left: geometry.x -
+                            geometry.capWidth / 2 -
+                            geometry.touchPad,
+                        top: y - geometry.capHeight / 2 - geometry.touchPad,
+                        width: geometry.capWidth + geometry.touchPad * 2,
+                        height: geometry.capHeight + geometry.touchPad * 2,
+                        child: Tooltip(
+                            message: '${ch.levelLabel} · double-tap for unity',
+                            triggerMode: TooltipTriggerMode.manual,
+                            child: Listener(
+                                onPointerDown: (_) {
+                                  widget.onTouch?.call();
+                                  setState(() => _held = true);
+                                },
+                                onPointerUp: (_) => _release(),
+                                onPointerCancel: (_) => _release(),
+                                child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapCancel: () {
+                                      if (_drag == null) _release();
+                                    },
+                                    onTap: widget.onSelect,
+                                    onDoubleTap: widget.onUnity,
+                                    onVerticalDragStart: (_) {
+                                      setState(() {
+                                        _held = true;
+                                        _drag = position;
+                                      });
+                                      widget.onSelect();
+                                    },
+                                    onVerticalDragUpdate: (d) {
+                                      final next = ((_drag ?? position) -
+                                              d.delta.dy / geometry.travel)
+                                          .clamp(0.0, 1.0);
+                                      setState(() => _drag = next);
+                                      widget.onPosition(next);
+                                    },
+                                    onVerticalDragEnd: (_) => _release(),
+                                    onVerticalDragCancel: _release,
+                                    child: Padding(
+                                        padding:
+                                            EdgeInsets.all(geometry.touchPad),
+                                        child: AnimatedScale(
+                                            scale: scale,
+                                            duration:
+                                                MediaQuery.disableAnimationsOf(
+                                                        context)
+                                                    ? Duration.zero
+                                                    : const Duration(
+                                                        milliseconds: 40),
+                                            curve: Curves.easeOutCubic,
+                                            child: CustomPaint(
+                                                painter: _CapPainter(
+                                                    palette: ConsolePalette.of(
+                                                        context))))))))),
                 ])));
       });
 }

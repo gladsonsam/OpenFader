@@ -1,8 +1,7 @@
 // W2a mapping: fader laws (canonical implementation).
 //
-// The World exposes faderToDb/dbToFader from the caps-named law (default
-// X-Air); UI dB readouts bound to the engine must follow the World's law so
-// the readout agrees with the engine round-trip exactly.
+// UI dB readouts must use the registered provider law. Unknown providers
+// have no inferred conversion.
 
 const double topDb = 10;
 
@@ -173,9 +172,8 @@ const Map<String, FaderLaw> _laws = {
   'dl32s': dl32sLaw,
 };
 
-/// Law named by caps (driver id -> law). Unknown drivers fall back to X-Air.
-FaderLaw lawForDriver(String? driver) =>
-    (driver != null && _laws.containsKey(driver)) ? _laws[driver]! : xairLaw;
+/// Registered provider law, or null when no conversion is known.
+FaderLaw? lawForDriver(String? driver) => _laws[driver];
 
 String formatDb(double db) {
   if (!db.isFinite || db <= floorDb) return '-inf';

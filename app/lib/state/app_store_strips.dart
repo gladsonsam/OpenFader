@@ -53,6 +53,7 @@ mixin _AppStoreStrips on _AppStoreContext {
   // Advertised Solo descriptors carry verified readiness independently of the
   // sparse legacy Solo events. Providers without them still require an echo.
   bool canEditControl(int ch, String field) {
+    if (field == 'fader' && !_hasFaderLaw) return false;
     if (field == 'solo') {
       final input = _inputSoloDescriptor(ch);
       if (input != null) {
@@ -163,6 +164,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       : null;
 
   bool masterControlKnown(String field) {
+    if (field == 'fader' && !_hasFaderLaw) return false;
     if (_busId.startsWith('solo:')) return false;
     if (!accessTargetAllowed(masterProcessingTarget)) return false;
     final group = _selectedSubgroup;
@@ -405,13 +407,18 @@ mixin _AppStoreStrips on _AppStoreContext {
       if (s.ch != ch) continue;
       final f = _faderNotes[ch]!;
       final uiFader = _protocolFaderToUi(_stripFaderValue(ch, s.fader));
-      if (f.value != uiFader) f.value = uiFader;
+      if (f.value != uiFader && !(f.value.isNaN && uiFader.isNaN)) {
+        f.value = uiFader;
+      }
       final m = _muteNotes[ch]!;
       final muted = _stripMuteValue(ch, s.muted);
       if (m.value != muted) m.value = muted;
     }
     final surface = _mixerFaderNotes[ch];
-    if (surface != null) surface.value = _mixerFaderValue(ch);
+    if (surface != null) {
+      final value = _mixerFaderValue(ch);
+      if (!(surface.value.isNaN && value.isNaN)) surface.value = value;
+    }
     final p = _panNotes[ch]!;
     final pv = panOf(ch);
     if (p.value != pv) p.value = pv;
@@ -457,7 +464,10 @@ mixin _AppStoreStrips on _AppStoreContext {
     final masterSolo = _soloNotes[-1];
     if (masterSolo != null) masterSolo.value = soloOf(-1);
     final mf = masterFader;
-    if (_masterFaderNote.value != mf) _masterFaderNote.value = mf;
+    if (_masterFaderNote.value != mf &&
+        !(_masterFaderNote.value.isNaN && mf.isNaN)) {
+      _masterFaderNote.value = mf;
+    }
     final mm = masterMuted;
     if (_masterMutedNote.value != mm) _masterMutedNote.value = mm;
   }
