@@ -223,38 +223,46 @@ mixin _AppStoreMeters on _AppStoreContext {
 
   @override
   List<BridgeOutputGroup> get physicalOutputGroups {
-    final targets = engine.outputMeterTargets.toSet();
-    List<BridgeOutputMeter> numbered(String kind, String label, int count) => [
-          for (var n = 1; n <= count; n++)
-            if (targets
-                .contains('physical/$kind/${n.toString().padLeft(2, '0')}'))
-              BridgeOutputMeter(
-                  'physical/$kind/${n.toString().padLeft(2, '0')}',
-                  '$label $n'),
-        ];
-    List<BridgeOutputMeter> inputs(String kind, String label, int count) => [
-          for (var n = 1; n <= count; n++)
-            if (targets.contains('input/$kind/${n.toString().padLeft(2, '0')}'))
-              BridgeOutputMeter(
-                  'input/$kind/${n.toString().padLeft(2, '0')}', '$label $n'),
-        ];
-    final groups = <BridgeOutputGroup>[
-      BridgeOutputGroup('Physical mic inputs', inputs('mic', 'Mic', 16)),
-      BridgeOutputGroup('Physical aux inputs', inputs('aux', 'Aux in', 2)),
-      BridgeOutputGroup('USB return inputs', inputs('usb', 'USB in', 18)),
-      BridgeOutputGroup('Physical aux outputs', numbered('aux', 'Aux out', 6)),
-      BridgeOutputGroup('Physical main and phones', [
-        if (targets.contains('physical/main'))
-          const BridgeOutputMeter('physical/main', 'Main output L/R'),
-        if (targets.contains('physical/phones'))
-          const BridgeOutputMeter('physical/phones', 'Phones L/R'),
-      ]),
-      BridgeOutputGroup('Ultranet outputs', numbered('p16', 'P16', 16)),
-      BridgeOutputGroup('USB outputs', numbered('usb', 'USB', 18)),
+    // Providers advertise the available targets, including unfamiliar families.
+    final groups = <String, List<BridgeOutputMeter>>{};
+    for (final target in engine.outputMeterTargets) {
+      final parts = target.split('/');
+      if (parts.length < 2 ||
+          (parts.first != 'input' && parts.first != 'physical')) {
+        continue;
+      }
+      final family = parts[1];
+      final group = switch ((parts.first, family)) {
+        ('input', 'mic') => 'Physical mic inputs',
+        ('input', 'aux') => 'Physical aux inputs',
+        ('input', 'usb') => 'USB return inputs',
+        ('physical', 'aux') => 'Physical aux outputs',
+        ('physical', 'main' || 'phones') => 'Physical main and phones',
+        ('physical', 'p16') => 'Ultranet outputs',
+        ('physical', 'usb') => 'USB outputs',
+        _ => '${parts.first == 'input' ? 'Input' : 'Physical'} $family',
+      };
+      final label = switch ((parts.first, family)) {
+        ('input', 'mic') => 'Mic',
+        ('input', 'aux') => 'Aux in',
+        ('input', 'usb') => 'USB in',
+        ('physical', 'aux') => 'Aux out',
+        ('physical', 'main') => 'Main output L/R',
+        ('physical', 'phones') => 'Phones L/R',
+        ('physical', 'p16') => 'P16',
+        ('physical', 'usb') => 'USB',
+        _ => family,
+      };
+      final suffix =
+          parts.length > 2 ? ' ${int.tryParse(parts.last) ?? parts.last}' : '';
+      groups
+          .putIfAbsent(group, () => [])
+          .add(BridgeOutputMeter(target, '$label$suffix'));
+    }
+    return [
+      for (final entry in groups.entries)
+        BridgeOutputGroup(entry.key, entry.value),
     ];
-    return groups
-        .where((group) => group.meters.isNotEmpty)
-        .toList(growable: false);
   }
 
   @override

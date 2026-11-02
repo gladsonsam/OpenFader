@@ -167,7 +167,8 @@ class NativeSnapshotsVm {
       readOnly == other.readOnly &&
       status == other.status &&
       current == other.current &&
-      complete == other.complete && error == other.error &&
+      complete == other.complete &&
+      error == other.error &&
       slots.length == other.slots.length &&
       Iterable<int>.generate(slots.length)
           .every((i) => slots[i] == other.slots[i]);
@@ -206,9 +207,7 @@ class AudioSpectrumFrame {
 
   /// Provider human text supplies the source name; no selector mapping here.
   String get label {
-    final name = source
-        .replaceFirst(RegExp(r'^DL32S\s+'), '')
-        .replaceFirst(RegExp(r'\s*\(shared\)$'), '');
+    final name = source.replaceFirst(RegExp(r'\s*\(shared\)$'), '');
     return 'RTA · $name${isShared ? ' · shared' : ''}';
   }
 
