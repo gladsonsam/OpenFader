@@ -104,6 +104,26 @@ mixin _AppStoreChannel on _AppStoreContext {
     final desk = _providerLeaf(engine, leaf);
     final metadata =
         parameterPresentation(engine.parameterMetadata[desk], paramNum);
+    if (desk == _providerLeaf(engine, 'provider:delay_unit') &&
+        metadata != null) {
+      final choices = metadata['choices'];
+      final policy = mixerProviderPolicy(engine.driver);
+      if (choices is! List || !policy.supportsDelayCodec) {
+        return {...metadata, 'choices': const [], 'available': false};
+      }
+      final supported = choices.where((choice) {
+        if (choice is! Map || choice['value'] is! num) return false;
+        final value = choice['value'] as num;
+        return value.isFinite &&
+            value == value.roundToDouble() &&
+            policy.delayUnit(value.toInt()) != null;
+      }).toList(growable: false);
+      return {
+        ...metadata,
+        'choices': supported,
+        if (supported.isEmpty) 'available': false
+      };
+    }
     if (desk == 'gain' &&
         mixerProviderPolicy(engine.driver).requiresRoutedPreamp &&
         metadata != null) {

@@ -80,7 +80,10 @@ mixin _AppStoreInput on _AppStoreContext {
         }
       }
     }
-    final editable = supports('provider:source_mode') &&
+    final choices = mixerProviderPolicy(engine.driver).sourceModeChoices;
+    if (!choices.any((choice) => choice.value == decoded.mode)) return null;
+    final editable = choices.isNotEmpty &&
+        supports('provider:source_mode') &&
         paramBool('provider:source_mode_writable') == true &&
         supports('provider:source_mode_writable');
     return ChannelSourceModeVm(
@@ -97,6 +100,7 @@ mixin _AppStoreInput on _AppStoreContext {
         target: decoded.target,
         sourceLabel: label,
         mode: decoded.mode,
+        choices: choices,
         editable: editable);
   }
 
@@ -106,7 +110,8 @@ mixin _AppStoreInput on _AppStoreContext {
     if (current == null ||
         !current.editable ||
         current.context != snapshot.context ||
-        current.mode == mode) {
+        current.mode == mode ||
+        !current.choices.any((choice) => choice.value == mode)) {
       return;
     }
     final encoded =
@@ -116,6 +121,7 @@ mixin _AppStoreInput on _AppStoreContext {
 
   @override
   bool get hasDelay {
+    if (!mixerProviderPolicy(engine.driver).supportsDelayCodec) return false;
     final scopes =
         engine.parameterMetadata[_providerLeaf(engine, 'provider:delay_state')]
             ?['scopes'];
@@ -135,6 +141,8 @@ mixin _AppStoreInput on _AppStoreContext {
     final report = mixerProviderPolicy(engine.driver)
         .decodeDelay(raw, paramNum('provider:delay_unit'));
     if (report == null) return null;
+    final unit = mixerProviderPolicy(engine.driver).delayUnit(report.unit);
+    if (unit == null) return null;
     return ChannelDelayVm(
         context: (
           engine.session,
@@ -145,6 +153,8 @@ mixin _AppStoreInput on _AppStoreContext {
           report.steps
         ),
         unit: report.unit,
+        unitLabel: unit.label,
+        precision: unit.precision,
         steps: report.steps,
         value: report.value.toDouble(),
         min: report.min.toDouble(),

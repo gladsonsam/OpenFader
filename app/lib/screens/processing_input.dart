@@ -105,19 +105,15 @@ class _InputTab extends StatelessWidget {
                                 style:
                                     AppDesign.type(16, color: palette.text7)),
                             const SizedBox(height: 12),
-                            for (var mode = 0; mode < 3; mode++)
+                            for (final choice in snapshot.choices)
                               Padding(
                                   padding: const EdgeInsets.only(bottom: 7),
                                   child: _ProcessingButton(
-                                      label: const [
-                                        'Mono',
-                                        'Stereo',
-                                        'Mid/side'
-                                      ][mode],
-                                      active: selected == mode,
+                                      label: choice.label,
+                                      active: selected == choice.value,
                                       onTap: current()
                                           ? () => setLocalState(
-                                              () => selected = mode)
+                                              () => selected = choice.value)
                                           : null)),
                           ]),
                       actions: [
@@ -409,7 +405,7 @@ class _InputDelayControl extends StatelessWidget {
         store.stripKey == key &&
         store.delay?.context == snapshot.context;
     String readout(ChannelDelayVm value) =>
-        '${value.value.toStringAsFixed(value.unit == 3 ? 0 : 2)} ${value.unitLabel}';
+        '${value.value.toStringAsFixed(value.precision)} ${value.unitLabel}';
     void apply(double value) {
       if (current()) store.setDelay(snapshot!, value);
     }
