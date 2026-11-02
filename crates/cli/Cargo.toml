@@ -10,11 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 openfader-core = { path = "../core" }
+openfader-engine = { path = "../engine" }
 openfader-sim = { path = "../sim" }
-openfader-proto-xair = { path = "../proto-xair" }
-openfader-proto-wing = { path = "../proto-wing" }
-openfader-proto-dl32s = { path = "../proto-dl32s" }
-openfader-transport = { path = "../transport" }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 

@@ -84,7 +84,7 @@ impl Engine {
         epoch: u64,
     ) -> anyhow::Result<()> {
         let driver = self.drv(driver_id);
-        if driver_id != "xair" {
+        if !driver.guarded_bus_writes() {
             return match (field, value) {
                 ("fader", ParamValue::Float(value)) => driver.set_bus_fader(bus, value).await,
                 ("mute", ParamValue::Bool(muted)) => driver.set_bus_mute(bus, muted).await,

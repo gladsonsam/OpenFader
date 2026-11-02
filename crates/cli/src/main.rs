@@ -2,7 +2,7 @@
 //!
 //! Uses sim by default; pass `--driver xair|dl32s --addr <ip>` for hardware.
 //! Channels are 1-based in the CLI (`1..=N`) and map to 0-based `StripId`.
-use openfader_core::{MixerDriver, ParamValue, StripId};
+use openfader_core::{ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
@@ -16,7 +16,8 @@ Commands:
   param <ch> <id> [value]    get/set any catalogue param in engineering units
                              (e.g. `param 2 pan 25`); with no value, reads back
   meters                     print one fake meter frame
-  discover [--timeout MS]    X-Air LAN discovery (/xinfo broadcast)
+  discover [--timeout MS]    discover all registered hardware mixers
+                             (or only --driver when specified)
 
 Options:
   --driver <name>   sim (default), xair, dl32s, wing
@@ -43,14 +44,18 @@ fn parse_bool_word(raw: &str) -> anyhow::Result<bool> {
     }
 }
 
-/// Build a `ParamValue` for `id` from one CLI word, typed by the canonical
+/// Build a `ParamValue` for `id` from one CLI word, typed by the selected provider's
 /// catalogue (`float`/`enum` → number, `bool` → on/off words, `text` → raw
 /// string). Unknown ids (desk leaves this catalogue does not name yet)
 /// fall back to number → bool-word → string, so the CLI can already drive
 /// them on hardware that answers without a per-id subcommand.
-fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
-    use openfader_core::params::{find, ParamKind};
-    match find(id).map(|d| d.kind) {
+fn parse_param_value(
+    registry: &openfader_core::params::ParamRegistry,
+    id: &str,
+    raw: &str,
+) -> anyhow::Result<ParamValue> {
+    use openfader_core::params::ParamKind;
+    match registry.find(id).map(|d| d.kind) {
         Some(ParamKind::Bool) => parse_bool_word(raw).map(ParamValue::Bool),
         Some(ParamKind::Text) => Ok(ParamValue::Text(raw.to_string())),
         Some(ParamKind::Float | ParamKind::Enum) => raw
@@ -69,157 +74,12 @@ fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
     }
 }
 
-/// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
-/// async methods). New providers add one variant + one delegation arm.
-enum AnyDriver {
-    Sim(Box<openfader_sim::SimDriver>),
-    XAir(Box<openfader_proto_xair::XAirDriver>),
-    Dl32s(Box<openfader_proto_dl32s::Dl32sDriver>),
-    Wing(Box<openfader_proto_wing::WingDriver>),
-}
-
-impl MixerDriver for AnyDriver {
-    fn name(&self) -> &'static str {
-        match self {
-            AnyDriver::Sim(d) => d.name(),
-            AnyDriver::XAir(d) => d.name(),
-            AnyDriver::Dl32s(d) => d.name(),
-            AnyDriver::Wing(d) => d.name(),
-        }
-    }
-    fn channel_count(&self) -> usize {
-        match self {
-            AnyDriver::Sim(d) => d.channel_count(),
-            AnyDriver::XAir(d) => d.channel_count(),
-            AnyDriver::Dl32s(d) => d.channel_count(),
-            AnyDriver::Wing(d) => d.channel_count(),
-        }
-    }
-    async fn connect(&self, addr: &str) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.connect(addr).await,
-            AnyDriver::XAir(d) => d.connect(addr).await,
-            AnyDriver::Dl32s(d) => d.connect(addr).await,
-            AnyDriver::Wing(d) => d.connect(addr).await,
-        }
-    }
-    async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_fader(strip, value).await,
-            AnyDriver::XAir(d) => d.set_fader(strip, value).await,
-            AnyDriver::Dl32s(d) => d.set_fader(strip, value).await,
-            AnyDriver::Wing(d) => d.set_fader(strip, value).await,
-        }
-    }
-    async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
-        match self {
-            AnyDriver::Sim(d) => d.get_fader(strip).await,
-            AnyDriver::XAir(d) => d.get_fader(strip).await,
-            AnyDriver::Dl32s(d) => d.get_fader(strip).await,
-            AnyDriver::Wing(d) => d.get_fader(strip).await,
-        }
-    }
-    async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_mute(strip, muted).await,
-            AnyDriver::XAir(d) => d.set_mute(strip, muted).await,
-            AnyDriver::Dl32s(d) => d.set_mute(strip, muted).await,
-            AnyDriver::Wing(d) => d.set_mute(strip, muted).await,
-        }
-    }
-    async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
-        match self {
-            AnyDriver::Sim(d) => d.get_mute(strip).await,
-            AnyDriver::XAir(d) => d.get_mute(strip).await,
-            AnyDriver::Dl32s(d) => d.get_mute(strip).await,
-            AnyDriver::Wing(d) => d.get_mute(strip).await,
-        }
-    }
-    async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_name(strip, name).await,
-            AnyDriver::XAir(d) => d.set_name(strip, name).await,
-            AnyDriver::Dl32s(d) => d.set_name(strip, name).await,
-            AnyDriver::Wing(d) => d.set_name(strip, name).await,
-        }
-    }
-    async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
-        match self {
-            AnyDriver::Sim(d) => d.get_name(strip).await,
-            AnyDriver::XAir(d) => d.get_name(strip).await,
-            AnyDriver::Dl32s(d) => d.get_name(strip).await,
-            AnyDriver::Wing(d) => d.get_name(strip).await,
-        }
-    }
-    async fn set_param(
-        &self,
-        strip: StripId,
-        param: &str,
-        value: ParamValue,
-    ) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_param(strip, param, value).await,
-            AnyDriver::XAir(d) => d.set_param(strip, param, value).await,
-            AnyDriver::Dl32s(d) => d.set_param(strip, param, value).await,
-            AnyDriver::Wing(d) => d.set_param(strip, param, value).await,
-        }
-    }
-    async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
-        match self {
-            AnyDriver::Sim(d) => d.get_param(strip, param).await,
-            AnyDriver::XAir(d) => d.get_param(strip, param).await,
-            AnyDriver::Dl32s(d) => d.get_param(strip, param).await,
-            AnyDriver::Wing(d) => d.get_param(strip, param).await,
-        }
-    }
-    async fn snapshot(&self) -> anyhow::Result<openfader_core::MixerSnapshot> {
-        match self {
-            AnyDriver::Sim(d) => d.snapshot().await,
-            AnyDriver::XAir(d) => d.snapshot().await,
-            AnyDriver::Dl32s(d) => d.snapshot().await,
-            AnyDriver::Wing(d) => d.snapshot().await,
-        }
-    }
-    async fn recall(&self, snapshot: &openfader_core::MixerSnapshot) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.recall(snapshot).await,
-            AnyDriver::XAir(d) => d.recall(snapshot).await,
-            AnyDriver::Dl32s(d) => d.recall(snapshot).await,
-            AnyDriver::Wing(d) => d.recall(snapshot).await,
-        }
-    }
-    async fn query_info(&self) -> anyhow::Result<openfader_core::MixerInfo> {
-        match self {
-            AnyDriver::Sim(d) => d.query_info().await,
-            AnyDriver::XAir(d) => d.query_info().await,
-            AnyDriver::Dl32s(d) => d.query_info().await,
-            AnyDriver::Wing(d) => d.query_info().await,
-        }
-    }
-    fn poll_meters(&self) -> openfader_core::MeterFrame {
-        match self {
-            AnyDriver::Sim(d) => d.poll_meters(),
-            AnyDriver::XAir(d) => d.poll_meters(),
-            AnyDriver::Dl32s(d) => d.poll_meters(),
-            AnyDriver::Wing(d) => d.poll_meters(),
-        }
-    }
-}
-
-fn make_driver(kind: &str, preset: openfader_sim::SimPreset) -> AnyDriver {
-    match kind {
-        "wing" => AnyDriver::Wing(Box::new(openfader_proto_wing::WingDriver::new())),
-        "xair" => AnyDriver::XAir(Box::new(openfader_proto_xair::XAirDriver::new())),
-        "dl32s" => AnyDriver::Dl32s(Box::new(openfader_proto_dl32s::Dl32sDriver::new())),
-        _ => AnyDriver::Sim(Box::new(openfader_sim::SimDriver::with_preset(preset))),
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
     let mut driver = "sim".to_string();
+    let mut driver_explicit = false;
     let mut addr: Option<String> = None;
     let mut preset = openfader_sim::SimPreset::Generic;
     let mut rest: Vec<String> = Vec::new();
@@ -227,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
     while i < argv.len() {
         match argv[i].as_str() {
             "--driver" => {
+                driver_explicit = true;
                 i += 1;
                 driver = argv
                     .get(i)
@@ -234,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("--driver needs a value"))?;
             }
             v if v.starts_with("--driver=") => {
+                driver_explicit = true;
                 driver = v["--driver=".len()..].to_string();
             }
             "--addr" => {
@@ -272,8 +134,14 @@ async fn main() -> anyhow::Result<()> {
         i += 1;
     }
 
-    if !["sim", "xair", "dl32s", "wing"].contains(&driver.as_str()) {
-        anyhow::bail!("unknown driver {driver:?}; expected sim|xair|dl32s|wing");
+    let registry = openfader_engine::drivers::registered_drivers(Some(preset));
+    if !registry.iter().any(|registered| registered.name == driver) {
+        let names = registry
+            .iter()
+            .map(|registered| registered.name)
+            .collect::<Vec<_>>()
+            .join("|");
+        anyhow::bail!("unknown driver {driver:?}; expected {names}");
     }
     if rest.is_empty() {
         print!("{HELP}");
@@ -289,9 +157,23 @@ async fn main() -> anyhow::Result<()> {
                 .parse()?;
             timeout = Duration::from_millis(ms);
         }
-        let found = openfader_transport::discover_xair(timeout).await?;
+        let mut searches = tokio::task::JoinSet::new();
+        for registered in &registry {
+            let provider = registered.driver.clone();
+            if provider.is_hardware() && (!driver_explicit || registered.name == driver) {
+                searches.spawn(async move {
+                    tokio::time::timeout(timeout, provider.discover(timeout))
+                        .await
+                        .unwrap_or_default()
+                });
+            }
+        }
+        let mut found = Vec::new();
+        while let Some(result) = searches.join_next().await {
+            found.extend(result?);
+        }
         if found.is_empty() {
-            println!("no X-Air devices found");
+            println!("no mixers found");
         }
         for d in &found {
             println!("{} {} {}", d.addr, d.driver, d.model);
@@ -299,14 +181,13 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let drv = make_driver(&driver, preset);
-    let target = addr.clone().unwrap_or_else(|| {
-        if driver == "sim" {
-            "sim://local".to_string()
-        } else {
-            "192.168.1.1".to_string()
-        }
-    });
+    let registered = registry
+        .into_iter()
+        .find(|registered| registered.name == driver)
+        .expect("driver was validated against registry");
+    let target = addr.unwrap_or_else(|| registered.default_addr.to_string());
+    let registry = registered.param_registry();
+    let drv = registered.driver;
     if let Err(e) = drv.connect(&target).await {
         // A failed connect is fatal for the CLI; report it and exit.
         eprintln!("connect {driver} @ {target} failed: {e:#}");
@@ -401,7 +282,7 @@ async fn main() -> anyhow::Result<()> {
                     ParamValue::Text(s) => println!("ch{} {id} = {s:?}", strip.0 + 1),
                 },
                 Some(raw) => {
-                    let value = parse_param_value(id, raw)?;
+                    let value = parse_param_value(&registry, id, raw)?;
                     drv.set_param(strip, id, value).await?;
                     println!("ch{} {id} -> {raw}", strip.0 + 1);
                 }
@@ -428,6 +309,10 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
+        super::parse_param_value(&openfader_core::params::ParamRegistry::canonical(), id, raw)
+    }
 
     #[test]
     fn param_value_typing_follows_catalogue() {

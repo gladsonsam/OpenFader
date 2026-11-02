@@ -127,6 +127,15 @@ impl SoundcheckProfile {
     }
 }
 
+/// One provider-validated selector to restore, in provider-defined order.
+#[derive(Debug, Clone)]
+pub struct SceneRouteChange {
+    pub target: &'static str,
+    pub desired: i32,
+    pub max: i64,
+    pub source: Option<(&'static str, u8)>,
+}
+
 #[async_trait::async_trait]
 pub trait DynDriver: Send + Sync {
     /// Read-only identification, independent of the active mixer session.
@@ -824,6 +833,29 @@ pub trait DynDriver: Send + Sync {
     ) -> bool {
         true
     }
+    /// Parse provider-owned scene input routes; unsupported drivers return none.
+    fn scene_input_routes(
+        &self,
+        _routing: &[crate::engine::StoredRoute],
+        _strips: &[crate::engine::StoredStrip],
+        _topo: &[openfader_core::StripFamily],
+    ) -> anyhow::Result<Option<std::collections::BTreeMap<u16, Vec<SceneRouteChange>>>> {
+        Ok(None)
+    }
+    fn scene_input_route_target(&self, _target: &str) -> bool {
+        false
+    }
+    /// Legacy typed selector adapter, available only for providers implementing it.
+    fn selector_change(
+        &self,
+        _expected: crate::engine::selector_session::InputRouteSelectors,
+        _desired: crate::engine::selector_session::InputRouteSelectors,
+    ) -> anyhow::Result<(&'static str, Option<(&'static str, u8)>)> {
+        anyhow::bail!("input selector unsupported")
+    }
+    fn selector_pair_valid(&self, _left: u16) -> bool {
+        false
+    }
     /// Optional provider-owned opaque input-route state for guarded commands.
     async fn input_route_guard(
         &self,
@@ -1454,6 +1486,10 @@ fn soundcheck_update(
 }
 
 impl_dyn_driver!(openfader_sim::SimDriver {
+    fn selector_change(&self, expected: crate::engine::selector_session::InputRouteSelectors, desired: crate::engine::selector_session::InputRouteSelectors) -> anyhow::Result<(&'static str, Option<(&'static str, u8)>)> {
+        crate::engine::providers::xair_routes::selector_change(expected, desired)
+    }
+    fn selector_pair_valid(&self, left: u16) -> bool { left < 16 && left.is_multiple_of(2) }
     async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
         let (channel, index) = soundcheck_key(key, 32)?;
         check(&[StripId(channel)])?;
@@ -1497,12 +1533,6 @@ impl_dyn_driver!(openfader_sim::SimDriver {
         let profile = SoundcheckProfile { capture_channels: count, output_channels: count, output_mask: mask, route_changes: changes, snapshot_keys: keys, driver_state: serde_json::json!({"expected": expected, "links": []}) };
         profile.validate()?;
         Ok(Some(profile))
-    }
-
-    async fn soundcheck_readback(&self) -> anyhow::Result<Option<serde_json::Value>> {
-        let mut inputs = Vec::new();
-        for n in 0..16 { let [analog, usb, bank] = self.selector_read(n)?; inputs.push(serde_json::json!({"analog":analog,"usb":usb,"bank":bank})); }
-        Ok(Some(serde_json::json!({"model":"XR18","firmware":"1.20","sends":(0..18).map(|n| serde_json::json!({"source":n,"tap":0})).collect::<Vec<_>>(),"inputs":inputs,"aux_usb_pair":8,"aux_bank":1,"input_links":(vec![false; 8])})))
     }
 
     async fn input_pair_link(&self, _left: StripId) -> anyhow::Result<Option<bool>> { Ok(Some(false)) }
@@ -1708,6 +1738,10 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    fn selector_change(&self, expected: crate::engine::selector_session::InputRouteSelectors, desired: crate::engine::selector_session::InputRouteSelectors) -> anyhow::Result<(&'static str, Option<(&'static str, u8)>)> {
+        crate::engine::providers::xair_routes::selector_change(expected, desired)
+    }
+    fn selector_pair_valid(&self, left: u16) -> bool { left < 16 && left.is_multiple_of(2) }
     async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
         if let Some(rest) = key.strip_prefix("input_pair/") {
             let (left, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("invalid pair"))?;
@@ -1955,6 +1989,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         }
         std::borrow::Cow::Borrowed(field)
     }
+    fn scene_input_routes(&self, routing: &[crate::engine::StoredRoute], strips: &[crate::engine::StoredStrip], topo: &[openfader_core::StripFamily]) -> anyhow::Result<Option<std::collections::BTreeMap<u16, Vec<SceneRouteChange>>>> {
+        crate::engine::providers::xair_routes::scene_input_routes(routing, strips, topo)
+    }
+    fn scene_input_route_target(&self, target: &str) -> bool { matches!(target, "analog" | "usb" | "bank") }
     fn input_patch_requires_guard(&self) -> bool { true }
     fn input_route_guard_matches(&self, target: &str, group: &str, index: u8, guard: &serde_json::Value) -> bool {
         let value = match target {

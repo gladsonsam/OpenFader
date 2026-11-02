@@ -19,16 +19,11 @@ pub struct SelectorSessionIdentity {
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct InputRouteSelectors {
-    pub analog: i32,
-    pub usb: i32,
-    pub bank: i32,
-}
+pub use super::providers::xair_routes::InputRouteSelectors;
 
 pub struct SelectorSession {
     engine: Arc<Engine>,
-    driver: Arc<dyn DynDriver>,
+    pub(in crate::engine) driver: Arc<dyn DynDriver>,
     driver_name: String,
     identity: SelectorSessionIdentity,
     _guard: tokio::sync::OwnedMutexGuard<()>,
@@ -145,112 +140,11 @@ impl SelectorSession {
     }
 
     /// Fresh provider JSON; rejects a changed engine connection before and after reading.
-    /// See `openfader_proto_xair::soundcheck_readback` for the XR18 JSON schema.
     pub async fn soundcheck_readback(&self) -> anyhow::Result<serde_json::Value> {
         self.check()?;
         let result = self.driver.soundcheck_readback().await;
         self.check()?;
         result?.ok_or_else(|| anyhow::anyhow!("soundcheck readback unsupported"))
-    }
-
-    pub async fn read_input_route(&self, channel: u16) -> anyhow::Result<InputRouteSelectors> {
-        self.check()?;
-        let result = self.driver.input_route_guard(StripId(channel)).await;
-        self.check()?;
-        let value = result?.ok_or_else(|| anyhow::anyhow!("input route unsupported"))?;
-        Ok(serde_json::from_value(value)?)
-    }
-
-    /// Read a pair and its link state using the pinned driver and routing guard.
-    pub async fn read_link_pair(
-        &self,
-        left: u16,
-    ) -> anyhow::Result<([InputRouteSelectors; 2], bool)> {
-        anyhow::ensure!(left < 16 && left.is_multiple_of(2), "invalid input pair");
-        self.check()?;
-        let link = self
-            .driver
-            .input_pair_link(StripId(left))
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("input link unsupported"))?;
-        let routes = [
-            self.read_input_route(left).await?,
-            self.read_input_route(left + 1).await?,
-        ];
-        self.check()?;
-        Ok((routes, link))
-    }
-
-    /// Switch a linked pair only if both captured routes and link still match.
-    pub async fn guarded_pair_bank(
-        &self,
-        left: u16,
-        expected: [InputRouteSelectors; 2],
-        bank: i32,
-    ) -> anyhow::Result<()> {
-        self.check()?;
-        let check = |_: &[StripId]| self.check();
-        self.driver
-            .linked_input_bank_guarded(
-                StripId(left),
-                [
-                    serde_json::to_value(expected[0])?,
-                    serde_json::to_value(expected[1])?,
-                ],
-                bank,
-                &check,
-            )
-            .await?;
-        self.check()
-    }
-
-    pub async fn guarded_single_selector_write(
-        &self,
-        channel: u16,
-        expected: InputRouteSelectors,
-        desired: InputRouteSelectors,
-    ) -> anyhow::Result<()> {
-        self.check()?;
-        anyhow::ensure!(
-            self.read_input_route(channel).await? == expected,
-            "input route changed"
-        );
-        let differences = [
-            expected.analog != desired.analog,
-            expected.usb != desired.usb,
-            expected.bank != desired.bank,
-        ];
-        anyhow::ensure!(
-            differences.iter().filter(|v| **v).count() == 1,
-            "exactly one selector must change"
-        );
-        let (target, source) = if differences[0] {
-            match desired.analog {
-                0..=15 => ("analog", Some(("Mic", (desired.analog + 1) as u8))),
-                16..=17 => ("analog", Some(("Aux", (desired.analog - 15) as u8))),
-                18 => ("analog", None),
-                _ => anyhow::bail!("invalid analog selector"),
-            }
-        } else if differences[1] {
-            anyhow::ensure!((0..=17).contains(&desired.usb), "invalid usb selector");
-            ("usb", Some(("USB", (desired.usb + 1) as u8)))
-        } else {
-            anyhow::ensure!((0..=1).contains(&desired.bank), "invalid bank selector");
-            ("bank", Some(("Bank", (desired.bank + 1) as u8)))
-        };
-        let guard = serde_json::to_value(expected)?;
-        let check = |_: &[StripId]| self.check();
-        let result = self
-            .driver
-            .patch_target_guarded(StripId(channel), target, source, Some(&guard), &check)
-            .await;
-        self.check()?;
-        result?;
-        anyhow::ensure!(
-            self.read_input_route(channel).await? == desired,
-            "selector readback mismatch"
-        );
-        Ok(())
     }
 }
 

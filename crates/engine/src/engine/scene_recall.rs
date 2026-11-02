@@ -259,9 +259,7 @@ impl Engine {
             provider: driver.clone(),
             values,
         });
-        if driver == "xair" {
-            super::routing::xair_scene_input_routes(&routing, &strips, &topo)?;
-        }
+        drv.scene_input_routes(&routing, &strips, &topo)?;
         let mute_groups = if drv.mute_group_snapshot_supported() {
             let mut masters = Vec::new();
             for group in 0..drv.mute_group_count() {
@@ -452,11 +450,7 @@ impl Engine {
             check()?;
             validate_scene_output_taps(&taps.values, &live, &scene.routing, drv.as_ref())?;
         }
-        let xair_input_routes = if driver == "xair" {
-            super::routing::xair_scene_input_routes(&scene.routing, &scene.strips, &topo)?
-        } else {
-            None
-        };
+        let input_routes = drv.scene_input_routes(&scene.routing, &scene.strips, &topo)?;
         if let Some(groups) = scene
             .mute_groups
             .as_ref()
@@ -490,8 +484,8 @@ impl Engine {
             .map(|s| (s, resolve(s)))
             .filter(|(_, r)| scope.is_none_or(|sc| sc.matches_strip(*r, &topo)))
             .collect();
-        let input_links = if driver == "xair" {
-            self.prepare_scene_input_links(scene, scope, &topo, &check)
+        let input_links = if drv.guarded_link_writes() {
+            self.prepare_scene_input_links(&driver, scene, scope, &topo, &check)
                 .await?
         } else {
             Vec::new()
@@ -537,15 +531,17 @@ impl Engine {
         // Re-read guards at each write because linking or external edits can
         // invalidate the current source context.
         if scope.is_none_or(|sc| sc.allows_global("routing")) {
-            if let Some(routes) = &xair_input_routes {
-                for strip in routes.keys() {
+            if let Some(routes) = &input_routes {
+                for (strip, changes) in routes {
                     check()?;
                     let guard = drv
                         .input_route_guard(StripId(*strip))
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("snapshot input route unavailable"))?;
                     check()?;
-                    for (field, max) in [("analog", 18), ("usb", 17), ("bank", 1)] {
+                    for change in changes {
+                        let field = change.target;
+                        let max = change.max;
                         anyhow::ensure!(
                             guard
                                 .get(field)
@@ -571,22 +567,20 @@ impl Engine {
         )
         .await?;
         self.restore_scene_input_links(
+            (&driver, writer),
             &input_links,
             &check,
             &late_affected_preamp,
-            writer,
             &topo,
             out,
         )
         .await?;
         if scope.is_none_or(|sc| sc.allows_global("routing")) {
-            if let Some(routes) = &xair_input_routes {
+            if let Some(routes) = &input_routes {
                 for (strip, wanted) in routes {
-                    for (target, desired) in [
-                        ("analog", wanted.analog),
-                        ("usb", wanted.usb),
-                        ("bank", wanted.bank),
-                    ] {
+                    for change in wanted {
+                        let target = change.target;
+                        let desired = change.desired;
                         check()?;
                         let guard = drv
                             .input_route_guard(StripId(*strip))
@@ -599,14 +593,7 @@ impl Engine {
                         if current == i64::from(desired) {
                             continue;
                         }
-                        let source = match (target, desired) {
-                            ("analog", 18) => None,
-                            ("analog", n @ 0..=15) => Some(("Mic", (n + 1) as u8)),
-                            ("analog", n @ 16..=17) => Some(("Aux", (n - 15) as u8)),
-                            ("usb", n @ 0..=17) => Some(("USB", (n + 1) as u8)),
-                            ("bank", n @ 0..=1) => Some(("Bank", (n + 1) as u8)),
-                            _ => anyhow::bail!("snapshot input route unavailable"),
-                        };
+                        let source = change.source;
                         drv.patch_target_guarded(
                             StripId(*strip),
                             target,
@@ -627,7 +614,7 @@ impl Engine {
                 }
             }
         }
-        if driver == "xair" {
+        if drv.guarded_preamp_writes() {
             for (scene_strip, strip) in &strips {
                 let has_preamp = ["gain", "phantom"].iter().any(|id| {
                     scene_strip.params.contains_key(*id)
@@ -651,7 +638,9 @@ impl Engine {
             check: &check,
             checked_buses: topo
                 .iter()
-                .filter(|family| driver == "xair" && family.kind == openfader_core::StripKind::Bus)
+                .filter(|family| {
+                    drv.guarded_bus_writes() && family.kind == openfader_core::StripKind::Bus
+                })
                 .flat_map(|family| family.first..family.first + family.count)
                 .map(|index| index as u16)
                 .collect(),
@@ -718,7 +707,7 @@ impl Engine {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
-                if driver == "xair"
+                if drv.guarded_link_writes()
                     && id == "link"
                     && drv.stereo_pairs().iter().any(|pair| pair.contains(r))
                 {
@@ -759,10 +748,11 @@ impl Engine {
                         && usize::from(*r) < family.first + family.count
                 });
                 affected_bus.extend(send_members.into_iter().map(|m| m.0));
-                let rr = if driver == "xair"
-                    && (matches!(id.as_str(), "gain" | "phantom") && !expected.is_empty()
-                        || bus_send
-                        || bus_param)
+                let rr = if (drv.guarded_preamp_writes()
+                    && matches!(id.as_str(), "gain" | "phantom")
+                    && !expected.is_empty())
+                    || (drv.guarded_send_writes() && bus_send)
+                    || (drv.guarded_bus_writes() && bus_param)
                 {
                     drv.set_param_guarded_checked(StripId(*r), &id, pv, &expected, &|members| {
                         check()?;
@@ -884,9 +874,7 @@ impl Engine {
             let remaining: Vec<_> = scene
                 .routing
                 .iter()
-                .filter(|r| {
-                    driver != "xair" || !matches!(r.target.as_str(), "analog" | "usb" | "bank")
-                })
+                .filter(|r| !drv.scene_input_route_target(&r.target))
                 .cloned()
                 .collect();
             self.recall_routing(&remaining, writer, out, &check).await?;
@@ -1120,7 +1108,8 @@ impl Engine {
             }
         }
         check()?;
-        self.verify_scene_input_links(&input_links, &check).await?;
+        self.verify_scene_input_links(&driver, &input_links, &check)
+            .await?;
         self.verify_scene_link_settings(link_settings.as_ref(), &driver, &check)
             .await?;
         self.refresh_fx_cache().await;

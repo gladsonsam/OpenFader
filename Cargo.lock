@@ -1305,11 +1305,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
- "openfader-proto-dl32s",
- "openfader-proto-wing",
- "openfader-proto-xair",
+ "openfader-engine",
  "openfader-sim",
- "openfader-transport",
  "tokio",
 ]
 
