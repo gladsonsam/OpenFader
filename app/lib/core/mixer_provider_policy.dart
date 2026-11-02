@@ -8,6 +8,7 @@ typedef ProviderSourceMode = ({
   String port,
   int mode
 });
+typedef ProviderDelayUnit = ({String label, int precision});
 typedef ProviderDelay = ({
   int unit,
   int steps,
@@ -52,6 +53,9 @@ abstract class MixerProviderPolicy {
   bool skipRecalledField(String field, Map<String, dynamic> values) => false;
   bool validRawPreset(String field, double value) => true;
   bool eqQEditable(EqFilterShape? shape) => true;
+  List<ChannelModeChoice> get sourceModeChoices => const [];
+  bool get supportsDelayCodec => false;
+  ProviderDelayUnit? delayUnit(int unit) => null;
   ProviderSourceMode? decodeSourceMode(Object? raw) => null;
   Object? encodeSourceMode(ChannelSourceModeVm snapshot, int mode) => null;
   ProviderDelay? decodeDelay(Object? raw, double? currentUnit) => null;
@@ -133,6 +137,22 @@ class WingProviderPolicy extends MixerProviderPolicy {
   bool get hpfInResponse => false;
   static const _sourceCodes = ['M', 'ST', 'M/S'];
   static const _delayCodes = ['M', 'FT', 'MS', 'SMP'];
+  @override
+  bool get supportsDelayCodec => true;
+  @override
+  List<ChannelModeChoice> get sourceModeChoices => const [
+        (value: 0, label: 'Mono'),
+        (value: 1, label: 'Stereo'),
+        (value: 2, label: 'Mid/side'),
+      ];
+  @override
+  ProviderDelayUnit? delayUnit(int unit) => switch (unit) {
+        0 => (label: 'm', precision: 2),
+        1 => (label: 'ft', precision: 2),
+        2 => (label: 'ms', precision: 2),
+        3 => (label: 'samples', precision: 0),
+        _ => null,
+      };
   @override
   ProviderSourceMode? decodeSourceMode(Object? raw) {
     if (raw is! String) return null;
