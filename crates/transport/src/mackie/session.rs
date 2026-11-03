@@ -366,8 +366,7 @@ impl MackieSession {
                 .lock()
                 .map(|mut p| p.insert(seq, tx))
                 .expect("pending poisoned");
-            let msg = Message::new(seq, MessageType::Request, command, body)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let msg = Message::new(seq, MessageType::Request, command, body)?;
             let bytes = msg.encode();
             guard.write_all(&bytes).await?;
             guard.flush().await?;
@@ -380,7 +379,7 @@ impl MackieSession {
                     .lock()
                     .map(|mut p| p.remove(&seq))
                     .unwrap_or(None);
-                Err(anyhow::anyhow!("{e}"))
+                Err(e.into())
             }
             Ok(Err(_)) => anyhow::bail!("request channel closed"),
             Err(_) => {
@@ -405,7 +404,7 @@ impl MackieSession {
         }
         let mut guard = self.write.lock().await;
         let seq = self.next_seq();
-        let msg = Message::new(seq, msg_type, command, body).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let msg = Message::new(seq, msg_type, command, body)?;
         guard.write_all(&msg.encode()).await?;
         guard.flush().await?;
         Ok(())

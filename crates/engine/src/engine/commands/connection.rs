@@ -82,7 +82,11 @@ impl Engine {
                 }))
             }
             Cmd::DiscoverDevices { request_id } => {
-                let display = |k: &str, m: &str| self.drv(k).display_name(m);
+                let display = |k: &str, m: &str| {
+                    self.drivers
+                        .get(k)
+                        .map_or_else(|| m.to_string(), |r| r.driver.display_name(m))
+                };
                 let remembered: Vec<String> =
                     self.desk_addrs.read().unwrap().values().cloned().collect();
                 // Stream live rows: the 2 s broadcast scan merges and
@@ -185,7 +189,11 @@ impl Engine {
                     .map(|(d, a)| (d.clone(), a.clone()))
                     .collect();
 
-                let display = |k: &str, m: &str| self.drv(k).display_name(m);
+                let display = |k: &str, m: &str| {
+                    self.drivers
+                        .get(k)
+                        .map_or_else(|| m.to_string(), |r| r.driver.display_name(m))
+                };
                 let scan_fut = self.scanner.scan(&display, Duration::from_secs(2));
                 let verify_fut = async {
                     // (a) Linked desk + directed verify, all in parallel.

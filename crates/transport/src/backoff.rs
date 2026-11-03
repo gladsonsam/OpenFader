@@ -1,10 +1,28 @@
 //! Reconnect with exponential backoff.
 use std::time::Duration;
 
+/// A backoff multiplier that cannot produce a finite, nondecreasing delay.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InvalidBackoffFactor(f64);
+
+impl std::fmt::Display for InvalidBackoffFactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "backoff factor must be finite and at least 1, got {}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InvalidBackoffFactor {}
+
+/// Exponential retry delays capped by the configured maximum duration.
+#[derive(Debug)]
 pub struct Backoff {
     pub initial: Duration,
     pub max: Duration,
-    pub factor: f64,
+    factor: f64,
     attempts: u32,
 }
 
@@ -18,9 +36,16 @@ impl Backoff {
         }
     }
 
-    pub fn with_factor(mut self, factor: f64) -> Self {
+    /// Set the multiplier applied between retry attempts.
+    ///
+    /// # Errors
+    /// Returns an error for non-finite factors or factors below one.
+    pub fn with_factor(mut self, factor: f64) -> Result<Self, InvalidBackoffFactor> {
+        if !factor.is_finite() || factor < 1.0 {
+            return Err(InvalidBackoffFactor(factor));
+        }
         self.factor = factor;
-        self
+        Ok(self)
     }
 
     pub fn attempts(&self) -> u32 {
@@ -31,9 +56,23 @@ impl Backoff {
         self.attempts = 0;
     }
 
+    /// Return the next capped delay and advance the retry count.
     pub fn next_delay(&mut self) -> Duration {
         let exp = self.factor.powi(self.attempts.min(16) as i32);
-        let delay = self.initial.mul_f64(exp).min(self.max);
+        let seconds = if self.initial.is_zero() {
+            0.0
+        } else {
+            self.initial.as_secs_f64() * exp
+        };
+        // Cap before converting to Duration: multiplication can exceed its
+        // representable range even when the configured maximum is small.
+        let delay = if seconds >= self.max.as_secs_f64() {
+            self.max
+        } else {
+            Duration::try_from_secs_f64(seconds)
+                .unwrap_or(self.max)
+                .min(self.max)
+        };
         self.attempts = self.attempts.saturating_add(1);
         delay
     }

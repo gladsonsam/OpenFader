@@ -763,7 +763,7 @@ impl MixerDriver for XAirDriver {
     }
 
     /// Full param plane (see [`XAIR_CAPABILITIES`]). Strip roots come from
-    /// [`strip_root`]: channels (`/ch/NN`) carry the whole set; FX returns
+    /// `strip_root`: channels (`/ch/NN`) carry the whole set; FX returns
     /// (`/rtn/N`), buses and LR carry fader/mute/name/color plus the
     /// kind-scoped gate/comp/EQ sets; FX-send masters and DCAs carry
     /// fader/mute/name/color only (catalogue scopes). Every address/codec is
