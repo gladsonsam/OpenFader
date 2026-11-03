@@ -25,10 +25,10 @@ mod platform {
             .ok_or_else(|| anyhow::anyhow!("recorder data directory unavailable"))?;
         fs::create_dir_all(&root)?;
         let meta = fs::symlink_metadata(&root)?;
+        // SAFETY: geteuid takes no arguments and has no caller preconditions.
+        let effective_uid = unsafe { libc::geteuid() };
         anyhow::ensure!(
-            meta.is_dir()
-                && !meta.file_type().is_symlink()
-                && meta.uid() == unsafe { libc::geteuid() },
+            meta.is_dir() && !meta.file_type().is_symlink() && meta.uid() == effective_uid,
             "unsafe recorder directory"
         );
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
@@ -39,14 +39,11 @@ mod platform {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(root.join("host.lock"))?;
-        anyhow::ensure!(
-            lock.metadata()?.uid() == unsafe { libc::geteuid() },
-            "unsafe host lock"
-        );
-        anyhow::ensure!(
-            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-            "desktop host already running"
-        );
+        anyhow::ensure!(lock.metadata()?.uid() == effective_uid, "unsafe host lock");
+        // SAFETY: lock owns a live file descriptor throughout flock; no pointers
+        // are passed and the operation uses the platform's lock constants.
+        let locked = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        anyhow::ensure!(locked == 0, "desktop host already running");
         let mut bytes = [0u8; 48];
         File::open("/dev/urandom")?.read_exact(&mut bytes)?;
         let hex = |b: &[u8]| b.iter().map(|v| format!("{v:02x}")).collect::<String>();
@@ -101,7 +98,7 @@ mod windows {
         Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG},
         Security::{
             GetAce, GetSecurityDescriptorControl, GetTokenInformation, TokenUser,
-            ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION, INHERITED_ACE,
+            ACCESS_ALLOWED_ACE, ACE_HEADER, DACL_SECURITY_INFORMATION, INHERITED_ACE,
             OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, SE_DACL_PROTECTED, TOKEN_QUERY,
             TOKEN_USER,
         },
@@ -127,6 +124,8 @@ mod windows {
     struct Security(*mut core::ffi::c_void, String);
     impl Drop for Security {
         fn drop(&mut self) {
+            // SAFETY: Security owns a security descriptor allocated by a Win32
+            // API using LocalAlloc; it is released once with the matching API.
             unsafe {
                 LocalFree(self.0);
             }
@@ -134,6 +133,10 @@ mod windows {
     }
     impl Security {
         fn current() -> anyhow::Result<Self> {
+            // SAFETY: Win32 output parameters point to live writable storage.
+            // TOKEN_USER uses aligned storage sized by GetTokenInformation;
+            // successful conversions return NUL-terminated LocalAlloc strings.
+            // Handles and allocated strings are released after their final use.
             unsafe {
                 let mut token = ptr::null_mut();
                 win(OpenProcessToken(
@@ -185,6 +188,10 @@ mod windows {
         }
     }
     fn verify_security(file: &File, security: &Security) -> anyhow::Result<()> {
+        // SAFETY: file owns a live handle. GetSecurityInfo returns a descriptor
+        // retained by _guard until its owner, ACL and ACE pointers are no longer
+        // used. Each fallible Win32 call is checked before dereferencing output;
+        // ACE headers are checked before treating them as access-allowed ACEs.
         unsafe {
             let mut owner = ptr::null_mut();
             let mut acl = ptr::null_mut();
@@ -235,11 +242,14 @@ mod windows {
             for i in 0..u32::from((*acl).AceCount) {
                 let mut ace = ptr::null_mut();
                 win(GetAce(acl, i, &mut ace))?;
-                let ace = &*(ace.cast::<ACCESS_ALLOWED_ACE>());
+                let header = &*(ace.cast::<ACE_HEADER>());
                 anyhow::ensure!(
-                    ace.Header.AceType == 0 && u32::from(ace.Header.AceFlags) & INHERITED_ACE == 0,
+                    header.AceType == 0
+                        && u32::from(header.AceFlags) & INHERITED_ACE == 0
+                        && usize::from(header.AceSize) >= std::mem::size_of::<ACCESS_ALLOWED_ACE>(),
                     "unexpected recorder ACE"
                 );
+                let ace = &*(ace.cast::<ACCESS_ALLOWED_ACE>());
                 let sid = sid_string((&ace.SidStart as *const u32).cast_mut().cast())?;
                 if sid == security.1 {
                     user = true;
@@ -254,6 +264,8 @@ mod windows {
         }
     }
     fn pin_directory(path: &Path) -> anyhow::Result<File> {
+        // SAFETY: wide owns a NUL-terminated path for the call; null optional
+        // pointers request defaults and no handle ownership is borrowed.
         let h = unsafe {
             CreateFileW(
                 wide(path.as_os_str()).as_ptr(),
@@ -268,6 +280,7 @@ mod windows {
         if h == INVALID_HANDLE_VALUE {
             return Err(std::io::Error::last_os_error().into());
         }
+        // SAFETY: h is a checked, newly owned handle; File takes sole ownership.
         let f = unsafe { File::from_raw_handle(h) };
         use std::os::windows::fs::MetadataExt;
         anyhow::ensure!(
@@ -285,6 +298,8 @@ mod windows {
     }
     fn file(path: &Path, security: &Security, disposition: u32) -> anyhow::Result<File> {
         reject_reparse(path)?;
+        // SAFETY: the path and security attributes stay valid for CreateFileW;
+        // the descriptor is owned by security and retained throughout the call.
         let h = unsafe {
             CreateFileW(
                 wide(path.as_os_str()).as_ptr(),
@@ -299,6 +314,7 @@ mod windows {
         if h == INVALID_HANDLE_VALUE {
             return Err(std::io::Error::last_os_error().into());
         }
+        // SAFETY: h is a checked, newly owned handle; File takes sole ownership.
         let file = unsafe { File::from_raw_handle(h) };
         use std::os::windows::fs::MetadataExt;
         anyhow::ensure!(
@@ -342,6 +358,8 @@ mod windows {
         let parent = appdata.join("OpenFader");
         let root = parent.join("Recorder");
         reject_reparse(&parent)?;
+        // SAFETY: the NUL-terminated path and security attributes live for the
+        // call, and security retains the descriptor referenced by its attributes.
         if unsafe { CreateDirectoryW(wide(parent.as_os_str()).as_ptr(), &security.attrs()) } == 0
             && !parent.is_dir()
         {
@@ -349,6 +367,7 @@ mod windows {
         }
         let parent_handle = pin_directory(&parent)?;
         reject_reparse(&root)?;
+        // SAFETY: the path and security attributes remain live for the call.
         if unsafe { CreateDirectoryW(wide(root.as_os_str()).as_ptr(), &security.attrs()) } == 0
             && !root.is_dir()
         {
@@ -358,6 +377,8 @@ mod windows {
         verify_security(&root_handle, &security)?;
         let lock = file(&root.join("host.lock"), &security, OPEN_ALWAYS)?;
         let mut bytes = [0u8; 48];
+        // SAFETY: bytes is writable for its supplied length; the system-preferred
+        // RNG flag permits a null algorithm handle and retains no buffer pointer.
         anyhow::ensure!(
             unsafe {
                 BCryptGenRandom(
@@ -385,6 +406,8 @@ mod windows {
             f.write_all(b"\n")?;
             f.sync_all()?;
             drop(f);
+            // SAFETY: both NUL-terminated path temporaries live for the call;
+            // MoveFileExW retains neither pointer.
             win(unsafe {
                 MoveFileExW(
                     wide(tmp.as_os_str()).as_ptr(),
@@ -416,6 +439,7 @@ mod windows {
             let security = Security::current().unwrap();
             let mut control = 0;
             let mut revision = 0;
+            // SAFETY: security owns a valid descriptor and the outputs are writable.
             assert_ne!(
                 unsafe {
                     windows_sys::Win32::Security::GetSecurityDescriptorControl(
@@ -428,6 +452,8 @@ mod windows {
             );
             assert_ne!(control & windows_sys::Win32::Security::SE_DACL_PROTECTED, 0);
             let mut random = [0u8; 8];
+            // SAFETY: random is writable for eight bytes; the RNG flag permits
+            // a null provider and the API retains no buffer pointer.
             assert!(
                 unsafe {
                     BCryptGenRandom(

@@ -96,6 +96,16 @@ fn validate_take(
     Ok(())
 }
 
+fn valid_playback_status(status: &Value) -> bool {
+    status.is_object()
+        && status["position_frames"].as_u64().is_some()
+        && status["sample_rate"].as_u64().is_some_and(|rate| rate > 0)
+        && matches!(
+            status["transport"].as_str(),
+            Some("playing" | "paused" | "stopped")
+        )
+}
+
 pub struct CoordinatorBackend {
     engine: Arc<Engine>,
     config: BackendConfig,
@@ -164,7 +174,10 @@ impl CoordinatorBackend {
             return self.run_inner(action, args, None).await;
         }
         let cancellation = {
-            let mut slot = self.cancellation.lock().unwrap_or_else(|e| e.into_inner());
+            let mut slot = self
+                .cancellation
+                .lock()
+                .expect("soundcheck cancellation lock poisoned");
             if !slot.reserved {
                 anyhow::ensure!(
                     slot.handle
@@ -583,7 +596,10 @@ impl Drop for CoordinatorBackend {
 }
 impl SoundcheckBackend for CoordinatorBackend {
     fn cancellation_handle(&self) -> CancellationHandle {
-        let mut slot = self.cancellation.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slot = self
+            .cancellation
+            .lock()
+            .expect("soundcheck cancellation lock poisoned");
         if slot.reserved || slot.handle.as_ref().is_some_and(|h| !h.output_terminated()) {
             return slot.handle.as_ref().unwrap().clone();
         }
@@ -688,7 +704,7 @@ impl SoundcheckBackend for CoordinatorBackend {
         Box::pin(async move {
             if let Some(c) = &self.manual {
                 match c.status().await {
-                    Ok(v) => {
+                    Ok(v) if valid_playback_status(&v["status"]) => {
                         let mut status = v["status"].clone();
                         status["manual_routing"] = Value::Bool(true);
                         if self.manual_transport == "stopped" {
@@ -697,6 +713,14 @@ impl SoundcheckBackend for CoordinatorBackend {
                         self.manual_transport =
                             status["transport"].as_str().unwrap_or("unknown").to_owned();
                         self.telemetry = Some(status);
+                    }
+                    Ok(_) => {
+                        self.manual_transport = "unknown".into();
+                        self.telemetry = Some(serde_json::json!({
+                            "manual_routing": true,
+                            "playback_error": "invalid playback status",
+                            "transport": "unknown"
+                        }));
                     }
                     Err(e) => {
                         self.manual_transport = "unknown".into();
@@ -763,16 +787,7 @@ impl SoundcheckBackend for CoordinatorBackend {
             if let Some(c) = &self.coordinator {
                 if c.mode() == InputMode::Soundcheck && c.has_playback() {
                     match tokio::time::timeout(Duration::from_secs(2), c.status()).await {
-                        Ok(Ok(response))
-                            if response["status"]["position_frames"].as_u64().is_some()
-                                && response["status"]["sample_rate"]
-                                    .as_u64()
-                                    .is_some_and(|r| r > 0)
-                                && matches!(
-                                    response["status"]["transport"].as_str(),
-                                    Some("playing" | "paused" | "stopped")
-                                ) =>
-                        {
+                        Ok(Ok(response)) if valid_playback_status(&response["status"]) => {
                             let mut status = response["status"].clone();
                             if c.transport() == Transport::Stopped {
                                 status["transport"] = serde_json::json!("stopped");
@@ -831,7 +846,7 @@ mod preflight_tests {
         w.append_interleaved(&[1, 2, 3]).unwrap();
         w.finish().unwrap();
         let helper = root.join("helper");
-        std::fs::write(&helper, "#!/bin/sh\nread line\nprintf '{\"state\":\"READY\",\"generation\":1}\n'\nwhile read line; do case \"$line\" in *play*) printf '{\"state\":\"PLAYED\",\"generation\":1}\n';; *pause*) printf '{\"state\":\"PAUSED\",\"generation\":1}\n';; *stop*) printf '{\"state\":\"STOPPED\",\"generation\":1}\n'; exit 0;; esac; done\n").unwrap();
+        std::fs::write(&helper, "#!/bin/sh\nread line\nprintf '{\"state\":\"READY\",\"generation\":1}\n'\nwhile read line; do case \"$line\" in *play*) printf '{\"state\":\"PLAYED\",\"generation\":1}\n';; *pause*) printf '{\"state\":\"PAUSED\",\"generation\":1}\n';; *status*) printf '{\"state\":\"STATUS\",\"generation\":1,\"status\":42}\n';; *stop*) printf '{\"state\":\"STOPPED\",\"generation\":1}\n'; exit 0;; esac; done\n").unwrap();
         std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
         let engine = Engine::new(openfader_engine::EngineConfig::default());
         let mut b = CoordinatorBackend::new(
@@ -864,6 +879,9 @@ mod preflight_tests {
         }
         b.command("enter_manual_soundcheck", &serde_json::json!({"take_id":"take","routing_confirmed":true,"expected_device_id":"fake","output_mapping":[1,null,0]})).await.unwrap();
         assert_eq!(b.state().input_mode, "soundcheck");
+        let status = b.telemetry().await.expect("malformed status is reported");
+        assert_eq!(status["transport"], "unknown");
+        assert_eq!(status["playback_error"], "invalid playback status");
         assert!(!root.join("journal").exists());
         assert!(b
             .command(

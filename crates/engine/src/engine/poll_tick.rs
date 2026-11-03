@@ -6,8 +6,8 @@ impl Engine {
     /// One pipelined poller tick (R2): up to `effective_inflight` driver
     /// queries per tick, strict lanes (focus > visible-group one-shot >
     /// essentials > background), results applied in batch order. At default
-    /// inflight 1 this is exactly [`Engine::poll_once`]'s budget with the
-    /// lanes interleaved; [`Engine::poll_once`] itself is untouched (exact
+    /// inflight 1 this is exactly `Engine::poll_once`'s budget with the
+    /// lanes interleaved; `Engine::poll_once` itself is untouched (exact
     /// legacy single-step for tests).
     ///
     /// Fairness: the essentials cursor round-robins without end, so a

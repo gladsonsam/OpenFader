@@ -72,10 +72,7 @@ fn driver_capability_sets() {
         engine.driver_capabilities("dl32s"),
         openfader_proto_dl32s::DL32S_CAPABILITIES
     );
-    assert_eq!(
-        engine.driver_capabilities("nope"),
-        engine.driver_capabilities("sim")
-    );
+    assert!(engine.driver_capabilities("nope").is_empty());
     assert_eq!(engine.driver_channels("xair"), 16);
     assert_eq!(engine.driver_channels("sim"), 32);
     // Strip totals (topology): sim 77, xair 36, dl32s 44.
@@ -119,8 +116,8 @@ fn registries_merge_canonical_plus_provider_rows() {
             assert!(reg.find(id).is_some(), "{driver} misses {id}");
         }
     }
-    // Unknown drivers fall back to the sim registry (mirrors `drv`).
-    assert_eq!(engine.registry("nope").len(), engine.registry("sim").len());
+    // Unknown drivers have no registry and cannot inherit simulation controls.
+    assert!(!engine.registries.contains_key("nope"));
     // The merge helper itself: canonical wins, provider rows append.
     let mut reg = ParamRegistry::canonical();
     reg.register(engine.drv("xair").param_defs());
@@ -501,7 +498,9 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
             }
         }
     });
-    let engine = Engine::new(EngineConfig::default());
+    let engine = parked_engine();
+    let mut client = engine.attach(Some("Scope fixture".into())).await;
+    settle_parked_poller(&engine, &mut client).await;
     *engine.active.write().unwrap() = "wing".into();
     let drv = engine.drv("wing");
     drv.connect(&addr).await.unwrap();
@@ -560,7 +559,7 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
         };
         let mut out = Vec::new();
         engine
-            .recall_full(&scene, 0, Some(&scope), "test", &mut out)
+            .recall_full(&scene, 0, Some(&scope), &client.id, &mut out)
             .await
             .unwrap();
         // Query barrier: all earlier loopback writes have reached the desk.
@@ -591,7 +590,7 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
     };
     let mut out = Vec::new();
     let error = engine
-        .recall_full(&rejected, 0, Some(&scope), "test", &mut out)
+        .recall_full(&rejected, 0, Some(&scope), &client.id, &mut out)
         .await
         .unwrap_err();
     assert!(!out
@@ -618,7 +617,7 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
     writes.lock().unwrap().clear();
     let mut out = Vec::new();
     engine
-        .recall_full(&preamp, 0, Some(&scope), "test", &mut out)
+        .recall_full(&preamp, 0, Some(&scope), &client.id, &mut out)
         .await
         .unwrap();
     drv.get_fader(StripId(0)).await.unwrap();
@@ -630,7 +629,7 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
     writes.lock().unwrap().clear();
     out.clear();
     let error = engine
-        .recall_full(&preamp, 0, Some(&scope), "test", &mut out)
+        .recall_full(&preamp, 0, Some(&scope), &client.id, &mut out)
         .await
         .unwrap_err();
     drv.get_fader(StripId(0)).await.unwrap();

@@ -1,5 +1,5 @@
 //! Input topology controls. /in/set/$mode is read-only; editable M/ST/M-S
-//! belongs to the shared /io/in/<group>/<index>/mode source, not a channel.
+//! belongs to the shared `/io/in/<group>/<index>/mode` source, not a channel.
 //! Mode writes carry the captured source identity and optionally old mode.
 use crate::{
     mapping::{mapping, Mapping, WireKind},

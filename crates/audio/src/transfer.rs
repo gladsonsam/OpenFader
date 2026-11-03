@@ -68,6 +68,8 @@ fn commit_dir(stage: &Path, dest: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let src = CString::new(stage.as_os_str().as_bytes()).map_err(|_| invalid("invalid path"))?;
     let dst = CString::new(dest.as_os_str().as_bytes()).map_err(|_| invalid("invalid path"))?;
+    // SAFETY: both C strings own their NUL-terminated paths for the call; the
+    // operation retains no pointers and the flags use the platform's constants.
     #[cfg(target_os = "linux")]
     let result = unsafe {
         libc::renameat2(
@@ -78,6 +80,7 @@ fn commit_dir(stage: &Path, dest: &Path) -> io::Result<()> {
             libc::RENAME_NOREPLACE,
         )
     };
+    // SAFETY: src and dst remain valid NUL-terminated strings throughout renamex_np.
     #[cfg(target_os = "macos")]
     let result = unsafe { libc::renamex_np(src.as_ptr(), dst.as_ptr(), libc::RENAME_EXCL) };
     if result == 0 {

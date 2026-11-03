@@ -18,3 +18,6 @@ tokio = { version = "1", features = ["full"] }
 [dev-dependencies]
 openfader-core = { path = "../core" }
 openfader-sim = { path = "../sim" }
+
+[lints]
+workspace = true

@@ -7,21 +7,21 @@
 //!
 //! The full `openfader-engine` mixer session runs in this process (in-process
 //! engine, no IPC hop): the Dart side sends one Cmd JSON
-//! per [`cmd`] and drains Event JSON frames via [`poll`]. No mixer logic
+//! per [`api::cmd`] and drains Event JSON frames via [`api::poll`]. No mixer logic
 //! lives here, this crate only moves Cmd/Event JSON, exactly like the WS
 //! relay.
 //!
 //! FRB-compatible signatures only (`String`, `Vec<String>`, `Vec<u8>`,
-//! `u32`, `()`); no engine types are exposed. [`boot`] loads device-local
-//! storage asynchronously on the bridge-owned runtime; [`cmd`]/[`poll`]/
-//! [`poll_binary`]/[`resync`] are async so Dart gets Futures without
+//! `u32`, `()`); no engine types are exposed. [`api::boot`] loads device-local
+//! storage asynchronously on the bridge-owned runtime; [`api::cmd`]/[`api::poll`]/
+//! [`api::poll_binary`]/[`api::resync`] are async so Dart gets Futures without
 //! blocking the UI thread.
 //!
 //! Binary meter fan-out ([`api::poll_binary`]): meter-class events ride
 //! the compact `Event::to_binary` encoding (protocol.rs `BIN_VERSION`
 //! layout) as length-prefixed frames (`u32 LE len` + frame bytes,
 //! concatenated); every other event is set aside as JSON text in the
-//! client's pending queue, which [`poll`](api::poll) drains first, so
+//! client's pending queue, which [`api::poll`] drains first, so
 //! the JSON control path is a lossless fallback for non-meter events.
 //!
 
@@ -71,9 +71,9 @@ pub(crate) fn clients() -> &'static Mutex<HashMap<String, BridgeClient>> {
 ///
 /// `bin_seq` is the per-client monotonic frame counter stamped into the
 /// `seq` field of every `Event::to_binary` frame vended by
-/// [`poll_binary`](api::poll_binary) (adapter-owned, per the protocol.rs
+/// [`api::poll_binary`] (adapter-owned, per the protocol.rs
 /// contract); `pending_json` holds non-meter JSON frames set aside by
-/// `poll_binary`, drained first by [`poll`](api::poll) so no control
+/// `poll_binary`, drained first by [`api::poll`] so no control
 /// frame is ever lost on the binary path.
 pub(crate) struct BridgeClient {
     pub(crate) handle: ClientHandle,

@@ -8,7 +8,7 @@
 //! [`async_trait`](async_trait::async_trait) erasure and adds the
 //! engine-only extensions that used to be concrete-type branches in
 //! `engine.rs` (FX design rack, patch plane, meter taps, GR, hardware
-//! flags). The [`impl_dyn_driver`] macro forwards the whole
+//! flags). The `impl_dyn_driver` macro forwards the whole
 //! [`MixerDriver`] surface; each provider then overrides only the
 //! extensions it supports (defaults are honestly unsupported).
 //!
@@ -287,7 +287,7 @@ pub trait DynDriver: Send + Sync {
         None
     }
     /// Driver-specific canonical range overrides, merged into this
-    /// provider's [`ParamRegistry`](openfader_core::params::ParamRegistry)
+    /// provider's [`ParamRegistry`]
     /// at boot (see [`RegisteredDriver::param_registry`]). Defaults to
     /// empty (canonical ranges); mirrors
     /// [`MixerDriver::param_range_overrides`].
@@ -356,7 +356,7 @@ pub trait DynDriver: Send + Sync {
     fn poll_meters(&self) -> MeterFrame;
     fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum>;
     /// Read-only native desk snapshot view (see
-    /// [`MixerDriver::native_snapshots`](openfader_core::MixerDriver::native_snapshots)):
+    /// [`MixerDriver::native_snapshots`]):
     /// `None` = the driver does not model native slots (honest
     /// `unsupported`, never faked). Sync lock-local read, no I/O.
     fn native_library(&self) -> Option<serde_json::Value> {

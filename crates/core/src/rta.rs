@@ -1,7 +1,7 @@
 //! RTA/meter pipeline: FFT-backed per-channel spectrum for the UI.
 //!
 //! [`RtaProcessor`] accepts [`MeterFrame`]s (e.g. forwarded from the
-//! transport [`MeterHub`](openfader_transport::MeterHub)) and exposes per-channel
+//! transport's `MeterHub`) and exposes per-channel
 //! peak/RMS, a latched clip flag, and a trailing 100 ms window of history.
 //!
 //! [`RtaProcessor::spectrum`] collects the per-channel level series from the

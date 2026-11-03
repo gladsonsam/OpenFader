@@ -1,6 +1,6 @@
 //! [`Engine`]: the transport-agnostic mixer session. All session behaviour
 //! is composed here and implemented by private child modules; adapters only
-//! move [`Cmd`]/[`Event`](crate::protocol::Event) JSON.
+//! move [`Cmd`]/[`Event`] JSON.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -370,7 +370,7 @@ impl Engine {
         // Remembered desk addresses survive a restart (scan re-verify +
         // directed unicast sweep need them; broadcast never crosses
         // subnets). In-memory only when no data dir is configured.
-        let desk_addrs = load_desks(data_dir.as_deref());
+        let mut desk_addrs = load_desks(data_dir.as_deref());
         // Registry definition order is the device-claim precedence
         // (sim fallback first, then hardware in priority order).
         let rows = crate::drivers::registered_drivers(config.preset);
@@ -385,8 +385,7 @@ impl Engine {
         });
         let driver_order: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
         // Merged param registries (canonical + provider rows) ride the same
-        // definition order; unknown drivers fall back to `sim` (see
-        // `Engine::registry`), which is always registered.
+        // definition order; every selected driver must have its own registry.
         let registries: HashMap<String, ParamRegistry> = rows
             .iter()
             .map(|r| {
@@ -401,6 +400,8 @@ impl Engine {
             .collect();
         let drivers: HashMap<String, RegisteredDriver> =
             rows.into_iter().map(|r| (r.name.to_string(), r)).collect();
+        // Saved files can outlive a provider registration; ignore unavailable drivers.
+        desk_addrs.retain(|driver, _| drivers.contains_key(driver));
         let engine = Arc::new(Self {
             drivers,
             driver_order,

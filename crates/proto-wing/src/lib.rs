@@ -1,6 +1,6 @@
 //! Behringer WING family provider. OSC control on UDP 2223; native meter
 //! requests on TCP 2222. Reference: WING Remote Protocols V3.0.5-1 and
-//! https://github.com/dannyfiresnake/libwing (protocol cross-check only).
+//! <https://github.com/dannyfiresnake/libwing> (protocol cross-check only).
 //! No successful UDP send is treated as a confirmed desk value.
 mod catalogue;
 mod control;

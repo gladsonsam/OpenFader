@@ -10,17 +10,17 @@
 //! the private engine protocol notes.
 //!
 //! Realtime duties of this adapter (MR1):
-//! - `TCP_NODELAY` on every accepted socket ([`configure_accepted`], wired
+//! - `TCP_NODELAY` on every accepted socket (`configure_accepted`, wired
 //!   into the accept loop below); no permessage-deflate anywhere, the
 //!   upgrade path (`axum` over a raw hyper connection) never negotiates
 //!   extensions, so frames go out uncompressed.
 //! - Latest-only meter delivery: per client, per stream (`meters`, `gr`,
-//!   `spectrum`) a bounded slot of 1 ([`Outbox`]). A slow socket's stale
+//!   `spectrum`) a bounded slot of 1 (`Outbox`). A slow socket's stale
 //!   frame is replaced, never queued; drops are counted and exposed via the
 //!   [`stats_json`] reply to `{"cmd":"stats"}`. Control frames (`state`,
 //!   `params`, `locks`, …) keep reliable ordered delivery.
 //! - Binary meter encoding for opted-in clients
-//!   (`{"cmd":"hello","binary_meters":true}` → [`Event::to_binary`]).
+//!   (`{"cmd":"hello","binary_meters":true}` → [`openfader_engine::Event::to_binary`]).
 
 pub mod capture_client;
 pub mod coordinator_backend;
@@ -266,7 +266,7 @@ impl Outbox {
 
     /// Next frame to put on the socket: control FIFO first, then one
     /// stream frame. Encodes binary when the client opted in and the event
-    /// supports it ([`Event::to_binary`](openfader_engine::Event::to_binary));
+    /// supports it ([`openfader_engine::Event::to_binary`]);
     /// control frames (and `spectrum`, which stays JSON) always encode as
     /// text, so JSON stays byte-identical for clients that did not opt in.
     /// R2 taps frames encode binary (type 3) only for taps-negotiated
@@ -377,7 +377,7 @@ pub fn stats_json(s: &StatsSnapshot) -> String {
 }
 
 /// True when `text` is a `stats` request (answered locally from the
-/// connection's [`Outbox`] counters, never forwarded to the engine).
+/// connection's `Outbox` counters, never forwarded to the engine).
 fn is_stats_request(text: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(text)
         .ok()
@@ -397,7 +397,7 @@ enum SenderJob {
 ///
 /// Three tasks, one concern each: `inbound` forwards commands (and answers
 /// `stats` requests via the sender), `pump` drains the engine mailbox into
-/// the latest-only [`Outbox`] without ever blocking on the socket, and
+/// the latest-only `Outbox` without ever blocking on the socket, and
 /// `sender` puts frames on the wire. Parse failures and command errors
 /// arrive as unicast `error` events; leaving the loop detaches the client.
 async fn handle_socket(
@@ -1154,11 +1154,11 @@ fn remote_router(app: AppState) -> Router {
         .with_state(app)
 }
 
-/// Accept loop with MR1 socket options (see [`configure_accepted`]).
+/// Accept loop with MR1 socket options (see `configure_accepted`).
 ///
 /// `axum::serve` applies the same `TCP_NODELAY` via `.tcp_nodelay(true)`,
 /// but its accept path is not unit-testable from here; this loop keeps the
-/// option-setting in [`configure_accepted`], covered by
+/// option-setting in `configure_accepted`, covered by
 /// `accepted_socket_has_nodelay` below. Otherwise identical behaviour:
 /// HTTP/1 + upgrades, one task per connection.
 async fn serve_loop(
