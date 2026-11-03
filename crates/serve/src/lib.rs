@@ -1294,7 +1294,9 @@ pub async fn run_with_full(
     let remote = Arc::new(RemoteHost {
         access: remote_access::RemoteAccess::new(&MemoryIdentity::default())?,
         listener: tokio::sync::Mutex::new(None),
-        microphone_authorized: std::sync::atomic::AtomicBool::new(false),
+        // Only macOS requires authorization relayed from the desktop UI. ASIO
+        // reports its own device access failures when the stream is opened.
+        microphone_authorized: std::sync::atomic::AtomicBool::new(!cfg!(target_os = "macos")),
     });
     let app = Router::new()
         .route(
