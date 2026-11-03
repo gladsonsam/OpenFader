@@ -171,12 +171,18 @@ impl OpQueue {
         let conflicts_before = self.conflicts.len();
         for op in self.ops.drain(..) {
             let key = op.key();
-            if let Some(prev) = winners.insert(key.clone(), op.clone()) {
-                self.conflicts.push(Conflict {
-                    target: key.target.describe(op.strip),
-                    dropped_seq: prev.seq,
-                    kept_seq: op.seq,
-                });
+            match winners.entry(key) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(op);
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    self.conflicts.push(Conflict {
+                        target: entry.key().target.describe(op.strip),
+                        dropped_seq: entry.get().seq,
+                        kept_seq: op.seq,
+                    });
+                    entry.insert(op);
+                }
             }
         }
         let mut final_ops: Vec<PendingOp> = winners.into_values().collect();

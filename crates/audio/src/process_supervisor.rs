@@ -33,7 +33,15 @@ impl std::fmt::Display for SupervisorError {
         }
     }
 }
-impl std::error::Error for SupervisorError {}
+impl std::error::Error for SupervisorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::InvalidJson(error) => Some(error),
+            Self::Timeout | Self::Cancelled | Self::Eof | Self::MessageTooLarge => None,
+        }
+    }
+}
 
 /// Owns a child and reaps it on drop. Stderr is discarded to avoid pipe deadlocks.
 pub struct ProcessSupervisor {
@@ -207,6 +215,24 @@ mod tests {
     fn deadline() -> Instant {
         Instant::now() + Duration::from_secs(2)
     }
+    #[test]
+    fn wrapped_errors_preserve_their_sources() {
+        use std::error::Error;
+        let io = SupervisorError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
+        assert_eq!(
+            io.source()
+                .unwrap()
+                .downcast_ref::<io::Error>()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        let json = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+        let invalid = SupervisorError::InvalidJson(json);
+        assert!(invalid.source().unwrap().is::<serde_json::Error>());
+        assert!(SupervisorError::Timeout.source().is_none());
+    }
+
     #[test]
     fn ready_and_normal_exit() {
         let mut child = spawn("printf '{\"state\":\"READY\"}\\n'");

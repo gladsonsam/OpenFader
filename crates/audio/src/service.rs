@@ -1226,7 +1226,13 @@ mod tests {
     #[test]
     fn generated_take_worker_delivers_eof_and_reports_read_failure() {
         let root = root();
-        let mut writer = TakeWriter::create(&root, 48_000, 8).unwrap();
+        let mut writer = TakeWriter::create(
+            &root,
+            48_000,
+            8,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         writer.append_interleaved(&[100; CHANNELS * 2]).unwrap();
         let manifest = writer.finish().unwrap();
         let (producer, mut consumer) = rtrb::RingBuffer::new(4);
@@ -1263,7 +1269,13 @@ mod tests {
     #[test]
     fn generated_take_worker_seeks_loops_and_stops_with_full_queue() {
         let root = root();
-        let mut writer = TakeWriter::create(&root, 48_000, 2).unwrap();
+        let mut writer = TakeWriter::create(
+            &root,
+            48_000,
+            2,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         for frame in 1..=4 {
             writer
                 .append_interleaved(&[frame * 100_000; CHANNELS])
@@ -1303,7 +1315,13 @@ mod tests {
     fn take_transport_validates_boundaries_without_opening_a_device() {
         let root = root();
         let mut service = RecorderService::new(&root).unwrap();
-        let mut writer = TakeWriter::create(root.join("take"), 48_000, 8).unwrap();
+        let mut writer = TakeWriter::create(
+            root.join("take"),
+            48_000,
+            8,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         writer.append_interleaved(&[7; CHANNELS * 4]).unwrap();
         writer.finish().unwrap();
         assert_eq!(service.load_take("take").unwrap().frames, 4);

@@ -40,8 +40,8 @@ pub struct WingMeterSample {
 
 /// Escape channel selectors in payload data, including UDP port/report bytes.
 /// Always escaping DF as DF DE is accepted by the documented receive routine.
-pub fn native_frame(channel: u8, payload: &[u8]) -> Vec<u8> {
-    let mut out = vec![0xdf, 0xd0 + channel];
+fn native_meter_frame(payload: &[u8]) -> Vec<u8> {
+    let mut out = vec![0xdf, 0xd3];
     for &b in payload {
         out.push(b);
         if b == 0xdf {
@@ -68,18 +68,15 @@ pub fn meter_request(port: u16, report: u32, specs: &[WingMeterSpec]) -> anyhow:
         payload.extend_from_slice(&[spec.token, spec.index]);
     }
     payload.push(0xde);
-    Ok(native_frame(3, &payload))
+    Ok(native_meter_frame(&payload))
 }
 pub fn decode_meters(data: &[u8], report: u32, specs: &[WingMeterSpec]) -> Option<Vec<WingLevel>> {
     if data.get(..4)? != report.to_be_bytes() {
         return None;
     }
-    let expected: usize = specs
+    let expected = specs
         .iter()
-        .map(|s| s.words())
-        .collect::<Option<Vec<_>>>()?
-        .iter()
-        .sum();
+        .try_fold(0usize, |total, spec| total.checked_add(spec.words()?))?;
     if data.len() != 4 + 2 * expected {
         return None;
     }
