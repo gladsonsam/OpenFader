@@ -120,7 +120,7 @@ def main():
         dmg.unlink(missing_ok=True)
         run('hdiutil', 'create', '-volname', 'OpenFader', '-srcfolder', app, '-ov', '-format', 'UDZO', dmg)
     elif platform in ('linux', 'windows'):
-        run('cargo', 'build', '--locked', '--release', '-p', 'openfader-flutter-bridge',
+        run('cargo', 'build', '--locked', '--release', '--target-dir', ROOT / 'target', '-p', 'openfader-flutter-bridge',
             '-p', 'openfader-serve', '-p', 'openfader-audio', cwd=ROOT)
         run(flutter, 'build', platform, '--release', *flags)
         if platform == 'linux':
@@ -131,6 +131,7 @@ def main():
         else:
             bundle = APP / 'build/windows/x64/runner/Release'
             shutil.copy2(ROOT / 'target/release/openfader_flutter_bridge.dll', bundle)
+            shutil.copy2(ROOT / 'scripts/check-windows-audio.ps1', bundle / 'check-audio.ps1')
             # Portable builds need the MSVC runtime on clean Windows machines.
             vswhere = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
             installation = subprocess.check_output([

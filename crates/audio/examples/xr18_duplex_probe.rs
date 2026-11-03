@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let captured = samples.clone();
     let err = failed.clone();
     let input = device.build_input_stream(
-        &config(true)?,
+        config(true)?,
         move |data: &[f32], _| {
             if let Ok(mut v) = captured.try_lock() {
                 for frame in data.as_chunks::<N>().0 {
@@ -106,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut frame = 0usize;
     let err = failed.clone();
     let output = device.build_output_stream(
-        &config(false)?,
+        config(false)?,
         move |data: &mut [f32], _| {
             data.fill(0.0);
             for chunk in data.as_chunks_mut::<N>().0 {

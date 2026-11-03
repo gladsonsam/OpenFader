@@ -88,3 +88,19 @@ jobs:
           foreach ($file in @('openfader-serve.exe', 'openfader-capture-helper.exe', 'openfader_flutter_bridge.dll')) {
             if (-not (Test-Path (Join-Path $bundle $file))) { throw "Missing $file in $bundle" }
           }
+      - name: Smoke-check packaged ASIO helper
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP 'audio-devices.json'
+          $stderr = Join-Path $env:RUNNER_TEMP 'audio-devices.log'
+          $helper = Start-Process -FilePath 'app/build/windows/x64/runner/Release/openfader-capture-helper.exe' -ArgumentList '--list-devices' -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            if (-not $helper.WaitForExit(15000)) { throw 'ASIO helper scan timed out' }
+            if ($helper.ExitCode -ne 0) { throw "ASIO helper failed: $(Get-Content $stderr -Raw)" }
+            $response = Get-Content $stdout -Raw | ConvertFrom-Json
+            if ($response.state -ne 'DEVICES' -or $null -eq $response.devices) { throw 'Invalid ASIO device scan response' }
+            # Hosted runners need no audio hardware; a successful empty scan is valid.
+          } finally {
+            if (-not $helper.HasExited) { $helper.Kill(); $helper.WaitForExit() }
+            $helper.Dispose()
+          }

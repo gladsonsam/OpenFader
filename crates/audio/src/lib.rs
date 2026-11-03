@@ -5,7 +5,7 @@ pub mod transfer;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -119,7 +119,12 @@ pub struct TakeManifest {
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
-fn header(file: &mut File, rate: u32, frames: u64, layout: ChannelLayout) -> io::Result<()> {
+fn header(
+    file: &mut (impl Write + Seek),
+    rate: u32,
+    frames: u64,
+    layout: ChannelLayout,
+) -> io::Result<()> {
     let size = frames
         .checked_mul(layout.frame_bytes())
         .and_then(|n| u32::try_from(n).ok())
@@ -193,7 +198,7 @@ pub struct TakeWriter {
     dir: PathBuf,
     manifest: TakeManifest,
     limit: u64,
-    file: Option<File>,
+    file: Option<BufWriter<File>>,
 }
 impl TakeWriter {
     /// Create a take with the caller's explicit device or imported channel layout.
@@ -277,7 +282,7 @@ impl TakeWriter {
                     start_frame: self.manifest.frames,
                     frames: 0,
                 });
-                self.file = Some(f);
+                self.file = Some(BufWriter::with_capacity(64 * 1024, f));
             }
             let f = self.file.as_mut().unwrap();
             let mut bytes = [0u8; MAX_CHANNELS * 3];
@@ -305,7 +310,8 @@ impl TakeWriter {
                 frames,
                 ChannelLayout(self.manifest.channels),
             )?;
-            f.sync_all()?;
+            f.flush()?;
+            f.get_ref().sync_all()?;
             f.seek(SeekFrom::End(0))?;
         }
         publish(&self.dir, &self.manifest)

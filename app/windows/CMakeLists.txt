@@ -119,7 +119,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 
 # Build and install the local recorder/mixer host alongside the app.
 add_custom_target(openfader_host ALL
-  COMMAND ${CMAKE_COMMAND} -E env CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo build --locked -p openfader-serve -p openfader-flutter-bridge -p openfader-audio --bin openfader-serve --bin openfader-capture-helper --lib $<$<NOT:$<CONFIG:Debug>>:--release>
+  COMMAND ${CMAKE_COMMAND} -E env CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo build --locked --target-dir "${CMAKE_CURRENT_SOURCE_DIR}/../../target" -p openfader-serve -p openfader-flutter-bridge -p openfader-audio --bin openfader-serve --bin openfader-capture-helper --lib $<$<NOT:$<CONFIG:Debug>>:--release>
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/../../target/$<IF:$<CONFIG:Debug>,debug,release>/openfader-serve.exe"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
