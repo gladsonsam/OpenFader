@@ -2,7 +2,7 @@ import '../../palette.dart';
 import '../../design.dart';
 import '../../settings/prefs.dart';
 import '../../widgets/channel_name_editor.dart';
-import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../geometry.dart';
@@ -30,11 +30,16 @@ class MixerStrip extends StatelessWidget {
   final int? identityChannel;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
   final bool compact;
+
+  /// A bank supplies one value for aligned rows; standalone strips use their
+  /// own artwork metadata.
+  final bool? reserveArtwork;
   final double bottomInset;
   const MixerStrip(
       {super.key,
       required this.channel,
       required this.controller,
+      this.reserveArtwork,
       this.onControlFocus,
       this.compact = false,
       this.bottomInset = 0,
@@ -47,74 +52,74 @@ class MixerStrip extends StatelessWidget {
         final g = MixerGeometry(
             phone: compact, width: box.maxWidth, height: box.maxHeight);
         final layout = PrefsService.instance.stripLayout;
-        final baseline = listEquals(layout.order, StripLayout.defaultOrder) &&
-            StripLayout.defaultOrder.every(layout.visible.contains) &&
-            layout.faderWeight == StripLayout.defaultFaderWeight &&
-            (!layout.compactProcessing || compact);
+        final ch = channel;
+        final hasArtwork = ch.master ||
+            (controller.demo && !ch.hasIconChoices) ||
+            (ch.iconChoice != null &&
+                ch.iconChoice!.symbol.isNotEmpty &&
+                ch.iconChoice!.symbol != 'none');
+        final showArtwork =
+            (reserveArtwork ?? hasArtwork) && box.maxHeight >= 480;
+        final identityHeight = showArtwork
+            ? AppDesign.spaceXl + math.min(64.0, box.maxWidth * .55)
+            : AppDesign.spaceXl;
+        const nameHeight = AppDesign.touchTarget;
+        const gap = AppDesign.spaceSm;
+        final compactRack =
+            compact || layout.compactProcessing || box.maxHeight < 520;
         final heights = <StripElement, double>{
-          StripElement.processing: layout.compactProcessing ? g.y(62) : g.rackH,
-          StripElement.pan: g.panH,
-          StripElement.mute: g.muteH,
-          StripElement.solo: g.soloH,
-          StripElement.nameplate: box.maxHeight - g.scribbleY,
+          StripElement.processing: compactRack
+              ? AppDesign.touchTarget
+              : (g.rackH * (3 / layout.faderWeight).clamp(.6, 1.5))
+                  .clamp(96.0, 144.0),
+          StripElement.pan: AppDesign.touchTarget,
+          StripElement.mute: AppDesign.controlHeight,
+          StripElement.solo: AppDesign.controlHeight,
+          StripElement.nameplate: identityHeight + nameHeight,
         };
+        final visible = layout.visibleOrder;
+        final fixed =
+            visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
+        final spacing =
+            gap * math.max(0, visible.length - 1) + AppDesign.spaceSm * 2;
+        final contentHeight = math.max(
+            box.maxHeight,
+            fixed +
+                spacing +
+                (visible.contains(StripElement.fader)
+                    ? AppDesign.touchTarget * 2
+                    : 0));
         final positions = <StripElement, Rect>{};
-        if (!baseline) {
-          final visible = layout.visibleOrder;
-          final gap = g.y(compact ? 8 : 10);
-          final top = g.rackY;
-          final available = (box.maxHeight - top - gap * (visible.length - 1))
-              .clamp(0.0, box.maxHeight);
-          final fixed = visible.fold<double>(
-              0, (sum, element) => sum + (heights[element] ?? 0));
-          final densityScale =
-              layout.faderWeight > 3 ? 1 - (layout.faderWeight - 3) * .08 : 1.0;
-          final fitScale = fixed > available ? available / fixed : 1.0;
-          final scale = densityScale < fitScale ? densityScale : fitScale;
-          final remaining = (available - fixed * scale).clamp(0.0, available);
-          final faderHeight = remaining *
-              (layout.faderWeight < 3
-                  ? .7 + .15 * (layout.faderWeight - 1)
-                  : 1.0);
-          var y = top;
-          for (final element in visible) {
-            final height = element == StripElement.fader
-                ? faderHeight
-                : (heights[element] ?? 0) * scale;
-            positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
-            y += height + gap;
-          }
+        var y = AppDesign.spaceSm;
+        for (final element in visible) {
+          final height = element == StripElement.fader
+              ? contentHeight - fixed - spacing
+              : heights[element] ?? 0;
+          positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
+          y += height + gap;
         }
         double allocated(StripElement element, double fallback) =>
-            baseline ? fallback : positions[element]?.height ?? 0;
-        final nameplateScale = baseline
-            ? 1.0
-            : ((positions[StripElement.nameplate]?.height ?? 0) /
-                    (box.maxHeight - g.scribbleY))
-                .clamp(0.0, 1.0);
+            positions[element]?.height ?? 0;
         Widget place(
             StripElement element, double y, double height, Widget child,
             {bool touch = false}) {
           if (!layout.visible.contains(element)) return const SizedBox.shrink();
-          if (!baseline) {
-            final rect = positions[element];
-            if (rect == null) return const SizedBox.shrink();
-            y = rect.top;
-            height = rect.height;
-          }
+          final rect = positions[element];
+          if (rect == null) return const SizedBox.shrink();
+          y = rect.top;
+          height = rect.height;
           final target = touch ? g.target(height) : height;
           return Positioned(
-              left: g.left,
-              right: g.right,
+              left: AppDesign.spaceXs,
+              right: AppDesign.spaceXs,
               top: y - (target - height) / 2,
               height: target,
               child: child);
         }
 
-        final ch = channel;
         final isMaster = ch.master;
         final chIndex = ch.channel;
-        return ValueListenableBuilder<int>(
+        final content = ValueListenableBuilder<int>(
             valueListenable: controller.store
                 .controlReadyNote(isMaster ? -1 : chIndex ?? -1),
             builder: (context, ready, _) => ColoredBox(
@@ -130,7 +135,7 @@ class MixerStrip extends StatelessWidget {
                           StripElement.processing,
                           g.rackY,
                           g.rackH,
-                          compact || layout.compactProcessing
+                          compactRack
                               ? MixerEqPreview(
                                   channel: ch,
                                   compact: true,
@@ -278,21 +283,16 @@ class MixerStrip extends StatelessWidget {
                         Positioned(
                             left: 0,
                             right: 0,
-                            top: baseline
-                                ? g.scribbleY
-                                : positions[StripElement.nameplate]?.top ??
-                                    g.scribbleY,
-                            height: baseline
-                                ? box.maxHeight - g.scribbleY
-                                : positions[StripElement.nameplate]?.height ??
-                                    0,
+                            top: positions[StripElement.nameplate]?.top ?? 0,
+                            height:
+                                positions[StripElement.nameplate]?.height ?? 0,
                             child: MixerNameplate(
                                 channel: ch,
-                                iconHeight: g.scribbleH * nameplateScale,
-                                nameHeight: g.nameH * nameplateScale,
-                                nameOffset:
-                                    (g.nameY - g.scribbleY) * nameplateScale,
-                                fontSize: g.nameText,
+                                showArtwork: showArtwork && hasArtwork,
+                                iconHeight: identityHeight,
+                                nameHeight: nameHeight,
+                                nameOffset: identityHeight,
+                                fontSize: g.nameText.clamp(12.0, 18.0),
                                 compact: compact,
                                 onSelect: () => controller.select(ch),
                                 onOpen: onOpen,
@@ -313,6 +313,10 @@ class MixerStrip extends StatelessWidget {
                                         }
                                       })),
                     ]))));
+        return contentHeight > box.maxHeight
+            ? SingleChildScrollView(
+                child: SizedBox(height: contentHeight, child: content))
+            : content;
       });
 
   /// Snapshot copy carrying the live fader value for [MixerFader] (level
