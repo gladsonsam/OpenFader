@@ -385,7 +385,8 @@ class ShellRecorderStore extends RecorderStore {
     if (_waveformCache.length >= 24) {
       _waveformCache.remove(_waveformCache.keys.first);
     }
-    _waveformCache[key] = result;
+    // A live interval can gain more published PCM bins on the next shell poll.
+    if (result['complete'] != false) _waveformCache[key] = result;
     return result;
   }
 
