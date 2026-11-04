@@ -156,19 +156,26 @@ impl Engine {
                             let tap_drv = engine.active_drv();
                             // Fallback taps only: `poll_taps` drivers keep
                             // serving their own tap frames, so only clear the
-                            // meter-derived tap here, mirroring the
-                            // `tap_frames` fallback name (`in` for DL32S,
-                            // else `post`). Tap-less drivers emit nothing.
-                            if tap_drv.poll_taps().is_none() && !tap_drv.meter_taps().is_empty() {
-                                let tap = if tap_drv.meter_taps() == ["in"] {
-                                    "in"
+                            // meter-derived level tap here, mirroring the
+                            // `tap_frames` fallback name (declared post,
+                            // else declared pre). Drivers declaring neither
+                            // serve no meter-derived level tap: nothing to
+                            // clear.
+                            if tap_drv.poll_taps().is_none() {
+                                let taps = tap_drv.meter_taps();
+                                let tap = if taps.contains(&"post") {
+                                    Some("post")
+                                } else if taps.contains(&"in") {
+                                    Some("in")
                                 } else {
-                                    "post"
+                                    None
                                 };
-                                engine.broadcast(Event::Taps {
-                                    tap: tap.to_string(),
-                                    levels: Vec::new(),
-                                });
+                                if let Some(tap) = tap {
+                                    engine.broadcast(Event::Taps {
+                                        tap: tap.to_string(),
+                                        levels: Vec::new(),
+                                    });
+                                }
                             }
                         }
                     }

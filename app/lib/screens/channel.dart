@@ -107,6 +107,11 @@ abstract class ChannelStore extends ChangeNotifier
   ChannelSourceVm get source;
   ChannelSourceModeVm? get sourceMode => null;
   void setSourceMode(ChannelSourceModeVm snapshot, int mode) {}
+
+  /// True when the connected provider exposes an input-source routing
+  /// plane covering this strip. The `source` leaf stays a read-only
+  /// label; patching goes through Routing.
+  bool get canPatchInputSource => false;
   void setSourceSelected(int selected);
   void setSendPan(int slot, double pan);
 
@@ -149,7 +154,7 @@ abstract class ChannelStore extends ChangeNotifier
   // --- edits ---
   void setEqParam(int band, String param, double value);
 
-  void setEqBandType(int band, EqFilterShape shape);
+  void setEqBandType(int band, int value);
   void setEqOn(bool on);
   void setEqBandOn(int band, bool on);
   void setHpfSlope(int slope);

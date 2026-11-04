@@ -12,6 +12,7 @@ path = "src/lib.rs"
 openfader-core = { path = "../core" }
 openfader-sim = { path = "../sim" }
 openfader-proto-xair = { path = "../proto-xair" }
+openfader-proto-x32 = { path = "../proto-x32" }
 openfader-proto-wing = { path = "../proto-wing" }
 openfader-proto-dl32s = { path = "../proto-dl32s" }
 openfader-transport = { path = "../transport" }

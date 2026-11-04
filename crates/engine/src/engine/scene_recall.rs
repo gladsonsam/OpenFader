@@ -171,16 +171,18 @@ impl Engine {
                         anyhow::anyhow!("snapshot capture incomplete: FX {slot} type unavailable")
                     })?;
                     let fx_type = drv
-                        .fx_type_name(effect)
+                        .fx_type_name_for_slot(slot, effect)
                         .ok_or_else(|| {
                             anyhow::anyhow!("snapshot capture incomplete: FX {slot} unknown type")
                         })?
                         .to_string();
-                    let count = drv.fx_type_param_count(effect).ok_or_else(|| {
-                        anyhow::anyhow!(
+                    let count =
+                        drv.fx_type_param_count_for_slot(slot, effect)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
                             "snapshot capture incomplete: FX {slot} parameter count unavailable"
                         )
-                    })?;
+                            })?;
                     let mut params = BTreeMap::new();
                     for index in 0..count {
                         let value = drv
