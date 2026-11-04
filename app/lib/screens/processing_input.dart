@@ -223,6 +223,12 @@ class _InputTab extends StatelessWidget {
             ]
           ]),
       ],
+      if (store.paramApplies('source') && store.canPatchInputSource)
+        Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('Input patching lives in Routing.',
+                style: AppDesign.type(14,
+                    color: ConsolePalette.of(context).text7))),
       if (store.paramApplies('provider:input_mode')) ...[
         const SizedBox(height: 12),
         if (store.sourceMode?.editable == true)
@@ -248,8 +254,7 @@ class _InputTab extends StatelessWidget {
                 : null),
       ],
       SizedBox(height: wide ? 88 : 14),
-      if (store.paramApplies('gain') &&
-          store.paramMetadata('gain')?['hidden'] != true) ...[
+      if (store.paramApplies('gain')) ...[
         _InputPreampControl(
             store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
         const SizedBox(height: 7),
@@ -265,6 +270,12 @@ class _InputTab extends StatelessWidget {
                 active: pre.invert,
                 semanticsLabel: 'Invert polarity',
                 onTap: store.supports('polarity') ? store.toggleInvert : null)),
+      if (store.paramApplies('polarity') && !store.paramApplies('trim'))
+        _ProcessingButton(
+            label: 'Ø Invert polarity',
+            active: pre.invert,
+            semanticsLabel: 'Invert polarity',
+            onTap: store.supports('polarity') ? store.toggleInvert : null),
       if (store.paramApplies('provider:input_balance')) ...[
         const SizedBox(height: 7),
         _InputPreampControl(
@@ -283,8 +294,7 @@ class _InputTab extends StatelessWidget {
             onFocus: onFocus),
       ],
       const SizedBox(height: 7),
-      if (store.paramApplies('phantom') &&
-          store.paramMetadata('phantom')?['hidden'] != true)
+      if (store.paramApplies('phantom'))
         Row(children: [
           SizedBox(
               width: 64,
@@ -304,6 +314,25 @@ class _InputTab extends StatelessWidget {
       SizedBox(height: wide ? 24 : 14),
       if (store.hasDelay) ...[
         _InputDelayControl(store: store, onFocus: onFocus),
+        SizedBox(height: wide ? 24 : 14),
+      ],
+      // Native delay leaves without a structured unit codec (X32
+      // `delay/time` 0.3..500 ms, protocol reference v4.09-02): generic direct
+      // control where the provider range proves valid, never a codec.
+      if (!store.hasDelay && store.paramApplies('delay_ms')) ...[
+        _InputPreampControl(
+            store: store,
+            leaf: 'delay_ms',
+            label: 'Delay',
+            onFocus: onFocus,
+            trailing: _ProcessingButton(
+                label: 'On',
+                active: store.paramBool('delay_on') == true,
+                semanticsLabel: 'Delay enabled',
+                onTap: store.supports('delay_on')
+                    ? () => store.cmdParam(
+                        'delay_on', store.paramBool('delay_on') != true)
+                    : null)),
         SizedBox(height: wide ? 24 : 14),
       ],
       if (store.inputInserts.isNotEmpty) ...[
@@ -332,6 +361,37 @@ class _InputTab extends StatelessWidget {
           ),
         const SizedBox(height: 12),
       ],
+      // Provider-labelled simple insert controls supplement the toggle
+      // when no richer insert surface is advertised.
+      if (store.inputInserts.isEmpty && store.paramApplies('insert_on'))
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _ProcessingButton(
+              label: 'Insert',
+              detail: store.paramBool('insert_on') == true ? 'On' : 'Off',
+              active: store.paramBool('insert_on') == true,
+              semanticsLabel: 'Insert enabled',
+              onTap: store.supports('insert_on')
+                  ? () => store.cmdParam(
+                      'insert_on', store.paramBool('insert_on') != true)
+                  : null),
+        ),
+      if (store.inputInserts.isEmpty)
+        for (final (leaf, label) in [
+          ('insert_sel', 'Insert source'),
+          ('provider:insert_position', 'Insert position'),
+        ])
+          if (store.paramApplies(leaf) &&
+              parameterChoices(store.paramMetadata(leaf)).isNotEmpty)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _ParameterChoices(
+                    store: store,
+                    leaf: leaf,
+                    label: label,
+                    fallback: 'Loading…',
+                    compact: true,
+                    onChanged: (value) => store.cmdParam(leaf, value))),
       _InputAssignments(store: store, wide: wide, onFocus: onFocus),
     ]);
     final sends =

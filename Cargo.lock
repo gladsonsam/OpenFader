@@ -1339,6 +1339,7 @@ dependencies = [
  "openfader-core",
  "openfader-proto-dl32s",
  "openfader-proto-wing",
+ "openfader-proto-x32",
  "openfader-proto-xair",
  "openfader-sim",
  "openfader-transport",
@@ -1377,6 +1378,18 @@ dependencies = [
  "openfader-core",
  "openfader-transport",
  "rosc",
+ "tokio",
+]
+
+[[package]]
+name = "openfader-proto-x32"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "openfader-core",
+ "openfader-transport",
+ "rosc",
+ "serde_json",
  "tokio",
 ]
 

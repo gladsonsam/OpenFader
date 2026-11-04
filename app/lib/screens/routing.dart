@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import '../theme.dart';
 import '../ui/console.dart';
 import '../core/routing_store.dart';
+import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
 
 class U4RoutingPage extends StatefulWidget {
@@ -603,7 +604,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   icon: const Icon(Icons.close),
                                   onPressed: () => Navigator.pop(sheetContext))
                             ])),
-                        if (store.canClear || store.tapControl != null)
+                        if (store.canClear || store.routingControls.isNotEmpty)
                           Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 12),
@@ -612,28 +613,30 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   TextButton(
                                       onPressed: valid ? _confirmClear : null,
                                       child: const Text('Unpatch')),
-                                if (store.tapControl case final control?)
+                                for (final control in store.routingControls)
                                   TextButton(
                                       onPressed: valid &&
-                                              store.tapIsCurrent(control)
+                                              control.value != null &&
+                                              store.routingControlIsCurrent(
+                                                  control)
                                           ? () => showDialog<void>(
                                               animationStyle:
                                                   AnimationStyle.noAnimation,
                                               context: context,
                                               barrierDismissible: false,
-                                              builder: (_) =>
-                                                  DestinationControlEditor(
+                                              builder:
+                                                  (_) => DestinationControlEditor(
                                                       changes: store,
                                                       accessEpoch: () => store
                                                           .controlAccessEpoch,
-                                                      isCurrent:
-                                                          store.tapIsCurrent,
-                                                      apply:
-                                                          store.setTapControl,
+                                                      isCurrent: store
+                                                          .routingControlIsCurrent,
+                                                      apply: store
+                                                          .setRoutingControl,
                                                       control: control))
                                           : null,
                                       child: Text(
-                                          'Tap: ${control.valueLabel ?? 'Unavailable'}')),
+                                          '${control.label}: ${control.valueLabel ?? 'Unavailable'}')),
                               ])),
                         const SizedBox(height: AppDesign.spaceMd),
                         if (!valid)
@@ -1015,27 +1018,40 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     store.selectStrip(strip.strip);
     final target = store.target;
     final key = store.operationKey;
-    final control = store.tapControl;
+    final epoch = store.controlAccessEpoch;
+    final snapshot = List<DestinationControlVm>.of(store.routingControls);
     final choice = await showAnchoredMenu<String>(anchor, [
       if (store.canClear)
         const PopupMenuItem(value: 'clear', height: 48, child: Text('Unpatch')),
-      if (control != null && store.tapIsCurrent(control))
+      for (final control in snapshot)
         PopupMenuItem(
-            value: 'tap',
+            value: 'control:${control.id}',
             height: 48,
-            child: Text('Tap: ${control.valueLabel ?? 'Unavailable'}')),
+            enabled:
+                control.value != null && store.routingControlIsCurrent(control),
+            child: Text(
+                '${control.label}: ${control.valueLabel ?? 'Unavailable'}')),
     ]);
     if (!mounted ||
         choice == null ||
         target != store.target ||
-        key != store.operationKey) {
+        key != store.operationKey ||
+        epoch != store.controlAccessEpoch) {
       return;
     }
     if (choice == 'clear') {
+      if (!store.canClear) return;
       await _confirmClear();
-    } else if (choice == 'tap' &&
-        control != null &&
-        store.tapIsCurrent(control)) {
+    } else if (choice.startsWith('control:')) {
+      final id = choice.substring('control:'.length);
+      final current = store.routingControls
+          .where((control) => control.id == id)
+          .firstOrNull;
+      if (current == null ||
+          current.value == null ||
+          !store.routingControlIsCurrent(current)) {
+        return;
+      }
       await showDialog<void>(
           context: context,
           animationStyle: AnimationStyle.noAnimation,
@@ -1043,9 +1059,9 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
           builder: (_) => DestinationControlEditor(
               changes: store,
               accessEpoch: () => store.controlAccessEpoch,
-              isCurrent: store.tapIsCurrent,
-              apply: store.setTapControl,
-              control: control));
+              isCurrent: store.routingControlIsCurrent,
+              apply: store.setRoutingControl,
+              control: current));
     }
   }
 
