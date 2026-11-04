@@ -20,6 +20,7 @@ class RecorderArrangement extends StatefulWidget {
 
 class _RecorderArrangementState extends State<RecorderArrangement> {
   double _zoom = 1;
+  bool _followRecording = true;
   double? _loopStart;
   double? _loopEnd;
   static const laneHeight = 62.0;
@@ -50,6 +51,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
       _desiredKey = null;
       _loopStart = null;
       _loopEnd = null;
+      _followRecording = true;
     }
   }
 
@@ -63,16 +65,21 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     super.dispose();
   }
 
-  void _requestVisible(String? id, double frames, double width, double viewport,
-      int takeFrames) {
+  void _requestVisible(
+      String? id, double frames, double width, double viewport, int takeFrames,
+      {bool live = false, int refreshFrames = 1}) {
     if (id == null || takeFrames <= 0 || viewport <= 0) return;
     final offset = _horizontal.hasClients ? _horizontal.offset : 0.0;
-    final start = (offset / width * frames).floor().clamp(0, takeFrames);
+    final visibleStart = (offset / width * frames).floor().clamp(0, takeFrames);
+    final start =
+        live ? visibleStart ~/ refreshFrames * refreshFrames : visibleStart;
+    final published =
+        live ? takeFrames ~/ refreshFrames * refreshFrames : takeFrames;
     final end =
-        ((offset + viewport) / width * frames).ceil().clamp(0, takeFrames);
+        ((offset + viewport) / width * frames).ceil().clamp(0, published);
     if (end <= start) return;
     final key = '$id:$start:$end:${viewport.round()}';
-    if (_desiredKey != key) {
+    if (_desiredKey != key && !live) {
       _peaks = [];
       _peakError = null;
     }
@@ -90,7 +97,8 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
           chunks.add(await widget.store
               .waveform(id, from, to, buckets.clamp(1, 2048)));
         }
-        if (mounted && _desiredKey == key) {
+        if (mounted &&
+            (_desiredKey == key || live && widget.previewTakeId == id)) {
           setState(() {
             _peaks = chunks;
             _peakError = null;
@@ -100,7 +108,9 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
         if (mounted && _desiredKey == key) {
           setState(() {
             _peaks = [];
-            _peakError = 'Waveform peaks are unavailable for this take.';
+            _peakError = live
+                ? 'Live waveforms are unavailable; recording continues.'
+                : 'Waveform peaks are unavailable for this take.';
           });
         }
       } finally {
@@ -135,12 +145,15 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   }
 
   Color _channelColor(ConsolePalette p, int i) {
-    if (i == 0) return p.arrangementGold;
-    if (i < 10) return p.meter;
-    if (i < 12) return p.arrangementBlue;
-    if (i == 12) return p.arrangementOrange;
-    if (i == 14 || i == 15) return p.arrangementPurple;
-    return p.arrangementGrey;
+    final colors = [
+      p.arrangementGold,
+      p.meter,
+      p.arrangementBlue,
+      p.arrangementOrange,
+      p.arrangementPurple,
+      p.arrangementGrey
+    ];
+    return colors[i % colors.length];
   }
 
   @override
@@ -148,6 +161,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     final p = ConsolePalette.of(context);
     final s = widget.store.state;
     final caps = s['capabilities'] is Map ? s['capabilities'] as Map : const {};
+    final recording = s['transport'] == 'recording';
     final take = widget.store.takes
         .where((t) => t['complete'] == true && t['id'] == widget.previewTakeId)
         .firstOrNull;
@@ -156,21 +170,27 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                 '${s['transport']}'.toLowerCase().contains('record')
             ? s
             : const <String, dynamic>{});
-    final laneCount = recorderChannelCount(laneSource);
-    final names = recorderChannelNames(laneSource, widget.store.channelNames);
-    final rate = (take?['sample_rate'] as num?)?.toDouble() ??
-        (s['sample_rate'] as num?)?.toDouble() ??
-        48000;
+    final names = recorderChannelNames(laneSource);
+    final knownRate = (take?['sample_rate'] as num?)?.toDouble() ??
+        (s['sample_rate'] as num?)?.toDouble();
+    final rateKnown = knownRate != null && knownRate > 0;
+    final laneCount = rateKnown ? recorderChannelCount(laneSource) : 0;
+    // Arithmetic placeholder only; no tracks or sample-rate claim until known.
+    final rate = rateKnown ? knownRate : 1.0;
     final active = '${s['input_mode']}'.toLowerCase().contains('soundcheck') ||
         '${s['transport']}'.toLowerCase().contains('record');
     final prepared =
         '${s['input_mode']}'.toLowerCase().contains('soundcheck') &&
             widget.previewTakeId == s['selected_take_id'];
-    final frames = math.max(
-        1.0,
-        (take?['duration_frames'] as num?)?.toDouble() ??
-            (active ? (s['recorded_frames'] as num?)?.toDouble() : null) ??
-            rate * 30);
+    final recordedFrames = (s['recorded_frames'] as num?)?.toInt() ?? 0;
+    final frames = recording
+        ? math.max(
+            rate * 30, ((recordedFrames + 1) / (rate * 30)).ceil() * rate * 30)
+        : math.max(
+            1.0,
+            (take?['duration_frames'] as num?)?.toDouble() ??
+                (active ? (s['recorded_frames'] as num?)?.toDouble() : null) ??
+                rate * 30);
     final position = (s['transport'] == 'recording'
         ? s['recorded_frames']
         : s['position_frames']) as num?;
@@ -203,12 +223,14 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                           style: TextStyle(color: p.mutedText, fontSize: 20)),
                       const SizedBox(width: 20),
                       if (_peakError != null)
-                        TextButton(
-                            onPressed: () => setState(() {
-                                  _requestKey = null;
-                                  _peakError = null;
-                                }),
-                            child: const Text('Retry waveform')),
+                        Tooltip(
+                            message: _peakError!,
+                            child: TextButton(
+                                onPressed: () => setState(() {
+                                      _requestKey = null;
+                                      _peakError = null;
+                                    }),
+                                child: const Text('Retry waveform'))),
                       if (take != null)
                         TextButton(
                             onPressed: () async {
@@ -260,6 +282,15 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                             },
                             child: const Text('Take details')),
                       const Spacer(),
+                      if (recording)
+                        IconButton(
+                            tooltip: _followRecording
+                                ? 'Following recording · click to scroll freely'
+                                : 'Follow recording playhead',
+                            isSelected: _followRecording,
+                            onPressed: () => setState(
+                                () => _followRecording = !_followRecording),
+                            icon: const Icon(Icons.follow_the_signs)),
                       Text('Time zoom', style: TextStyle(color: p.mutedText)),
                       SizedBox(
                           width: 140,
@@ -285,14 +316,37 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                       style: TextStyle(color: p.mutedText))))
         else
           Expanded(child: LayoutBuilder(builder: (context, constraints) {
-            final width = math.max(600.0, (constraints.maxWidth - 300) * _zoom);
+            final viewport = math.max(1.0, constraints.maxWidth - 300);
+            final width = math.max(
+                600.0,
+                recording
+                    ? frames / rate / 30 * viewport * _zoom
+                    : viewport * _zoom);
             _requestVisible(
-                take?['id'] as String?,
+                recording
+                    ? s['selected_take_id'] as String?
+                    : take?['id'] as String?,
                 frames,
                 width,
                 constraints.maxWidth - 300,
-                (take?['duration_frames'] as num?)?.toInt() ?? 0);
-            _requestOverview(take?['id'] as String?,
+                recording
+                    ? recordedFrames
+                    : (take?['duration_frames'] as num?)?.toInt() ?? 0,
+                live: recording,
+                refreshFrames: math.max(1, (rate / 4).round()));
+            if (recording && _followRecording) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || !_horizontal.hasClients || !_followRecording) {
+                  return;
+                }
+                final target = (current / frames * width - viewport * .8)
+                    .clamp(0.0, _horizontal.position.maxScrollExtent);
+                if ((_horizontal.offset - target).abs() > .5) {
+                  _horizontal.jumpTo(target);
+                }
+              });
+            }
+            _requestOverview(recording ? null : take?['id'] as String?,
                 (take?['duration_frames'] as num?)?.toInt() ?? 0);
             return SingleChildScrollView(
                 scrollDirection: Axis.vertical,
@@ -446,18 +500,34 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                             frames: frames,
                                             rate: rate,
                                             position: current,
+                                            visibleStart:
+                                                (_horizontal.hasClients
+                                                        ? _horizontal.offset
+                                                        : 0) /
+                                                    width,
+                                            visibleEnd: ((_horizontal.hasClients
+                                                        ? _horizontal.offset
+                                                        : 0) +
+                                                    viewport) /
+                                                width,
+                                            clipFrames: recording
+                                                ? recordedFrames.toDouble()
+                                                : frames,
                                             peaks: _peaks,
                                             names: names,
-                                            takeName: take == null
-                                                ? null
-                                                : ((take['name'] is String &&
-                                                            (take['name']
-                                                                    as String)
-                                                                .trim()
-                                                                .isNotEmpty)
-                                                        ? take['name']
-                                                        : 'Take ${widget.store.takes.indexOf(take) + 1}')
-                                                    .toString(),
+                                            takeName: recording
+                                                ? 'Recording'
+                                                : take == null
+                                                    ? null
+                                                    : ((take['name']
+                                                                    is String &&
+                                                                (take['name']
+                                                                        as String)
+                                                                    .trim()
+                                                                    .isNotEmpty)
+                                                            ? take['name']
+                                                            : 'Take ${widget.store.takes.indexOf(take) + 1}')
+                                                        .toString(),
                                             colors: List.generate(laneCount,
                                                 (i) => _channelColor(p, i)),
                                             loopStart: _loopStart,
@@ -517,6 +587,9 @@ class _TimelinePainter extends CustomPainter {
       required this.frames,
       required this.rate,
       required this.position,
+      required this.clipFrames,
+      required this.visibleStart,
+      required this.visibleEnd,
       required this.peaks,
       required this.names,
       required this.takeName,
@@ -527,7 +600,7 @@ class _TimelinePainter extends CustomPainter {
   final Map<int, String> names;
   final String? takeName;
   final List<Color> colors;
-  final double frames, rate, position;
+  final double frames, rate, position, clipFrames, visibleStart, visibleEnd;
   final double? loopStart, loopEnd;
   final List<Map<String, dynamic>> peaks;
   @override
@@ -543,12 +616,14 @@ class _TimelinePainter extends CustomPainter {
                 ? palette.arrangementLane
                 : palette.arrangementLaneAlt);
       if (takeName != null) {
-        final rect = Rect.fromLTWH(0, y + 5, size.width, 52);
+        final clipWidth =
+            (clipFrames / frames * size.width).clamp(0.0, size.width);
+        final rect = Rect.fromLTWH(0, y + 5, clipWidth, 52);
         canvas.drawRRect(
             RRect.fromRectAndRadius(rect, const Radius.circular(5)),
             Paint()..color = colors[i].withValues(alpha: .18));
-        canvas.drawRect(Rect.fromLTWH(0, y + 5, size.width, 15),
-            Paint()..color = colors[i]);
+        canvas.drawRect(
+            Rect.fromLTWH(0, y + 5, clipWidth, 15), Paint()..color = colors[i]);
         final label = TextPainter(
             text: TextSpan(
                 text: '${names[i] ?? 'Channel ${i + 1}'} · $takeName',
@@ -559,8 +634,8 @@ class _TimelinePainter extends CustomPainter {
             textDirection: TextDirection.ltr,
             maxLines: 1,
             ellipsis: '…')
-          ..layout(maxWidth: math.max(0, size.width - 14));
-        label.paint(canvas, Offset(7, y + 5));
+          ..layout(maxWidth: math.max(0, clipWidth - 14));
+        if (clipWidth > 14) label.paint(canvas, Offset(7, y + 5));
       }
     }
     if (loopStart != null && loopEnd != null) {
@@ -581,7 +656,10 @@ class _TimelinePainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
     final divisions = math.max(1, (size.width / 120).floor());
-    for (var i = 0; i <= divisions; i++) {
+    final firstDivision =
+        (visibleStart * divisions).floor().clamp(0, divisions);
+    final lastDivision = (visibleEnd * divisions).ceil().clamp(0, divisions);
+    for (var i = firstDivision; i <= lastDivision; i++) {
       final x = size.width * i / divisions;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
       final sec = (frames / rate * i / divisions).floor();
@@ -656,6 +734,9 @@ class _TimelinePainter extends CustomPainter {
       old.frames != frames ||
       old.rate != rate ||
       old.position != position ||
+      old.clipFrames != clipFrames ||
+      old.visibleStart != visibleStart ||
+      old.visibleEnd != visibleEnd ||
       old.loopStart != loopStart ||
       old.loopEnd != loopEnd;
 }

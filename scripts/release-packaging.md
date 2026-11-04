@@ -31,6 +31,13 @@ requires a full Windows build using `build-windows.ps1` on a development
 Windows installation or disposable VM; Flutter does not support a full
 Windows desktop cross-build from Linux.
 
+For a full Windows build in a local development VM, run
+`python scripts/ci-build-app.py windows --portable-only` from an x64 Visual
+C++ developer shell with Flutter, Rust, LLVM and the ASIO SDK available.
+This produces the portable ZIP without installing or invoking Inno Setup.
+Build metadata records a tracked working-tree patch hash when testing
+uncommitted changes and rejects sources that change during the build.
+
 Deploy only the extracted portable folder and test data to the recording PC.
 Keep bundled runtime DLLs alongside the executables; install no Rust,
 Flutter, C++ tools, LLVM or ASIO SDK there. The manufacturer ASIO driver is

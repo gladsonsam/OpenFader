@@ -74,12 +74,21 @@ def verify_android_bundle(bundle, fingerprint):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('platform', choices=['ios', 'macos', 'linux', 'windows', 'android'])
-    platform = parser.parse_args().platform
+    parser.add_argument('--portable-only', action='store_true',
+                        help='Package Windows ZIP without requiring Inno Setup')
+    args = parser.parse_args()
+    platform = args.platform
+    if args.portable_only and platform != 'windows':
+        parser.error('--portable-only is available for Windows')
     expected = {'ios': 'darwin', 'macos': 'darwin', 'linux': 'linux',
                 'windows': 'win32', 'android': 'linux'}[platform]
     if sys.platform != expected and not (platform == 'android' and sys.platform == 'darwin'):
         parser.error(f'{platform} builds require a {expected} host')
     OUT.mkdir(exist_ok=True)
+    if subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=ROOT).strip():
+        raise RuntimeError('Untracked sources prevent build identity. Commit them or mark intentional new sources with git add -N.')
+    source_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    source_patch = subprocess.check_output(['git', 'diff', '--binary', '--full-index', 'HEAD'], cwd=ROOT)
     version = (ROOT / 'VERSION').read_text().strip()
     number = os.environ.get('OPENFADER_BUILD_NUMBER', '1')
     flutter = shutil.which('flutter') or os.environ.get('FLUTTER_BIN')
@@ -120,8 +129,11 @@ def main():
         dmg.unlink(missing_ok=True)
         run('hdiutil', 'create', '-volname', 'OpenFader', '-srcfolder', app, '-ov', '-format', 'UDZO', dmg)
     elif platform in ('linux', 'windows'):
-        run('cargo', 'build', '--locked', '--release', '--target-dir', ROOT / 'target', '-p', 'openfader-flutter-bridge',
-            '-p', 'openfader-serve', '-p', 'openfader-audio', cwd=ROOT)
+        if platform == 'linux':
+            run('cargo', 'build', '--locked', '--release', '--target-dir', ROOT / 'target', '-p', 'openfader-flutter-bridge',
+                '-p', 'openfader-serve', '-p', 'openfader-audio', cwd=ROOT)
+        # Windows CMake builds the host, helper and bridge as part of this
+        # invocation. A separate Cargo invocation churns the shared cache.
         run(flutter, 'build', platform, '--release', *flags)
         if platform == 'linux':
             bundle = APP / 'build/linux/x64/release/bundle'
@@ -147,11 +159,12 @@ def main():
                          'openfader_flutter_bridge.dll', 'flutter_windows.dll', 'msvcp140.dll', 'vcruntime140.dll'):
                 if not (bundle / name).is_file():
                     raise RuntimeError(f'Missing Windows bundle component: {name}')
-            iscc = Path(os.environ['ProgramFiles(x86)']) / 'Inno Setup 6/ISCC.exe'
-            if not iscc.is_file():
-                raise RuntimeError('Inno Setup 6 compiler not found on runner')
-            run(iscc, f'/DAppVersion={version}', ROOT / 'scripts/windows-installer.iss', cwd=ROOT)
-            output(f'OpenFader-{version}-windows-x64-setup.exe')
+            if not args.portable_only:
+                iscc = Path(os.environ['ProgramFiles(x86)']) / 'Inno Setup 6/ISCC.exe'
+                if not iscc.is_file():
+                    raise RuntimeError('Inno Setup 6 compiler not found on runner')
+                run(iscc, f'/DAppVersion={version}', ROOT / 'scripts/windows-installer.iss', cwd=ROOT)
+                output(f'OpenFader-{version}-windows-x64-setup.exe')
             zip_tree(bundle, output('openfader-windows-x64.zip'), prefix='openfader')
     else:
         # Gradle builds the Rust bridge for every packaged ABI, including local
@@ -170,14 +183,27 @@ def main():
         signing['bundle_certificate_sha256'] = verify_android_bundle(bundle, signing['certificate_sha256'])
         shutil.copy2(bundle, output('openfader-android-dev-signed.aab'))
 
+    if (source_commit != subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+            or source_patch != subprocess.check_output(['git', 'diff', '--binary', '--full-index', 'HEAD'], cwd=ROOT)):
+        raise RuntimeError('Tracked sources changed during the build; rebuild before packaging')
     metadata = {
         'platform': platform, 'version': version, 'build_number': number,
-        'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        'commit': source_commit,
+        'working_tree_dirty': bool(source_patch),
+        'patch_sha256': hashlib.sha256(source_patch).hexdigest() if source_patch else None,
         'flutter': json.loads(subprocess.check_output([flutter, '--version', '--machine'], cwd=APP, text=True)),
         'signing': 'development only; no distribution signing or store upload',
     }
     if signing is not None:
         metadata['android_signing'] = signing
+    if platform == 'windows':
+        metadata['build_origin'] = ('github-actions' if os.environ.get('GITHUB_ACTIONS') == 'true'
+                                    else 'local-windows-native')
+        metadata['files'] = {}
+        for path in sorted(bundle.rglob('*')):
+            if path.is_file():
+                with path.open('rb') as stream:
+                    metadata['files'][path.relative_to(bundle).as_posix()] = hashlib.file_digest(stream, 'sha256').hexdigest()
     output(f'{platform}-build.json').write_text(json.dumps(metadata, indent=2) + '\n')
     checksums = []
     for path in outputs:
