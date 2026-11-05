@@ -138,10 +138,15 @@ class DestinationControlVm {
       return null;
     }
     if (!numeric) return null;
-    if (candidate < min! || candidate > max!) return null;
+    final candidateWire = Float32List.fromList([candidate]).first;
+    if (!candidateWire.isFinite ||
+        candidateWire < min! ||
+        candidateWire > max!) {
+      return null;
+    }
     final quantized = step == null
-        ? candidate
-        : min! + ((candidate - min!) / step!).round() * step!;
+        ? candidateWire
+        : min! + ((candidateWire - min!) / step!).round() * step!;
     final wireValue = Float32List.fromList([quantized]).first;
     return wireValue.isFinite && wireValue >= min! && wireValue <= max!
         ? wireValue

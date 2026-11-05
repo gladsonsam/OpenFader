@@ -12,6 +12,7 @@ class MixerNameplate extends StatelessWidget {
   final MixerChannel channel;
   final double iconHeight, bottomInset, nameHeight, nameOffset, fontSize;
   final bool compact;
+  final bool showArtwork;
   final VoidCallback onSelect, onOpen;
   final VoidCallback? onRename;
   final ValueChanged<BuildContext>? onOpenAt;
@@ -20,6 +21,7 @@ class MixerNameplate extends StatelessWidget {
       required this.channel,
       required this.iconHeight,
       this.compact = false,
+      this.showArtwork = true,
       this.bottomInset = 0,
       this.nameHeight = 36,
       this.nameOffset = 86,
@@ -89,24 +91,25 @@ class MixerNameplate extends StatelessWidget {
                                     context, (compact ? 15 : 20) * sx,
                                     color: ConsolePalette.of(context).mutedText,
                                     weight: FontWeight.w600))))),
-              Positioned(
-                  left: 0,
-                  right: 0,
-                  top: artworkPadding,
-                  height: math.max(0, identityHeight - artworkPadding),
-                  child: Center(
-                      child: SizedBox.square(
-                          dimension: artworkSize,
-                          child: ClipRect(
-                              child: channel.master
-                                  ? const MixerMainArtwork()
-                                  : channel.hasIconChoices
-                                      ? ChannelSymbol(
-                                          channel.iconChoice?.symbol)
-                                      : MixerArtwork(
-                                          'instrument_${channel.artwork}',
-                                          width: double.infinity,
-                                          height: double.infinity))))),
+              if (showArtwork)
+                Positioned(
+                    left: 0,
+                    right: 0,
+                    top: artworkPadding,
+                    height: math.max(0, identityHeight - artworkPadding),
+                    child: Center(
+                        child: SizedBox.square(
+                            dimension: artworkSize,
+                            child: ClipRect(
+                                child: channel.master
+                                    ? const MixerMainArtwork()
+                                    : channel.hasIconChoices
+                                        ? ChannelSymbol(
+                                            channel.iconChoice?.symbol)
+                                        : MixerArtwork(
+                                            'instrument_${channel.artwork}',
+                                            width: double.infinity,
+                                            height: double.infinity))))),
               Positioned(
                   left: 0,
                   right: 0,

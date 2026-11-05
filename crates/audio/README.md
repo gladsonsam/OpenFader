@@ -42,6 +42,13 @@ position. Device or worker errors silence playback and appear in status; stop
 returns the failure and releases the worker. Stream callbacks perform no heap
 allocation, disk I/O or blocking locks.
 
+During capture, the disk worker also publishes real per-channel PCM minima and
+maxima in 20 ms bins. The arrangement reads this bounded preview at the existing
+shell poll cadence, grows each channel's clip and follows the recording playhead.
+Preview I/O failure leaves recording running and makes waveforms unavailable;
+it never substitutes generated samples. The temporary peak file is removed after
+successful finalization; completed-take previews read the recorded WAV data.
+
 Run `cargo run -p openfader-audio --example capture_smoke --locked` to list devices, then repeat with a device ID as the final argument to record five seconds into a new temporary directory and verify WAV headers and frame alignment. On macOS microphone permission must be granted to
 the hosting executable. The example does not create an output stream.
 
