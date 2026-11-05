@@ -15,7 +15,7 @@ cpal = "=0.18.2"
 cpal = { version = "=0.18.2", features = ["asio"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-rtrb = "=0.3.2"
+rtrb = "=0.4.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
