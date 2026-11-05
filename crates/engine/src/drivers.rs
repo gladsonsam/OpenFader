@@ -2142,18 +2142,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         true
     }
     fn dial_addr(&self, ip: &str) -> String {
-        if ip.parse::<SocketAddr>().is_ok() {
-            return ip.to_string();
-        }
-        if let Some((h, p)) = ip.rsplit_once(':') {
-            if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
-                return ip.to_string();
-            }
-        }
-        if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
-            return format!("{ip}:{}", openfader_proto_xair::addrs::PORT);
-        }
-        ip.to_string()
+        openfader_transport::session::dial_addr_with_port(ip, openfader_proto_xair::addrs::PORT)
     }
     fn fx_type_name(&self, type_index: u8) -> Option<&'static str> {
         openfader_proto_xair::fx::fx_effect_name(type_index)

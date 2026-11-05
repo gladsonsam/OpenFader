@@ -31,6 +31,92 @@ mixin _AppStoreChannel on _AppStoreContext {
       .where((row) => row.surface == 'input_insert' && row.target == stripKey));
 
   @override
+  ChannelInsertVm? get inputInsert {
+    final controls = inputInserts;
+    final enabled = controls
+        .where((control) =>
+            control.choices.length == 2 &&
+            control.choices.first.label.toLowerCase() == 'off' &&
+            control.choices.last.label.toLowerCase() == 'on')
+        .firstOrNull;
+    final source = controls
+        .where((control) =>
+            control.choices.length > 2 &&
+            control.choices.first.label.toLowerCase() == 'off')
+        .firstOrNull;
+    if (enabled == null ||
+        source == null ||
+        enabled.value == null ||
+        source.value == null) {
+      return null;
+    }
+    final editable = destinationControlIsCurrent(enabled) &&
+        destinationControlIsCurrent(source);
+    return ChannelInsertVm(
+        context: (
+          connectionEpoch,
+          controlAccessEpoch,
+          enabled.revision,
+          enabled.generation,
+          enabled.value,
+          source.revision,
+          source.generation,
+          source.value,
+        ),
+        label: enabled.value == enabled.choices.first.value
+            ? enabled.choices.first.label
+            : source.valueLabel ?? 'Unavailable',
+        choices: source.choices,
+        value: enabled.value == enabled.choices.first.value
+            ? source.choices.first.value
+            : source.value!,
+        editable: editable,
+        unavailableReason: editable ? null : 'Insert control unavailable');
+  }
+
+  @override
+  Future<String?> setInputInsert(ChannelInsertVm snapshot, double value) async {
+    var live = inputInsert;
+    if (live == null ||
+        !live.editable ||
+        live.context != snapshot.context ||
+        !live.choices.any((choice) => choice.value == value)) {
+      return 'Insert changed; reopen the control.';
+    }
+    var controls = inputInserts;
+    var enabled = controls
+        .where((control) =>
+            control.choices.length == 2 &&
+            control.choices.first.label.toLowerCase() == 'off' &&
+            control.choices.last.label.toLowerCase() == 'on')
+        .first;
+    var source = controls
+        .where((control) =>
+            control.choices.length > 2 &&
+            control.choices.first.label.toLowerCase() == 'off')
+        .first;
+    final off = value == live.choices.first.value;
+    if (off) return setDestinationControl(enabled, enabled.choices.first.value);
+    if (source.value != value) {
+      final error = await setDestinationControl(source, value);
+      if (error != null) return error;
+      controls = inputInserts;
+      enabled =
+          controls.where((control) => control.id == enabled.id).firstOrNull ??
+              enabled;
+      source =
+          controls.where((control) => control.id == source.id).firstOrNull ??
+              source;
+      if (source.value != value || !destinationControlIsCurrent(enabled)) {
+        return 'Insert source readback changed; reopen the control.';
+      }
+    }
+    return enabled.value == enabled.choices.last.value
+        ? null
+        : setDestinationControl(enabled, enabled.choices.last.value);
+  }
+
+  @override
   List<DestinationControlVm> get automixSettings =>
       List.unmodifiable(engine.destinationControls
           .where((row) => row.surface == 'automix_settings'));

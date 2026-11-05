@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../palette.dart';
 import '../../design.dart';
+import '../motion.dart';
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
 /// 44-point target. Colour indicates state or intent rather than screen type.
-class ConsoleButton extends StatefulWidget {
+class ConsoleButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool selected, primary, danger;
@@ -23,74 +24,52 @@ class ConsoleButton extends StatefulWidget {
       this.fontSize = AppDesign.smallLabel});
 
   @override
-  State<ConsoleButton> createState() => _ConsoleButtonState();
-}
-
-class _ConsoleButtonState extends State<ConsoleButton> {
-  bool _pressed = false;
-
-  void _setPressed(bool value) {
-    if (_pressed == value) return;
-    setState(() => _pressed = value);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final active = widget.danger
+    final active = danger
         ? ConsolePalette.of(context).mute
-        : widget.accent ?? ConsolePalette.of(context).lime;
-    final filled = widget.selected || widget.primary;
+        : accent ?? ConsolePalette.of(context).lime;
+    final filled = selected || primary;
     final animationsOff = MediaQuery.disableAnimationsOf(context);
-    return GestureDetector(
-      onTapDown: widget.onPressed == null ? null : (_) => _setPressed(true),
-      onTapUp: widget.onPressed == null ? null : (_) => _setPressed(false),
-      onTapCancel: () => _setPressed(false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1.0,
-        duration: animationsOff ? Duration.zero : AppDesign.feedbackDuration,
-        curve: Curves.easeOut,
-        child: TextButton(
-            onPressed: widget.onPressed,
-            style: TextButton.styleFrom(
-              backgroundColor:
-                  filled ? active : ConsolePalette.of(context).control,
-              foregroundColor: filled
-                  ? (widget.danger
-                      ? ConsolePalette.of(context).onDanger
-                      : ConsolePalette.of(context).onAccent)
-                  : ConsolePalette.of(context).text,
-              disabledBackgroundColor: ConsolePalette.of(context).selected,
-              disabledForegroundColor: ConsolePalette.of(context).mutedText,
-              minimumSize: AppDesign.controlSize,
-              padding: AppDesign.controlPadding,
-              textStyle:
-                  AppDesign.type(widget.fontSize, weight: FontWeight.w600),
-              shape:
-                  const RoundedRectangleBorder(borderRadius: AppDesign.radius),
-              side: widget.danger && !filled
-                  ? BorderSide(color: active)
-                  : BorderSide.none,
-            ).copyWith(
-                animationDuration:
-                    animationsOff ? Duration.zero : AppDesign.feedbackDuration,
-                side: WidgetStateProperty.resolveWith((states) => states
-                        .contains(WidgetState.focused)
-                    ? BorderSide(color: ConsolePalette.of(context).selectedLine)
-                    : widget.danger && !filled
-                        ? BorderSide(color: active)
-                        : BorderSide.none)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: AppDesign.iconSize),
-                const SizedBox(width: AppDesign.spaceSm),
-              ],
-              Flexible(
-                  child: Text(widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center)),
-            ])),
-      ),
+    return ConsolePressFeedback(
+      enabled: onPressed != null,
+      child: TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            backgroundColor:
+                filled ? active : ConsolePalette.of(context).control,
+            foregroundColor: filled
+                ? (danger
+                    ? ConsolePalette.of(context).onDanger
+                    : ConsolePalette.of(context).onAccent)
+                : ConsolePalette.of(context).text,
+            disabledBackgroundColor: ConsolePalette.of(context).selected,
+            disabledForegroundColor: ConsolePalette.of(context).mutedText,
+            minimumSize: AppDesign.controlSize,
+            padding: AppDesign.controlPadding,
+            textStyle: AppDesign.type(fontSize, weight: FontWeight.w600),
+            shape: const RoundedRectangleBorder(borderRadius: AppDesign.radius),
+            side:
+                danger && !filled ? BorderSide(color: active) : BorderSide.none,
+          ).copyWith(
+              animationDuration:
+                  animationsOff ? Duration.zero : ConsoleMotion.state,
+              side: WidgetStateProperty.resolveWith((states) => states
+                      .contains(WidgetState.focused)
+                  ? BorderSide(color: ConsolePalette.of(context).selectedLine)
+                  : danger && !filled
+                      ? BorderSide(color: active)
+                      : BorderSide.none)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon, size: AppDesign.iconSize),
+              const SizedBox(width: AppDesign.spaceSm),
+            ],
+            Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center)),
+          ])),
     );
   }
 }

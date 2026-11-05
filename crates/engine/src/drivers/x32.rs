@@ -90,18 +90,7 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { Self::param_scopes() }
     fn param_plane_snapshot(&self) -> bool { true }
     fn dial_addr(&self, ip: &str) -> String {
-        if ip.parse::<SocketAddr>().is_ok() {
-            return ip.to_string();
-        }
-        if let Some((h, p)) = ip.rsplit_once(':') {
-            if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
-                return ip.to_string();
-            }
-        }
-        if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
-            return format!("{ip}:{}", openfader_proto_x32::addrs::PORT);
-        }
-        ip.to_string()
+        openfader_transport::session::dial_addr_with_port(ip, openfader_proto_x32::addrs::PORT)
     }
     fn claims_device(&self, id: &str, model: &str) -> bool {
         let m = model.to_lowercase();

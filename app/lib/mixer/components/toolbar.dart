@@ -34,7 +34,7 @@ class MixerToolbar extends StatelessWidget {
           final channel = controller.readoutChannel;
           return Container(
               padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
-              height: AppDesign.readoutHeight,
+              height: AppDesign.touchTarget,
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).panel,
                   borderRadius: MixerDesign.radius,
@@ -43,15 +43,17 @@ class MixerToolbar extends StatelessWidget {
                   (pageTitle != null
                       ? Row(children: [
                           Expanded(
-                              child: Text(pageTitle!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: mixerType(
-                                      context,
-                                      compact
-                                          ? AppDesign.compactParameterValue
-                                          : AppDesign.parameterValue,
-                                      weight: FontWeight.w600))),
+                              child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(pageTitle!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: mixerType(
+                                          context,
+                                          compact
+                                              ? AppDesign.compactParameterValue
+                                              : AppDesign.parameterValue,
+                                          weight: FontWeight.w600)))),
                           if (!compact)
                             Expanded(
                                 child: Align(
@@ -174,20 +176,6 @@ class MixerToolbar extends StatelessWidget {
               compact: compact,
               onHome: onHome,
               trailingGap: compact ? 6.0 : 0.0),
-          if (controller.demo) ...[
-            Tooltip(
-                message:
-                    'Offline demo mixer: channel names and meters are simulated. Open Connections to connect to a physical mixer.',
-                child: TextButton(
-                    onPressed: () => onNavigate(MixerDestination.connect),
-                    style: TextButton.styleFrom(
-                        foregroundColor: ConsolePalette.of(context).amber,
-                        minimumSize: const Size(0, AppDesign.touchTarget),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppDesign.spaceSm)),
-                    child: Text(compact ? 'Demo' : 'Demo · simulated'))),
-            const SizedBox(width: AppDesign.spaceSm),
-          ],
           Expanded(
               child: compact
                   ? readout
@@ -218,9 +206,11 @@ class MixerToolbar extends StatelessWidget {
               height: AppDesign.touchTarget,
               child: OutlinedButton(
                   onPressed: pageTitle == 'Tools' ? onHome : onOpenTools,
-                  style: compact
-                      ? OutlinedButton.styleFrom(padding: EdgeInsets.zero)
-                      : null,
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, AppDesign.touchTarget),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding:
+                          compact ? EdgeInsets.zero : AppDesign.controlPadding),
                   child: Text(pageTitle == 'Tools' ? 'Mixer' : 'Tools',
                       style: compact ? const TextStyle(fontSize: 12) : null))),
         ]));

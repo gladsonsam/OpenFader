@@ -88,6 +88,8 @@ class _MeterSignal extends ChangeNotifier {
 }
 
 class _MeterPainter extends CustomPainter {
+  static final _unity = MixerFaderScale.positionForDb(0);
+  static final _warning = MixerFaderScale.positionForDb(-12);
   final ConsolePalette palette;
   final _MeterSignal signal;
   final bool stereo;
@@ -100,26 +102,23 @@ class _MeterPainter extends CustomPainter {
     final h = (s.height - top).clamp(1.0, double.infinity);
     final count = stereo ? 2 : 1;
     final w = (s.width - (count - 1) * 3) / count;
+    final clipped =
+        MeterTuning.holdClips ? signal.peak >= .99 : signal.source.value >= .99;
+    final level = MixerFaderScale.positionForLevel(signal.source.value);
+    final peak = MixerFaderScale.positionForLevel(signal.peak);
     for (var i = 0; i < count; i++) {
       final x = i * (w + 3);
-      final clipped = MeterTuning.holdClips
-          ? signal.peak >= .99
-          : signal.source.value >= .99;
       mixerBox(c, Rect.fromLTWH(x, 0, w, clipHeight),
           clipped ? palette.meterRed : palette.meterClipBack,
           radius: 3);
-      final unity = MixerFaderScale.positionForDb(0);
-      final warning = MixerFaderScale.positionForDb(-12);
       mixerBox(
           c,
-          Rect.fromLTWH(x, top + (1 - unity) * h, w, (unity - warning) * h),
+          Rect.fromLTWH(x, top + (1 - _unity) * h, w, (_unity - _warning) * h),
           palette.meterAmberBack,
           radius: 3);
-      mixerBox(c, Rect.fromLTWH(x, top + (1 - warning) * h, w, warning * h),
+      mixerBox(c, Rect.fromLTWH(x, top + (1 - _warning) * h, w, _warning * h),
           palette.meterGreenBack,
           radius: 2);
-      final level = MixerFaderScale.positionForLevel(signal.source.value);
-      final peak = MixerFaderScale.positionForLevel(signal.peak);
       if (level > 0) {
         mixerBox(c, Rect.fromLTWH(x, top + (1 - level) * h, w, level * h),
             palette.meter,

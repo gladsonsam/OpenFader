@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../design.dart';
 import '../../palette.dart';
+import '../motion.dart';
 
 class ConsoleIconButton extends StatelessWidget {
   final String label;
@@ -28,23 +29,28 @@ class ConsoleIconButton extends StatelessWidget {
         message: label,
         child: SizedBox.square(
           dimension: AppDesign.touchTarget,
-          child: Material(
-            animationDuration: Duration.zero,
-            color: selected
-                ? palette.selected
-                : filled
-                    ? palette.chip
-                    : Colors.transparent,
-            shape: RoundedRectangleBorder(
-                borderRadius: AppDesign.radius,
-                side: filled
-                    ? BorderSide(color: selected ? palette.cyan : palette.line)
-                    : BorderSide.none),
-            child: InkWell(
-                onTap: onPressed,
-                borderRadius: AppDesign.radius,
-                child: Center(child: child)),
-          ),
+          child: ConsolePressFeedback(
+              enabled: onPressed != null,
+              child: Material(
+                animationDuration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : ConsoleMotion.state,
+                color: selected
+                    ? palette.selected
+                    : filled
+                        ? palette.chip
+                        : Colors.transparent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: AppDesign.radius,
+                    side: filled
+                        ? BorderSide(
+                            color: selected ? palette.cyan : palette.line)
+                        : BorderSide.none),
+                child: InkWell(
+                    onTap: onPressed,
+                    borderRadius: AppDesign.radius,
+                    child: Center(child: child)),
+              )),
         ),
       ),
     );

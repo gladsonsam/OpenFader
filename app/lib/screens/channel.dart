@@ -105,6 +105,9 @@ abstract class ChannelStore extends ChangeNotifier
   ChannelDelayVm? get delay => null;
   void setDelay(ChannelDelayVm snapshot, double value) {}
   ChannelSourceVm get source;
+  ChannelInputSourceVm? get inputSource => null;
+  void setInputSource(
+      ChannelInputSourceVm snapshot, ChannelInputSourceChoice choice) {}
   ChannelSourceModeVm? get sourceMode => null;
   void setSourceMode(ChannelSourceModeVm snapshot, int mode) {}
 
@@ -130,6 +133,10 @@ abstract class ChannelStore extends ChangeNotifier
 
   List<DestinationControlVm> get rtaSettings => const [];
   List<DestinationControlVm> get inputInserts => const [];
+  ChannelInsertVm? get inputInsert => null;
+  Future<String?> setInputInsert(
+          ChannelInsertVm snapshot, double value) async =>
+      'Insert control unavailable.';
   List<DestinationControlVm> get automixSettings => const [];
   ChannelEqVm get eq;
   ChannelDynVm get gate;
@@ -225,6 +232,7 @@ class ChannelPage extends StatefulWidget {
 }
 
 class _ChannelPageState extends State<ChannelPage> {
+  double _motionDirection = 1;
   final _swipePointers = <int>{};
   bool _swipeMultiTouch = false;
   double _swipeDistance = 0;
@@ -244,12 +252,22 @@ class _ChannelPageState extends State<ChannelPage> {
   }
 
   @override
+  void didUpdateWidget(covariant ChannelPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stripKey != widget.stripKey) {
+      _focus.value = null;
+      widget.store.cmdFocus();
+    }
+  }
+
+  @override
   void dispose() {
     if (widget.controlFocus == null) _focus.dispose();
     super.dispose();
   }
 
   void _switchTab(ChannelStore store, ChannelTab tab) {
+    _motionDirection = tab.index >= store.tab.index ? 1 : -1;
     store.setTab(tab);
     _focus.value =
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
@@ -278,6 +296,7 @@ class _ChannelPageState extends State<ChannelPage> {
       return;
     }
     if (axis == Axis.horizontal) {
+      _motionDirection = distance < 0 ? 1 : -1;
       widget.onChannelStep?.call(distance < 0 ? 1 : -1);
       return;
     }
@@ -459,7 +478,15 @@ class _ChannelPageState extends State<ChannelPage> {
                                                     _switchTab(store, t)))),
                                   Expanded(
                                       child: Column(children: [
-                                    Expanded(child: content),
+                                    Expanded(
+                                        child: _ChannelContentMotion(
+                                            identity: (
+                                          store.connectionEpoch,
+                                          store.stripKey,
+                                          selectedTab
+                                        ),
+                                            direction: _motionDirection,
+                                            child: content)),
                                     if (!wide)
                                       _BottomNav(
                                           store: store,
@@ -475,6 +502,59 @@ class _ChannelPageState extends State<ChannelPage> {
       ),
     );
   }
+}
+
+/// Only navigation starts this animation; live meter/parameter rebuilds keep
+/// the current progress and all gesture ownership stays with the active page.
+class _ChannelContentMotion extends StatefulWidget {
+  final Object identity;
+  final double direction;
+  final Widget child;
+  const _ChannelContentMotion(
+      {required this.identity, required this.direction, required this.child});
+
+  @override
+  State<_ChannelContentMotion> createState() => _ChannelContentMotionState();
+}
+
+class _ChannelContentMotionState extends State<_ChannelContentMotion>
+    with SingleTickerProviderStateMixin {
+  late final _animation = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 160), value: 1);
+  double _direction = 1;
+
+  @override
+  void didUpdateWidget(covariant _ChannelContentMotion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identity != widget.identity) {
+      _direction = widget.direction;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _animation.value = 1;
+      } else {
+        _animation.forward(from: 0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+      child: AnimatedBuilder(
+          animation: _animation,
+          child: widget.child,
+          builder: (context, child) {
+            final progress = MediaQuery.disableAnimationsOf(context)
+                ? 1.0
+                : Curves.easeOutCubic.transform(_animation.value);
+            return FractionalTranslation(
+                translation: Offset((1 - progress) * .12 * _direction, 0),
+                child: Opacity(opacity: .65 + .35 * progress, child: child));
+          }));
 }
 
 List<ChannelTab> _availableTabs(ChannelStore store) => [

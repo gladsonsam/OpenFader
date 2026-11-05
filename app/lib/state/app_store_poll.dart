@@ -91,7 +91,7 @@ mixin _AppStorePoll on _AppStoreContext {
       try {
         final blob = await _api.pollBinary(_clientId, 512);
         for (final frame in splitBinaryBatch(blob)) {
-          applyBinaryFrame(frame);
+          applyBinaryFrame(frame, synchronize: false);
         }
       } catch (_) {
         _binaryMeters = false;
@@ -106,7 +106,9 @@ mixin _AppStorePoll on _AppStoreContext {
       _failNameEdits(
           'Connection lost while waiting for the name confirmation: $e');
       _noteTransportError(e);
-      _syncSpectrum();
+      // Binary telemetry may already have arrived before the control drain
+      // failed. Publish it once even on this early-return path.
+      _syncMeters(now);
       return; // never crash the meter loop on a transport hiccup
     }
     var dirty = false;
@@ -221,13 +223,15 @@ mixin _AppStorePoll on _AppStoreContext {
   }
 
   // Binary fan-in for the meter hot path; bad frames decode to null and are skipped.
-  void applyBinaryFrame(Uint8List bytes) {
+  void applyBinaryFrame(Uint8List bytes, {bool synchronize = true}) {
     final f = parseBinary(bytes);
     if (f == null) return;
     _lastTrafficMs = _nowMs();
     engine.applyBinary(f);
-    _invalidateDerived();
-    _syncMeters(_nowMs());
+    // Meter/GR/tap frames do not change topology or derived control lists.
+    // During a drain, publish only the final batch snapshot so every frame
+    // does not walk every strip and wake its meter painters independently.
+    if (synchronize) _syncMeters(_nowMs());
   }
 
   // Control-only frames ride notifiers without setting the global dirty flag.

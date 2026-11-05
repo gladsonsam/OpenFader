@@ -132,9 +132,121 @@ class _InputTab extends StatelessWidget {
     }
   }
 
+  Future<void> _editInputSource(BuildContext context) async {
+    final snapshot = store.inputSource;
+    if (snapshot == null || !snapshot.editable) return;
+    final choice = await showDialog<ChannelInputSourceChoice>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (dialogContext) => ListenableBuilder(
+            listenable: store,
+            builder: (context, _) {
+              final current = store.inputSource?.context == snapshot.context &&
+                  store.inputSource?.editable == true;
+              return AlertDialog(
+                  title: const Text('Input source'),
+                  content: SizedBox(
+                      width: 420,
+                      height:
+                          math.min(480, snapshot.choices.length * 56.0 + 16),
+                      child: ListView(shrinkWrap: true, children: [
+                        for (final option in snapshot.choices)
+                          ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(option.selected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked),
+                              title: Text(option.label),
+                              selected: option.selected,
+                              onTap: current && !option.selected
+                                  ? () => Navigator.pop(dialogContext, option)
+                                  : null),
+                        if (!current)
+                          const Text(
+                              'The source or connection changed. Reopen this control.'),
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel')),
+                  ]);
+            }));
+    if (choice != null && context.mounted) {
+      store.setInputSource(snapshot, choice);
+    }
+  }
+
+  Future<void> _editInsert(BuildContext context) async {
+    final snapshot = store.inputInsert;
+    if (snapshot == null || !snapshot.editable) return;
+    var sending = false;
+    String? error;
+    await showDialog<void>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setLocalState) => ListenableBuilder(
+                listenable: store,
+                builder: (context, _) {
+                  final current =
+                      store.inputInsert?.context == snapshot.context &&
+                          store.inputInsert?.editable == true;
+                  return AlertDialog(
+                      title: const Text('Insert'),
+                      content: SizedBox(
+                          width: 420,
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            for (final option in snapshot.choices)
+                              ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(option.value == snapshot.value
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked),
+                                  title: Text(option.label),
+                                  selected: option.value == snapshot.value,
+                                  onTap: current &&
+                                          !sending &&
+                                          option.value != snapshot.value
+                                      ? () async {
+                                          setLocalState(() {
+                                            sending = true;
+                                            error = null;
+                                          });
+                                          final result =
+                                              await store.setInputInsert(
+                                                  snapshot, option.value);
+                                          if (!dialogContext.mounted) return;
+                                          if (result == null) {
+                                            Navigator.pop(dialogContext);
+                                          } else {
+                                            setLocalState(() {
+                                              sending = false;
+                                              error = result;
+                                            });
+                                          }
+                                        }
+                                      : null),
+                            if (sending) const LinearProgressIndicator(),
+                            if (error != null) ...[
+                              const SizedBox(height: 8),
+                              Text(error!),
+                            ],
+                          ])),
+                      actions: [
+                        TextButton(
+                            onPressed: sending
+                                ? null
+                                : () => Navigator.pop(dialogContext),
+                            child: const Text('Cancel')),
+                      ]);
+                })));
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 700;
+    final palette = ConsolePalette.of(context);
     final src = store.source;
     String sourceName(String leaf, int? value) => value == null
         ? '—'
@@ -157,63 +269,69 @@ class _InputTab extends StatelessWidget {
       ],
     ];
     final pre = store.preamp;
-    final source =
+    final hasSource = store.inputSource != null ||
+        store.paramApplies('source') ||
+        store.paramApplies('source_a') ||
+        store.paramApplies('usbreturn') ||
+        store.paramApplies('provider:input_mode') ||
+        store.paramApplies('provider:source_auto');
+    final hasPreamp = store.paramApplies('gain') ||
+        store.paramApplies('trim') ||
+        store.paramApplies('polarity') ||
+        store.paramApplies('phantom') ||
+        store.paramApplies('provider:input_balance') ||
+        store.paramApplies('provider:width');
+    final hasSignalPath = store.hasDelay ||
+        store.paramApplies('delay_ms') ||
+        store.inputInserts.isNotEmpty ||
+        store.paramApplies('insert_on') ||
+        store.paramApplies('insert_sel') ||
+        store.paramApplies('provider:insert_position');
+    final hasAssignments = store.supports('automix_group') ||
+        store.paramApplies('lr_assign') ||
+        store.subgroupCount > 0 ||
+        store.dcaCount > 0 ||
+        store.muteGroupCount > 0 ||
+        store.viewGroupCount > 0 ||
+        store.automixSettings.isNotEmpty ||
+        store.paramApplies('automix_weight') ||
+        store.paramApplies('provider:automix_gain');
+
+    final sourceControls =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (!wide)
-        Text('Input', style: AppDesign.type(18, weight: FontWeight.w600)),
-      SizedBox(height: wide ? 16 : 12),
-      if (store.paramApplies('source') ||
+      if (store.inputSource != null)
+        _ProcessingButton(
+            label: 'Input source',
+            detail: store.inputSource!.editable
+                ? store.inputSource!.label
+                : store.inputSource!.unavailableReason ??
+                    store.inputSource!.label,
+            semanticsLabel: 'Choose input source',
+            onTap: store.inputSource!.editable
+                ? () => _editInputSource(context)
+                : null)
+      else if (store.paramApplies('source') ||
           store.paramApplies('source_a') ||
           store.paramApplies('usbreturn')) ...[
-        Text('Source',
-            style: AppDesign.type(wide ? 18 : 14,
-                color: ConsolePalette.of(context).text7)),
-        const SizedBox(height: 8),
         if (sources.isEmpty)
-          Container(
-              constraints: const BoxConstraints(minHeight: 60),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).chip,
-                  borderRadius: U4.rBtn),
-              child: Text(
-                  [store.source.srcName, store.source.srcGroup]
+          _InputReadout(
+              label: 'Source',
+              value: [store.source.srcName, store.source.srcGroup]
                       .where((s) => s.isNotEmpty)
-                      .join(' · '),
-                  style: AppDesign.type(16,
-                      color: ConsolePalette.of(context).text7)))
-        else if (wide)
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-                child: Column(children: [
-              for (final s in sources)
-                Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _ProcessingButton(
-                        label: s.label,
-                        active: s.selected,
-                        onTap: s.enabled
-                            ? () => store.setSourceSelected(int.parse(s.id))
-                            : null))
-            ])),
-            const SizedBox(width: 12),
-            Expanded(
-                child: Column(children: [
-              for (final s in sources)
-                SizedBox(
-                    height: 50,
-                    child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(s.name, style: AppDesign.type(18))))
-            ])),
-          ])
+                      .join(' · ')
+                      .trim()
+                      .isEmpty
+                  ? '—'
+                  : [store.source.srcName, store.source.srcGroup]
+                      .where((s) => s.isNotEmpty)
+                      .join(' · '))
         else
           Row(children: [
             for (var i = 0; i < sources.length; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
+              if (i > 0) const SizedBox(width: 8),
               Expanded(
                   child: _ProcessingButton(
-                      label: sources[i].label,
+                      label: 'Source ${sources[i].label}',
                       detail: sources[i].name,
                       active: sources[i].selected,
                       onTap: sources[i].enabled
@@ -223,14 +341,8 @@ class _InputTab extends StatelessWidget {
             ]
           ]),
       ],
-      if (store.paramApplies('source') && store.canPatchInputSource)
-        Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text('Input patching lives in Routing.',
-                style: AppDesign.type(14,
-                    color: ConsolePalette.of(context).text7))),
       if (store.paramApplies('provider:input_mode')) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         if (store.sourceMode?.editable == true)
           _ProcessingButton(
               label: 'Source mode',
@@ -238,28 +350,31 @@ class _InputTab extends StatelessWidget {
               semanticsLabel: 'Edit shared source mode',
               onTap: () => _editSourceMode(context))
         else
-          Text(
-              'Input mode · ${_choiceText(store, 'provider:input_mode', 'Loading…')}',
-              style:
-                  AppDesign.type(14, color: ConsolePalette.of(context).text7)),
+          _InputReadout(
+              label: 'Source mode',
+              value: _choiceText(store, 'provider:input_mode', 'Loading…')),
       ],
       if (store.paramApplies('provider:source_auto')) ...[
-        const SizedBox(height: 7),
-        _ProcessingButton(
+        const SizedBox(height: 8),
+        _InputToggleRow(
             label: 'Auto alternate source',
+            value:
+                store.paramBool('provider:source_auto') == true ? 'On' : 'Off',
             active: store.paramBool('provider:source_auto') == true,
-            onTap: store.supports('provider:source_auto')
-                ? () => store.cmdParam('provider:source_auto',
-                    store.paramBool('provider:source_auto') != true)
-                : null),
+            enabled: store.supports('provider:source_auto'),
+            onTap: () => store.cmdParam('provider:source_auto',
+                store.paramBool('provider:source_auto') != true)),
       ],
-      SizedBox(height: wide ? 88 : 14),
+    ]);
+
+    final preampControls =
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (store.paramApplies('gain')) ...[
         _InputPreampControl(
             store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
-        const SizedBox(height: 7),
+        const SizedBox(height: 8),
       ],
-      if (store.paramApplies('trim'))
+      if (store.paramApplies('trim')) ...[
         _InputPreampControl(
             store: store,
             leaf: 'trim',
@@ -270,51 +385,67 @@ class _InputTab extends StatelessWidget {
                 active: pre.invert,
                 semanticsLabel: 'Invert polarity',
                 onTap: store.supports('polarity') ? store.toggleInvert : null)),
-      if (store.paramApplies('polarity') && !store.paramApplies('trim'))
-        _ProcessingButton(
-            label: 'Ø Invert polarity',
+        const SizedBox(height: 8),
+      ] else if (store.paramApplies('polarity')) ...[
+        _InputToggleRow(
+            label: 'Polarity',
+            value: pre.invert ? 'Inverted' : 'Normal',
             active: pre.invert,
-            semanticsLabel: 'Invert polarity',
-            onTap: store.supports('polarity') ? store.toggleInvert : null),
+            enabled: store.supports('polarity'),
+            buttonLabel: 'Ø',
+            onTap: store.toggleInvert),
+        const SizedBox(height: 8),
+      ],
       if (store.paramApplies('provider:input_balance')) ...[
-        const SizedBox(height: 7),
         _InputPreampControl(
             store: store,
             leaf: 'provider:input_balance',
             label: 'Input balance',
             onFocus: onFocus),
+        const SizedBox(height: 8),
       ],
       if (store.paramApplies('provider:width')) ...[
-        const SizedBox(height: 7),
         _InputPreampControl(
             store: store,
             leaf: 'provider:width',
             label: 'Stereo width',
             section: 'Stereo',
             onFocus: onFocus),
+        const SizedBox(height: 8),
       ],
-      const SizedBox(height: 7),
       if (store.paramApplies('phantom'))
-        Row(children: [
-          SizedBox(
-              width: 64,
-              child: _TextSwitch(
-                  label: '48V',
-                  active: pre.phantom,
-                  enabled: store.supports('phantom'),
-                  onTap: () => _confirmPhantom(context))),
-          Expanded(
-              child: Text(
-                  store.preampPhantomAvailable == false
-                      ? 'Phantom unavailable for this source'
-                      : 'Phantom power',
-                  style: AppDesign.type(14,
-                      color: ConsolePalette.of(context).text7)))
-        ]),
-      SizedBox(height: wide ? 24 : 14),
+        Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+                width: 72,
+                child: Tooltip(
+                    message: store.preampPhantomAvailable == false
+                        ? '48V unavailable for this source'
+                        : pre.phantom
+                            ? '48V on'
+                            : '48V off',
+                    child: _ProcessingButton(
+                        label: '48V',
+                        active: pre.phantom,
+                        semanticsLabel: store.preampPhantomAvailable == false
+                            ? '48V unavailable for this source'
+                            : pre.phantom
+                                ? 'Turn off 48V'
+                                : 'Turn on 48V',
+                        onTap: store.supports('phantom')
+                            ? () => _confirmPhantom(context)
+                            : null)))),
+    ]);
+
+    final signalPathControls =
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (store.hasDelay) ...[
         _InputDelayControl(store: store, onFocus: onFocus),
-        SizedBox(height: wide ? 24 : 14),
+        if (store.inputInserts.isNotEmpty ||
+            store.paramApplies('insert_on') ||
+            store.paramApplies('insert_sel') ||
+            store.paramApplies('provider:insert_position'))
+          const SizedBox(height: 12),
       ],
       // Native delay leaves without a structured unit codec (X32
       // `delay/time` 0.3..500 ms, protocol reference v4.09-02): generic direct
@@ -333,16 +464,23 @@ class _InputTab extends StatelessWidget {
                     ? () => store.cmdParam(
                         'delay_on', store.paramBool('delay_on') != true)
                     : null)),
-        SizedBox(height: wide ? 24 : 14),
+        const SizedBox(height: 12),
       ],
-      if (store.inputInserts.isNotEmpty) ...[
-        Text('Insert',
-            style: AppDesign.type(14, color: ConsolePalette.of(context).text7)),
-        const SizedBox(height: 8),
-        for (final control in store.inputInserts)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: _ProcessingButton(
+      if (store.inputInsert != null)
+        _ProcessingButton(
+            label: 'Insert',
+            detail: store.inputInsert!.editable
+                ? store.inputInsert!.label
+                : store.inputInsert!.unavailableReason ??
+                    store.inputInsert!.label,
+            onTap:
+                store.inputInsert!.editable ? () => _editInsert(context) : null)
+      else if (store.inputInserts.isNotEmpty)
+        for (var i = 0; i < store.inputInserts.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          Builder(builder: (context) {
+            final control = store.inputInserts[i];
+            return _ProcessingButton(
               label: control.label,
               detail: control.valueLabel,
               onTap: control.available &&
@@ -357,93 +495,219 @@ class _InputTab extends StatelessWidget {
                           apply: store.setDestinationControl,
                           control: control))
                   : null,
-            ),
-          ),
-        const SizedBox(height: 12),
+            );
+          }),
+        ],
+      // Provider-labelled simple insert controls supplement the richer surface.
+      if (store.inputInserts.isEmpty && store.paramApplies('insert_on')) ...[
+        _InputToggleRow(
+            label: 'Insert',
+            value: store.paramBool('insert_on') == true ? 'On' : 'Off',
+            active: store.paramBool('insert_on') == true,
+            enabled: store.supports('insert_on'),
+            onTap: () => store.cmdParam(
+                'insert_on', store.paramBool('insert_on') != true)),
+        if (store.paramApplies('insert_sel') ||
+            store.paramApplies('provider:insert_position'))
+          const SizedBox(height: 8),
       ],
-      // Provider-labelled simple insert controls supplement the toggle
-      // when no richer insert surface is advertised.
-      if (store.inputInserts.isEmpty && store.paramApplies('insert_on'))
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _ProcessingButton(
-              label: 'Insert',
-              detail: store.paramBool('insert_on') == true ? 'On' : 'Off',
-              active: store.paramBool('insert_on') == true,
-              semanticsLabel: 'Insert enabled',
-              onTap: store.supports('insert_on')
-                  ? () => store.cmdParam(
-                      'insert_on', store.paramBool('insert_on') != true)
-                  : null),
-        ),
       if (store.inputInserts.isEmpty)
         for (final (leaf, label) in [
           ('insert_sel', 'Insert source'),
           ('provider:insert_position', 'Insert position'),
         ])
           if (store.paramApplies(leaf) &&
-              parameterChoices(store.paramMetadata(leaf)).isNotEmpty)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _ParameterChoices(
-                    store: store,
-                    leaf: leaf,
-                    label: label,
-                    fallback: 'Loading…',
-                    compact: true,
-                    onChanged: (value) => store.cmdParam(leaf, value))),
-      _InputAssignments(store: store, wide: wide, onFocus: onFocus),
+              parameterChoices(store.paramMetadata(leaf)).isNotEmpty) ...[
+            _ParameterChoices(
+                store: store,
+                leaf: leaf,
+                label: label,
+                fallback: 'Loading…',
+                compact: true,
+                onChanged: (value) => store.cmdParam(leaf, value)),
+            const SizedBox(height: 8),
+          ],
     ]);
-    final sends =
+
+    final primary =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (!wide) ...[
-        const SizedBox(height: 18),
-        Text('Sends',
-            style: AppDesign.type(14, color: ConsolePalette.of(context).text7))
+        Text('Input', style: AppDesign.type(20, weight: FontWeight.w600)),
+        const SizedBox(height: 12),
       ],
-      if (store.sends.isEmpty)
-        Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text('No send slots on this desk.',
-                style: AppDesign.type(14,
-                    color: ConsolePalette.of(context).text7))),
-      if (store.supports('provider:send_tap'))
-        Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _ParameterChoices(
+      if (hasSource) ...[
+        _InputSection(title: 'Source', child: sourceControls),
+        const SizedBox(height: 12),
+      ],
+      if (hasPreamp) ...[
+        _InputSection(title: 'Preamp', child: preampControls),
+        const SizedBox(height: 12),
+      ],
+      if (hasSignalPath) ...[
+        _InputSection(title: 'Signal path', child: signalPathControls),
+        const SizedBox(height: 12),
+      ],
+      if (hasAssignments)
+        _InputSection(
+            title: 'Assignments & automix',
+            child:
+                _InputAssignments(store: store, wide: wide, onFocus: onFocus)),
+    ]);
+
+    final sends = _InputSection(
+        title: 'Sends',
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (store.sends.isEmpty)
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text('No sends available',
+                    style: AppDesign.type(14, color: palette.text7))),
+          if (store.supports('provider:send_tap')) ...[
+            _ParameterChoices(
                 store: store,
                 leaf: 'provider:send_tap',
                 label: 'Pre tap source',
                 fallback: 'Loading…',
                 compact: true,
                 onChanged: (value) =>
-                    store.cmdParam('provider:send_tap', value))),
-      for (final send in store.sends)
-        Padding(
-            padding:
-                EdgeInsets.only(top: wide ? 24 : 14, bottom: wide ? 16 : 0),
-            child: _ProcessingSend(
-                store: store, send: send, wide: wide, onFocus: onFocus)),
-    ]);
+                    store.cmdParam('provider:send_tap', value)),
+            if (store.sends.isNotEmpty) const SizedBox(height: 12),
+          ],
+          for (var i = 0; i < store.sends.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _InputSendSurface(
+                child: _ProcessingSend(
+                    store: store,
+                    send: store.sends[i],
+                    wide: wide,
+                    onFocus: onFocus)),
+          ],
+        ]));
     if (!wide) {
       return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [source, sends]);
+          children: [primary, const SizedBox(height: 12), sends]);
     }
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Expanded(
-          flex: 538,
+          flex: 5,
           child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: source)),
-      Container(
-          width: 1, height: 760, color: ConsolePalette.of(context).lineCtl),
+              padding: const EdgeInsets.only(right: 8), child: primary)),
       Expanded(
-          flex: 806,
-          child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: sends)),
+          flex: 7,
+          child:
+              Padding(padding: const EdgeInsets.only(left: 8), child: sends)),
     ]);
+  }
+}
+
+class _InputSection extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _InputSection({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return DecoratedBox(
+        decoration: BoxDecoration(
+            color: palette.slot,
+            border: Border.all(color: palette.slotBorder),
+            borderRadius: U4.rBtn),
+        child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(title,
+                      style: AppDesign.type(16,
+                          color: palette.text1, weight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  child,
+                ])));
+  }
+}
+
+class _InputReadout extends StatelessWidget {
+  final String label, value;
+  const _InputReadout({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Container(
+        constraints: const BoxConstraints(minHeight: 54),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+            color: palette.panel,
+            border: Border.all(color: palette.linePanel),
+            borderRadius: U4.rBtn),
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: AppDesign.type(12, color: palette.text7)),
+              const SizedBox(height: 2),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppDesign.type(16, color: palette.text1)),
+            ]));
+  }
+}
+
+class _InputToggleRow extends StatelessWidget {
+  final String label, value, buttonLabel;
+  final bool active, enabled;
+  final VoidCallback onTap;
+  const _InputToggleRow(
+      {required this.label,
+      required this.value,
+      required this.active,
+      required this.enabled,
+      required this.onTap,
+      this.buttonLabel = 'On'});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Row(children: [
+      Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: AppDesign.type(14, color: palette.text1)),
+        const SizedBox(height: 2),
+        Text(value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppDesign.type(12, color: palette.text7)),
+      ])),
+      const SizedBox(width: 10),
+      SizedBox(
+          width: 64,
+          child: _ProcessingButton(
+              label: buttonLabel,
+              active: active,
+              semanticsLabel: label,
+              onTap: enabled ? onTap : null)),
+    ]);
+  }
+}
+
+class _InputSendSurface extends StatelessWidget {
+  final Widget child;
+  const _InputSendSurface({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return DecoratedBox(
+        decoration: BoxDecoration(
+            color: palette.panel,
+            border: Border.all(color: palette.linePanel),
+            borderRadius: U4.rBtn),
+        child: Padding(padding: const EdgeInsets.all(10), child: child));
   }
 }
 
@@ -491,6 +755,7 @@ class _InputDelayControl extends StatelessWidget {
       _ProcessingSlider(
           label: 'Delay',
           compact: true,
+          showValue: true,
           fillFromStart: true,
           solidFill: true,
           color: ConsolePalette.of(context).success,
@@ -582,6 +847,7 @@ class _InputPreampControl extends StatelessWidget {
     return _ProcessingSlider(
         label: label,
         compact: true,
+        showValue: true,
         color: leaf == 'gain'
             ? ConsolePalette.of(context).mute
             : ConsolePalette.of(context).success,

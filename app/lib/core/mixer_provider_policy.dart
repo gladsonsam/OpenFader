@@ -313,6 +313,10 @@ class WingProviderPolicy extends MixerProviderPolicy {
 
 class SimProviderPolicy extends MixerProviderPolicy {
   const SimProviderPolicy();
+  // The native simulator advertises Main and bus strips with canonical DSP
+  // parameters. The fallback still needs an actual target strip to open it.
+  @override
+  bool get masterChannelProcessing => true;
   @override
   bool get meterSpectrumTarget => true;
   @override

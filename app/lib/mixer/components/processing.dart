@@ -117,7 +117,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                   79,
                   MixerEqPreview(
                       channel: widget.channel, onOpen: widget.onOpen),
-                  inset: MixerStripMetrics.contentInset),
+                  inset: MixerDesign.spaceSm),
               place(
                   132,
                   62,
@@ -139,7 +139,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       ? mixerDemoStrips[widget.channel.artwork]
                                           .compression
                                       : null)))),
-                  inset: MixerStripMetrics.contentInset),
+                  inset: MixerDesign.spaceSm),
             ]));
       });
 }
@@ -171,21 +171,6 @@ class MixerEqPreview extends StatelessWidget {
                 CustomPaint(
                     painter:
                         _EqPainter(ConsolePalette.of(context), channel.eqPreview)),
-                if (compact)
-                  Positioned(
-                      top: 3,
-                      left: 5,
-                      child: IgnorePointer(
-                          child: ExcludeSemantics(
-                              child: Text('EQ',
-                                  style: mixerType(context, 11,
-                                          color:
-                                              ConsolePalette.of(context).text,
-                                          weight: FontWeight.w700)
-                                      .copyWith(
-                                          backgroundColor:
-                                              ConsolePalette.of(context)
-                                                  .eqBg))))),
                 if (compact && showPhantom)
                   Positioned(
                       top: 3,

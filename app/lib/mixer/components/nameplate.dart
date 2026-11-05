@@ -7,6 +7,7 @@ import '../controller.dart';
 import '../design.dart';
 import '../icons.dart';
 import '../../widgets/channel_symbol.dart';
+import '../../core/channel_icon.dart';
 
 class MixerNameplate extends StatelessWidget {
   final MixerChannel channel;
@@ -14,7 +15,7 @@ class MixerNameplate extends StatelessWidget {
   final bool compact;
   final bool showArtwork;
   final VoidCallback onSelect, onOpen;
-  final VoidCallback? onRename;
+  final void Function(BuildContext, Rect)? onRename;
   final ValueChanged<BuildContext>? onOpenAt;
   const MixerNameplate(
       {super.key,
@@ -37,21 +38,22 @@ class MixerNameplate extends StatelessWidget {
       customSemanticsActions: onRename == null
           ? null
           : {
-              const CustomSemanticsAction(label: 'Channel settings'): onRename!,
+              const CustomSemanticsAction(label: 'Channel settings'): () =>
+                  _rename(context),
             },
       label: '${channel.name}, channel ${channel.number}',
       child: GestureDetector(
           onTap: () {
             onSelect();
-            if (onRename != null) {
-              onRename!();
-            } else if (onOpenAt != null) {
+            if (onOpenAt != null) {
               onOpenAt!(context);
+            } else if (onRename != null) {
+              _rename(context);
             } else {
               onOpen();
             }
           },
-          onLongPress: onRename,
+          onLongPress: onRename == null ? null : () => _rename(context),
           behavior: HitTestBehavior.opaque,
           child: LayoutBuilder(builder: (context, box) {
             final sx = box.maxWidth / (compact ? 104.2 : 192.2);
@@ -101,15 +103,11 @@ class MixerNameplate extends StatelessWidget {
                         child: SizedBox.square(
                             dimension: artworkSize,
                             child: ClipRect(
-                                child: channel.master
+                                child: channel.master &&
+                                        channel.icon.selection.kind ==
+                                            ChannelIconKind.followProvider
                                     ? const MixerMainArtwork()
-                                    : channel.hasIconChoices
-                                        ? ChannelSymbol(
-                                            channel.iconChoice?.symbol)
-                                        : MixerArtwork(
-                                            'instrument_${channel.artwork}',
-                                            width: double.infinity,
-                                            height: double.infinity))))),
+                                    : ChannelIconArtwork(channel.icon))))),
               Positioned(
                   left: 0,
                   right: 0,
@@ -143,6 +141,13 @@ class MixerNameplate extends StatelessWidget {
                                     weight: FontWeight.w700))))),
             ]);
           })));
+
+  void _rename(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    onRename?.call(
+        context, Rect.fromLTWH(0, nameOffset, box.size.width, nameHeight));
+  }
 }
 
 class _BusTabClipper extends CustomClipper<Path> {

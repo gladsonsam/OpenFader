@@ -2,6 +2,172 @@ part of 'app_store.dart';
 
 // Input source topology, routed preamp context and input delay views.
 mixin _AppStoreInput on _AppStoreContext {
+  List _routingList(Object? value) => value is List ? value : const [];
+
+  Map? get _inputRouteDestination {
+    for (final plane in _routingList(engine.routingCaps['planes'])) {
+      if (plane is! Map) continue;
+      for (final destination in _routingList(plane['destinations'])) {
+        if (destination is Map &&
+            destination['key'] == stripKey &&
+            destination['strip'] == _channel &&
+            destination['output'] != true) {
+          return destination;
+        }
+      }
+    }
+    return null;
+  }
+
+  Map? _inputRoute(Map destination) {
+    final route = engine.routing
+        .where((route) =>
+            route['destination'] == destination['id'] &&
+            route['key'] == destination['key'] &&
+            route['strip'] == destination['strip'] &&
+            (route['target'] ?? '') == destination['target'])
+        .firstOrNull;
+    if (route == null ||
+        route['group'] is! String ||
+        route['index'] is! int ||
+        route['label'] is! String ||
+        route['authority'] != 'provider_display') {
+      return null;
+    }
+    final group = route['group'] as String;
+    final index = route['index'] as int;
+    final allowed = _routingList(destination['source_groups'])
+        .whereType<Map>()
+        .any((descriptor) =>
+            descriptor['key'] == group &&
+            descriptor['count'] is int &&
+            index > 0 &&
+            index <= descriptor['count']);
+    final parts = (route['label'] as String).split(' ');
+    return allowed &&
+            parts.length == 2 &&
+            parts.first == group &&
+            int.tryParse(parts.last) == index
+        ? route
+        : null;
+  }
+
+  String _inputSourceLabel(Map group, int index) {
+    final options = _routingList(group['options']);
+    if (index > 0 && index <= options.length && options[index - 1] is String) {
+      return options[index - 1] as String;
+    }
+    final label = group['label'] as String;
+    return group['count'] == 1 ? label : '$label $index';
+  }
+
+  @override
+  ChannelInputSourceVm? get inputSource {
+    final destination = _inputRouteDestination;
+    if (destination == null) return null;
+    final route = _inputRoute(destination);
+    final groups = [
+      for (final group in _routingList(destination['source_groups']))
+        if (group is Map &&
+            group['key'] is String &&
+            group['label'] is String &&
+            group['count'] is int &&
+            group['count'] > 0 &&
+            group['count'] <= 255)
+          group,
+    ];
+    final routeGroup = route == null
+        ? null
+        : groups.where((group) => group['key'] == route['group']).firstOrNull;
+    final pair =
+        engine.stereoPairs.where((pair) => pair.contains(_channel)).firstOrNull;
+    final members = pair == null ||
+            pair.every((member) => engine.params[member]?['link'] == false)
+        ? [_channel]
+        : pair;
+    final reason = !engine.connected
+        ? 'Not connected'
+        : engine.routingCaps['supported'] != true
+            ? 'Input routing is not supported by this provider'
+            : route == null
+                ? 'Waiting for verified source readback'
+                : routeGroup == null
+                    ? 'No source choices are advertised'
+                    : !accessFamilyAllowed(AccessFamily.inputRouting) ||
+                            members.any((member) {
+                              final key = engine.strips
+                                  .where((strip) => strip.ch == member)
+                                  .firstOrNull
+                                  ?.key;
+                              return key == null ||
+                                  !accessTargetAllowed(key) ||
+                                  engine.locks.containsKey(member);
+                            })
+                        ? 'Limited on this device'
+                        : null;
+    final context = (
+      engine.session,
+      controlAccessEpoch,
+      engine.driver,
+      engine.routingCaps['epoch'],
+      destination['id'],
+      destination['key'],
+      destination['strip'],
+      destination['target'],
+      route?['group'],
+      route?['index'],
+      route?['label'],
+      route?['guard'],
+    );
+    return ChannelInputSourceVm(
+        context: context,
+        label: route == null
+            ? source.srcName
+            : routeGroup == null
+                ? source.srcName
+                : _inputSourceLabel(routeGroup, route['index'] as int),
+        choices: List.unmodifiable([
+          for (final group in groups)
+            for (var index = 1; index <= (group['count'] as int); index++)
+              ChannelInputSourceChoice(
+                  group: group['key'] as String,
+                  index: index,
+                  label: _inputSourceLabel(group, index),
+                  selected: route?['group'] == group['key'] &&
+                      route?['index'] == index),
+        ]),
+        editable: reason == null,
+        unavailableReason: reason);
+  }
+
+  @override
+  void setInputSource(
+      ChannelInputSourceVm snapshot, ChannelInputSourceChoice choice) {
+    final current = inputSource;
+    final destination = _inputRouteDestination;
+    final route = destination == null ? null : _inputRoute(destination);
+    if (current == null ||
+        !current.editable ||
+        current.context != snapshot.context ||
+        destination == null ||
+        route == null ||
+        choice.selected ||
+        !current.choices.any((candidate) =>
+            candidate.group == choice.group &&
+            candidate.index == choice.index)) {
+      return;
+    }
+    _send(jsonEncode({
+      'cmd': 'route_patch',
+      'driver': engine.driver,
+      'epoch': engine.routingCaps['epoch'],
+      'destination': destination['id'],
+      'expected': route['label'],
+      if (route['guard'] != null) 'guard': route['guard'],
+      'source': {'group': choice.group, 'index': choice.index},
+    }));
+  }
+
   Map<String, dynamic>? _activePreampStateFor(int channel) {
     final leaf = mixerProviderPolicy(engine.driver).preampStateLeaf;
     if (leaf == null) return null;

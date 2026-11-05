@@ -164,7 +164,9 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           listenable: widget.store,
           builder: (context, _) {
             if (wide) return _tablet();
-            return _page == null ? _overviewList() : _subpage(_page!);
+            return ConsolePageReveal(
+                token: _page ?? 'overview',
+                child: _page == null ? _overviewList() : _subpage(_page!));
           },
         ),
       ),
@@ -261,7 +263,9 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
                   active: _sel,
                   onSelect: (s) => setState(() => _sel = s),
                   onHome: widget.onHome),
-              Expanded(child: _detailScroll(_sel, wide: true)),
+              Expanded(
+                  child: ConsolePageReveal(
+                      token: _sel, child: _detailScroll(_sel, wide: true))),
             ],
           ),
         ),

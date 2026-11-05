@@ -63,7 +63,9 @@ mixin _AppStoreAppearance on _AppStoreContext {
       }
       final target = ChannelNameTarget(
           engine.session, ch, strip.key, rawName is String ? rawName : null,
-          accessEpoch: controlAccessEpoch, label: label);
+          accessEpoch: controlAccessEpoch,
+          label: label,
+          iconScope: PrefsService.instance.channelIcons?.scope(engine.driver));
       return target;
     }
     return null;
@@ -114,14 +116,61 @@ mixin _AppStoreAppearance on _AppStoreContext {
         .firstOrNull;
   }
 
-  @override
-  List<ChannelIconChoice> iconsForChannel(ChannelNameTarget target) =>
+  List<ChannelIconChoice> _nativeIcons(ChannelNameTarget target) =>
       channelIconChoices(engine.parameterMetadata['icon']);
 
   @override
-  double? iconForChannel(ChannelNameTarget target) {
+  ChannelIconSelection iconForChannel(ChannelNameTarget target) =>
+      PrefsService.instance.channelIcons
+          ?.selection(engine.driver, target.key) ??
+      const ChannelIconSelection.followProvider();
+
+  @override
+  List<ChannelIconSelection> get importedChannelIcons =>
+      PrefsService.instance.channelIcons?.imported ?? const [];
+
+  @override
+  ResolvedChannelIcon resolveChannelIcon(ChannelNameTarget target,
+      [ChannelIconSelection? selection]) {
+    final selected = selection ?? iconForChannel(target);
+    if (selected.kind == ChannelIconKind.imported) {
+      final repository = PrefsService.instance.channelIcons;
+      final exists = repository?.imageExists(selected.id) == true;
+      return ResolvedChannelIcon(selected,
+          imagePath: exists ? repository?.imagePath(selected.id) : null,
+          reason: exists
+              ? 'OpenFader only'
+              : 'The imported image is missing on this device.');
+    }
+    if (selected.kind == ChannelIconKind.catalog) {
+      return ResolvedChannelIcon(selected,
+          reason: openFaderIcon(selected.id) == null
+              ? 'This saved OpenFader icon is unavailable in this version.'
+              : null);
+    }
+    if (selected.kind == ChannelIconKind.none) {
+      return ResolvedChannelIcon(selected);
+    }
     final value = ps.optimisticValue(_maps, target.channel, 'icon');
-    return value is num && value.isFinite ? value.toDouble() : null;
+    final choices = _nativeIcons(target)
+        .where((c) => value is num && c.value == value)
+        .toList();
+    if (engine.supportedParams.contains('icon') &&
+        engine.valueKnown(target.channel, 'icon') &&
+        choices.length == 1) {
+      final symbol = choices.single.symbol;
+      if (symbol == 'none') {
+        return const ResolvedChannelIcon(ChannelIconSelection.none());
+      }
+      if (openFaderIcon(symbol) != null) {
+        return ResolvedChannelIcon(ChannelIconSelection.catalog(symbol));
+      }
+    }
+    return ResolvedChannelIcon(const ChannelIconSelection.followProvider(),
+        reason: PrefsService.instance.channelIcons?.error ??
+            (engine.supportedParams.contains('icon')
+                ? 'The mixer icon has no available OpenFader mapping.'
+                : 'This connection has no native icons. Choose an OpenFader icon.'));
   }
 
   @override
@@ -148,27 +197,71 @@ mixin _AppStoreAppearance on _AppStoreContext {
   Future<String?> linkChannel(ChannelNameTarget target, bool linked) =>
       _appearanceChannel(target, 'link', linked);
 
-  bool get hasChannelIconChoices =>
-      channelIconChoices(engine.parameterMetadata['icon']).isNotEmpty;
-
-  ChannelIconChoice? channelIconChoice(int channel) {
-    final value = ps.optimisticValue(_maps, channel, 'icon');
-    return channelIconChoices(engine.parameterMetadata['icon'])
-        .where((c) => value is num && (c.value - value).abs() < .0001)
-        .firstOrNull;
-  }
-
   Iterable<double> _appearanceChoices(ChannelNameTarget target, String field) =>
       field == 'icon'
-          ? iconsForChannel(target).map((c) => c.value)
+          ? _nativeIcons(target).map((c) => c.value)
           : colorsForChannel(target).map((c) => c.value);
 
   @override
   String? colorEditError(ChannelNameTarget target) =>
       _appearanceEditError(target, 'color');
   @override
-  String? iconEditError(ChannelNameTarget target) =>
-      _appearanceEditError(target, 'icon');
+  String? iconEditError(ChannelNameTarget target) {
+    final repository = PrefsService.instance.channelIcons;
+    if (repository == null) {
+      return 'Icon storage is unavailable on this device.';
+    }
+    if (repository.error != null) return repository.error;
+    if (target.accessEpoch != null &&
+        target.accessEpoch != controlAccessEpoch) {
+      return 'Local access changed. Reopen this editor.';
+    }
+    if (!_accessParamAllowed(target.channel, 'icon')) {
+      return 'Channel identity is limited on this device.';
+    }
+    if (!engine.connected ||
+        engine.session != target.session ||
+        target.iconScope != repository.scope(engine.driver) ||
+        !engine.strips
+            .any((s) => s.ch == target.channel && s.key == target.key)) {
+      return 'Connection or workspace changed. Reopen the icon editor.';
+    }
+    return null;
+  }
+
+  double? _nativeIconValue(
+      ChannelNameTarget target, ChannelIconSelection value) {
+    final symbol = value.kind == ChannelIconKind.none
+        ? 'none'
+        : value.kind == ChannelIconKind.catalog
+            ? value.id
+            : null;
+    if (symbol == null || (symbol != 'none' && openFaderIcon(symbol) == null)) {
+      return null;
+    }
+    final mappings =
+        _nativeIcons(target).where((c) => c.symbol == symbol).toList();
+    if (mappings.length != 1) return null;
+    final native = mappings.single.value;
+    // Ambiguous native → canonical mappings are not safe to write either.
+    return _nativeIcons(target).where((c) => c.value == native).length == 1
+        ? native
+        : null;
+  }
+
+  @override
+  String? nativeIconEditError(
+      ChannelNameTarget target, ChannelIconSelection value) {
+    final local = iconEditError(target);
+    if (local != null) return local;
+    if (_nativeIconValue(target, value) == null) {
+      return 'OpenFader only · no exact native mapping for this selection.';
+    }
+    if (!_stripParamApplies(target.channel, 'icon')) {
+      return 'OpenFader only · native icons are unavailable for this strip.';
+    }
+    return _appearanceEditError(target, 'icon');
+  }
 
   @override
   String? _appearanceEditError(ChannelNameTarget target, String field) {
@@ -216,8 +309,77 @@ mixin _AppStoreAppearance on _AppStoreContext {
   Future<String?> colorChannel(ChannelNameTarget target, double value) =>
       _appearanceChannel(target, 'color', value);
   @override
-  Future<String?> iconChannel(ChannelNameTarget target, double value) =>
-      _appearanceChannel(target, 'icon', value);
+  Future<ChannelIconEditResult> iconChannel(
+      ChannelNameTarget target, ChannelIconSelection value,
+      {bool syncNative = false}) async {
+    final error = iconEditError(target);
+    if (error != null) return ChannelIconEditResult(false, error);
+    final repository = PrefsService.instance.channelIcons!;
+    if (value.kind == ChannelIconKind.catalog &&
+        openFaderIcon(value.id) == null) {
+      return const ChannelIconEditResult(
+          false, 'Choose an available OpenFader icon.');
+    }
+    if (value.kind == ChannelIconKind.imported &&
+        !repository.imageExists(value.id)) {
+      return const ChannelIconEditResult(
+          false, 'The imported image is missing. Import it again.');
+    }
+    final driver = engine.driver;
+    try {
+      await repository.save(driver, target.key, value,
+          isCurrent: () => iconEditError(target) == null);
+    } catch (failure) {
+      return ChannelIconEditResult(false, 'Could not save the icon: $failure');
+    }
+    _invalidateDerived();
+    notifyListeners();
+    if (!syncNative) {
+      return ChannelIconEditResult(
+          true,
+          value.kind == ChannelIconKind.followProvider
+              ? 'Saved on this device. Using the mixer icon when mapped.'
+              : 'Saved on this device · OpenFader only.');
+    }
+    final nativeError = nativeIconEditError(target, value);
+    if (nativeError != null) {
+      return ChannelIconEditResult(
+          true, 'Saved on this device. Mixer unchanged: $nativeError',
+          native: ChannelIconNativeOutcome.unavailable);
+    }
+    final failure = await _appearanceChannel(
+        target, 'icon', _nativeIconValue(target, value)!);
+    return ChannelIconEditResult(
+        true,
+        failure == null
+            ? 'Saved on this device. Mixer write acknowledged; readback is separate.'
+            : 'Saved on this device. Mixer result: $failure',
+        native: failure == null
+            ? ChannelIconNativeOutcome.accepted
+            : ChannelIconNativeOutcome.failed);
+  }
+
+  @override
+  Future<ChannelIconSelection> importChannelIcon(
+      ChannelNameTarget target, Uint8List bytes) async {
+    final error = iconEditError(target);
+    if (error != null) throw StateError(error);
+    return PrefsService.instance.channelIcons!
+        .importImage(bytes, isCurrent: () => iconEditError(target) == null);
+  }
+
+  @override
+  Future<void> removeUnusedChannelIcon(
+      ChannelNameTarget target, ChannelIconSelection selection) async {
+    final error = iconEditError(target);
+    if (error != null) throw StateError(error);
+    if (selection.kind != ChannelIconKind.imported || selection.id == null) {
+      throw ArgumentError('Only imported images can be removed.');
+    }
+    await PrefsService.instance.channelIcons!.removeUnusedImage(selection.id!,
+        isCurrent: () => iconEditError(target) == null);
+    notifyListeners();
+  }
 
   Future<String?> _appearanceChannel(
       ChannelNameTarget target, String field, Object value) async {

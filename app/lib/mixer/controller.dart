@@ -9,7 +9,6 @@ import '../settings/prefs.dart';
 import '../state/app_store.dart';
 import '../u4law.dart';
 import 'design.dart';
-import 'demo.dart';
 import 'mixer_layers.dart';
 
 enum MixerDestination {
@@ -32,10 +31,11 @@ typedef MixerReadoutFocus = ({String? key, MixerReadoutControl control});
 class MixerChannel {
   final String key, name, number;
   final int? channel;
+
+  /// Legacy simulation processing fixture index; never icon identity.
   final int artwork;
   final ChannelColorChoice? colorChoice;
-  final ChannelIconChoice? iconChoice;
-  final bool hasIconChoices;
+  final ResolvedChannelIcon icon;
   final double fader, pan;
   final bool muted, solo, selected, master;
   final ValueListenable<double> meter;
@@ -48,8 +48,8 @@ class MixerChannel {
       required this.channel,
       required this.artwork,
       this.colorChoice,
-      this.iconChoice,
-      this.hasIconChoices = false,
+      this.icon =
+          const ResolvedChannelIcon(ChannelIconSelection.followProvider()),
       required this.fader,
       required this.pan,
       required this.muted,
@@ -60,6 +60,8 @@ class MixerChannel {
       required this.params,
       this.eqPreview});
   String get levelLabel => '${fmtDb(fader)} dB';
+
+  bool get showsArtwork => icon.selection.kind != ChannelIconKind.none;
 }
 
 /// One controller for a session, retained by AppShell across page navigation.
@@ -148,7 +150,7 @@ class MixerController extends ChangeNotifier {
     if (layer.isAll) return _surfaceStrips;
     final byKey = {
       for (final s in store.engine.strips)
-        if (s.key != 'main') s.key: s,
+        if (s.key != 'main' && store.isMixerStripVisible(s)) s.key: s,
     };
     final picked = <Strip>[];
     for (final key in layer.channelKeys) {
@@ -219,10 +221,9 @@ class MixerController extends ChangeNotifier {
           ? '${_linkedPair(s.ch)!.first + 1}–${_linkedPair(s.ch)!.last + 1}'
           : _stripNumber(s),
       channel: s.ch,
-      artwork: _artwork(s),
+      artwork: demo ? s.ch.clamp(0, 7) : -1,
       colorChoice: store.channelColorChoice(s.ch),
-      iconChoice: store.channelIconChoice(s.ch),
-      hasIconChoices: store.hasChannelIconChoices,
+      icon: _icon(s.ch),
       fader: store.mixerFaderOf(s.ch).value,
       pan: store.panOf(s.ch),
       muted: store.muteOf(s.ch).value,
@@ -241,22 +242,18 @@ class MixerController extends ChangeNotifier {
         if (store.engine.grComp.containsKey(s.ch))
           'comp_gr': store.engine.grComp[s.ch]!,
       }));
-  int _artwork(Strip s) {
-    final name = s.name.toLowerCase().replaceAll(' ', '');
-    for (var i = 0; i < mixerDemoStrips.length - 1; i++) {
-      if (mixerDemoStrips[i].name.toLowerCase().replaceAll(' ', '') == name) {
-        return i;
-      }
-    }
-    return demo && s.ch < 8 ? s.ch : 7;
+  ResolvedChannelIcon _icon(int channel) {
+    final target = store.captureNameTarget(channel);
+    return target == null
+        ? const ResolvedChannelIcon(ChannelIconSelection.followProvider())
+        : store.resolveChannelIcon(target);
   }
 
   Strip? get _masterStrip => store.engine.strips
       .where((s) => s.key == store.masterProcessingTarget)
       .firstOrNull;
 
-  int? get masterIdentityChannel =>
-      store.masterProcessingTarget.startsWith('bus/') ? _masterStrip?.ch : null;
+  int? get masterIdentityChannel => _masterStrip?.ch;
 
   MixerChannel get master {
     final target = store.masterProcessingTarget;
@@ -270,6 +267,9 @@ class MixerController extends ChangeNotifier {
             target == 'main' ? 'LR' : busNumber?.toString() ?? store.masterName,
         channel: null,
         artwork: 8,
+        icon: strip == null
+            ? const ResolvedChannelIcon(ChannelIconSelection.followProvider())
+            : _icon(strip.ch),
         colorChoice:
             bus && strip != null ? store.channelColorChoice(strip.ch) : null,
         fader: store.masterFader,
@@ -378,6 +378,14 @@ class MixerController extends ChangeNotifier {
       store.outputProcessingControls.any((control) =>
           control.target == store.masterProcessingTarget &&
           store.destinationControlIsCurrent(control));
+
+  String get masterProcessingUnavailableReason {
+    if (!store.accessFamilyAllowed(AccessFamily.masterDsp) ||
+        !store.accessTargetAllowed(store.masterProcessingTarget)) {
+      return 'Output processing is limited on this device.';
+    }
+    return 'This connection does not provide processing controls for ${store.masterName}.';
+  }
 
   bool openMasterProcessing() {
     final target = store.masterProcessingTarget;

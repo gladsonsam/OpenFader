@@ -114,42 +114,6 @@ String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
   }
 }
 
-class _TextSwitch extends StatelessWidget {
-  final String label;
-  final bool active;
-  final bool enabled;
-  final VoidCallback onTap;
-  const _TextSwitch(
-      {required this.label,
-      required this.active,
-      required this.enabled,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Opacity(
-        opacity: enabled ? 1 : 0.45,
-        child: GestureDetector(
-          onTap: enabled ? onTap : null,
-          behavior: HitTestBehavior.opaque,
-          child: SizedBox(
-            height: 44,
-            child: Center(
-              child: Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontFamily: U4.font,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: active
-                          ? ConsolePalette.of(context).phantom
-                          : ConsolePalette.of(context).text10)),
-            ),
-          ),
-        ),
-      );
-}
-
 class _ProcessorHeader extends StatelessWidget {
   final String title;
   final bool on;

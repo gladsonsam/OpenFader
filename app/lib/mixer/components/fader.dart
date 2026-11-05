@@ -60,9 +60,11 @@ class _MixerFaderState extends State<MixerFader> {
             onDecrease: ch.fader.isFinite
                 ? () => widget.onPosition(position - .01)
                 : null,
-            child: DecoratedBox(
+            child: Container(
                 decoration: BoxDecoration(
                     color: ConsolePalette.of(context).well,
+                    borderRadius: BorderRadius.circular(12)),
+                foregroundDecoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: ch.selected
@@ -149,9 +151,17 @@ class _FaderGeometry {
   final Size size;
   final bool compact;
   const _FaderGeometry(this.size, this.compact);
-  double get top => size.height * (compact ? 38 / 534 : 65 / 647);
-  double get bottom => size.height * (compact ? 56 / 534 : 55 / 647);
-  double get travel => math.max(40, size.height - top - bottom);
+  // Keep the entire cap, including its held enlargement and touch padding,
+  // inside the well even when a compact layout shortens the travel.
+  double get endClearance =>
+      math.max(
+          capHeight * (compact ? 1.25 : 1.4) / 2, capHeight / 2 + touchPad) +
+      MixerDesign.spaceSm;
+  double get top =>
+      math.max(endClearance, size.height * (compact ? 38 / 534 : 65 / 647));
+  double get bottom =>
+      math.max(endClearance, size.height * (compact ? 56 / 534 : 55 / 647));
+  double get travel => math.max(1, size.height - top - bottom);
   double get x => size.width * (compact ? 57 / 96.2 : 101 / 178.2);
   double get capWidth => math.max(
       34,

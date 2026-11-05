@@ -35,13 +35,6 @@ mixin _AppStoreOutputs on _AppStoreContext {
   Map<String, String> get outputTargets => Map.unmodifiable({
         for (final control in outputProcessingControls)
           control.target: control.destinationName,
-        for (final target in engine.outputMeterTargets)
-          if (!target.startsWith('physical/'))
-            target: engine.destinationControls
-                    .where((control) => control.target == target)
-                    .firstOrNull
-                    ?.destinationName ??
-                target,
       });
 
   @override

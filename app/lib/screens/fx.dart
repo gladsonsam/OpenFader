@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../ui/console.dart';
 import '../core/selected_control_readout.dart';
 import '../core/destination_controls.dart';
-import '../widgets/destination_control_editor.dart';
 import '../widgets/number_entry.dart';
 
 class FxKnobVm {
@@ -81,8 +80,6 @@ abstract class FxStore extends ChangeNotifier {
   String? get tapTarget;
   String get tapLabel;
   ValueNotifier<double> meterOf(int slot);
-
-  Future<void> pollMeters();
 
   void selectSlot(int slot);
   void setType(String type);
@@ -166,7 +163,6 @@ class _U4FxPageState extends State<U4FxPage> {
                       ? 180.0
                       : ((width - 6 * (targets.length - 1)) / targets.length)
                           .clamp(112.0, double.infinity);
-                  final detailHeight = math.max(330.0, bounds.maxHeight - 158);
                   return Column(children: [
                     Expanded(
                         child: SingleChildScrollView(
@@ -215,7 +211,6 @@ class _U4FxPageState extends State<U4FxPage> {
                                       _LegacyFxDetail(
                                           store: store,
                                           slot: slot,
-                                          minHeight: detailHeight,
                                           onFocus: (id) => setState(() {
                                                 _focusedTarget = selected.key;
                                                 _focusedId = id;
@@ -224,7 +219,10 @@ class _U4FxPageState extends State<U4FxPage> {
                                       _NativeFxDetail(
                                           store: store,
                                           controls: selected.controls,
-                                          minHeight: detailHeight,
+                                          focusedId:
+                                              _focusedTarget == selected.key
+                                                  ? _focusedId
+                                                  : null,
                                           onFocus: (id) => setState(() {
                                                 _focusedTarget = selected.key;
                                                 _focusedId = id;
@@ -253,25 +251,8 @@ class _U4FxPageState extends State<U4FxPage> {
       value: native?.valueLabel ?? knob?.text ?? '—',
       unconfirmed:
           native?.valueLabel != null && native?.authority == 'accepted',
-      onEdit: native != null && store.destinationControlIsCurrent(native)
-          ? () async {
-              if (!mounted ||
-                  _focusedTarget != target.key ||
-                  _focusedId != native.id ||
-                  !store.destinationControlIsCurrent(native)) {
-                return;
-              }
-              await showDialog<void>(
-                  animationStyle: AnimationStyle.noAnimation,
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => DestinationControlEditor(
-                      accessEpoch: () => store.controlAccessEpoch,
-                      changes: store,
-                      isCurrent: store.destinationControlIsCurrent,
-                      apply: store.setDestinationControl,
-                      control: native));
-            }
+      onEdit: native != null
+          ? null
           : knob == null
               ? null
               : () async {
@@ -437,13 +418,47 @@ class _FxCard extends StatelessWidget {
 class _NativeFxDetail extends StatelessWidget {
   final FxStore store;
   final List<DestinationControlVm> controls;
-  final double minHeight;
+  final String? focusedId;
   final ValueChanged<String> onFocus;
   const _NativeFxDetail(
       {required this.store,
       required this.controls,
-      required this.minHeight,
+      required this.focusedId,
       required this.onFocus});
+
+  Future<void> _apply(BuildContext context, DestinationControlVm control,
+      double candidate) async {
+    if (!store.destinationControlIsCurrent(control)) return;
+    final value = control.wireValue(candidate);
+    if (value == null) return;
+    final error = await store.setDestinationControl(control, value);
+    if (context.mounted && error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  Future<void> _choose(
+      BuildContext anchor, DestinationControlVm control) async {
+    onFocus(control.id);
+    final epoch = store.controlAccessEpoch;
+    final session = store.controlSession;
+    final value = await showAnchoredMenu<double>(anchor, [
+      for (final choice in control.choices)
+        CheckedPopupMenuItem<double>(
+            value: choice.value,
+            checked: choice.value == control.value,
+            child: Text(choice.label)),
+    ]);
+    if (value == null ||
+        !anchor.mounted ||
+        epoch != store.controlAccessEpoch ||
+        session != store.controlSession ||
+        !store.destinationControlIsCurrent(control)) {
+      return;
+    }
+    await _apply(anchor, control, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -463,30 +478,16 @@ class _NativeFxDetail extends StatelessWidget {
               fontSize: 18, fontWeight: FontWeight.w600, color: palette.text1)),
       const SizedBox(height: AppDesign.spaceMd),
       if (selector != null) ...[
-        OutlinedButton.icon(
-          icon: const Icon(Icons.expand_more),
-          label: Text(
-            '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
+        Builder(
+          builder: (anchor) => OutlinedButton.icon(
+            icon: const Icon(Icons.expand_more),
+            label: Text(
+              '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
+            ),
+            onPressed: store.destinationControlIsCurrent(selector)
+                ? () => _choose(anchor, selector)
+                : null,
           ),
-          onPressed: store.destinationControlIsCurrent(selector)
-              ? () => showDialog<void>(
-                    animationStyle: AnimationStyle.noAnimation,
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => DestinationControlEditor(
-                      accessEpoch: () => store.controlAccessEpoch,
-                      changes: store,
-                      isCurrent: store.destinationControlIsCurrent,
-                      apply: store.setDestinationControl,
-                      control: selector,
-                    ),
-                  )
-              : null,
-        ),
-        const SizedBox(height: AppDesign.spaceSm),
-        Text(
-          'FX preset library is unavailable for this mixer.',
-          style: TextStyle(fontSize: 12, color: palette.text4),
         ),
         const SizedBox(height: AppDesign.spaceMd),
       ],
@@ -517,29 +518,42 @@ class _NativeFxDetail extends StatelessWidget {
                               }
                             : null)),
             ])),
-      _KnobLayout(
-          minHeight: math.max(
-              0.0,
-              minHeight -
-                  68 -
-                  64 * tapControls.length -
-                  (binaryControls.isEmpty ? 0 : 56)),
-          children: [
-            for (final control in controls)
-              if (control != selector && !binaryControls.contains(control))
-                _FxRotary(
-                    key: ValueKey('${control.target}/${control.id}'),
-                    label: control.label,
-                    text: '${control.valueLabel ?? 'Unavailable'}'
-                        '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                    fraction: control.numeric && control.value != null
-                        ? ((control.value! - control.min!) /
-                                (control.max! - control.min!))
-                            .clamp(0, 1)
-                        : 0,
-                    enabled: store.destinationControlIsCurrent(control),
-                    onTap: () => onFocus(control.id)),
-          ]),
+      _KnobLayout(children: [
+        for (final control in controls)
+          if (control != selector && !binaryControls.contains(control))
+            if (control.choices.isNotEmpty)
+              Builder(
+                  builder: (anchor) => _FxToggle(
+                      label:
+                          '${control.label}: ${control.valueLabel ?? 'Unavailable'}',
+                      active: focusedId == control.id,
+                      onTap: store.destinationControlIsCurrent(control)
+                          ? () => _choose(anchor, control)
+                          : null))
+            else
+              _FxRotary(
+                  key: ValueKey('${control.target}/${control.id}'),
+                  label: control.label,
+                  text: '${control.valueLabel ?? 'Unavailable'}'
+                      '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                  fraction: control.numeric && control.value != null
+                      ? ((control.value! - control.min!) /
+                              (control.max! - control.min!))
+                          .clamp(0, 1)
+                      : 0,
+                  increment: control.step == null
+                      ? 0.01
+                      : control.step! / (control.max! - control.min!),
+                  enabled: store.destinationControlIsCurrent(control),
+                  onTap: () => onFocus(control.id),
+                  onChange: control.numeric
+                      ? (fraction) => _apply(
+                          context,
+                          control,
+                          control.min! +
+                              fraction * (control.max! - control.min!))
+                      : null),
+      ]),
       for (final control in tapControls)
         Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -568,13 +582,9 @@ class _NativeFxDetail extends StatelessWidget {
 class _LegacyFxDetail extends StatelessWidget {
   final FxStore store;
   final FxSlotVm slot;
-  final double minHeight;
   final ValueChanged<String> onFocus;
   const _LegacyFxDetail(
-      {required this.store,
-      required this.slot,
-      required this.minHeight,
-      required this.onFocus});
+      {required this.store, required this.slot, required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -624,7 +634,7 @@ class _LegacyFxDetail extends StatelessWidget {
           },
         ),
       const SizedBox(height: AppDesign.spaceMd),
-      _KnobLayout(minHeight: minHeight - 130, children: [
+      _KnobLayout(children: [
         for (final knob in knobs)
           _FxRotary(
               key: ValueKey('${slot.slot}/${knob.id}'),
@@ -688,9 +698,8 @@ class _FxToggle extends StatelessWidget {
 }
 
 class _KnobLayout extends StatelessWidget {
-  final double minHeight;
   final List<Widget> children;
-  const _KnobLayout({required this.minHeight, required this.children});
+  const _KnobLayout({required this.children});
   @override
   Widget build(BuildContext context) =>
       LayoutBuilder(builder: (context, bounds) {
@@ -762,8 +771,12 @@ class _FxRotaryState extends State<_FxRotary> {
             child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: widget.enabled ? widget.onTap : null,
-                onVerticalDragStart:
-                    adjustable ? (_) => _drag = widget.fraction : null,
+                onVerticalDragStart: adjustable
+                    ? (_) {
+                        _drag = widget.fraction;
+                        widget.onTap?.call();
+                      }
+                    : null,
                 onVerticalDragUpdate: adjustable
                     ? (details) {
                         _drag = ((_drag ?? widget.fraction) -

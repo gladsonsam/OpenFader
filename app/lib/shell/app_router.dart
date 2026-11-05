@@ -18,6 +18,7 @@ import '../palette.dart';
 import '../mixer/geometry.dart';
 
 import '../design.dart';
+import '../ui/motion.dart';
 import '../engine.dart';
 import '../ffi_engine.dart';
 import '../mixer/components/meter.dart';
@@ -409,6 +410,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (_desktopQuitting) return;
     try {
       await widget.store.pollMeters();
+      _fx.syncMeters();
       _conn.tickRecovery();
       if (widget.api is HostTransport) _recorder.tick();
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
@@ -616,7 +618,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ]),
           bottomSafeArea:
               !(narrow && (_tab == AppTab.mixer || _tab == AppTab.channel)),
-          child: _pageFor(_tab, store),
+          child: ConsolePageReveal(token: _tab, child: _pageFor(_tab, store)),
         );
       },
     );
@@ -781,7 +783,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ? OutputProcessingPage(
               store: store, onClose: () => _go(AppTab.mixer), embedded: true)
           : ChannelPage(
-              key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
+              key: ValueKey(
+                  (store.bank, store.engine.driver, store.connectionEpoch)),
               stripKey: store.stripKey,
               store: store,
               mixerControls: _processingMixerControls(),

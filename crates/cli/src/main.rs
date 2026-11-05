@@ -1,12 +1,12 @@
 //! openfader-cli: headless demo of any `MixerDriver`.
 //!
-//! Uses sim by default; pass `--driver xair|dl32s --addr <ip>` for hardware.
+//! Uses sim by default; pass `--driver xair|dl32s|wing|x32 --addr <ip>` for hardware.
 //! Channels are 1-based in the CLI (`1..=N`) and map to 0-based `StripId`.
 use openfader_core::{ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
-Usage: openfader-cli [--driver sim|xair|dl32s|wing] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
+Usage: openfader-cli [--driver sim|xair|dl32s|wing|x32] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
 
 Commands:
   list                       list all strips (name, fader, mute)
@@ -20,8 +20,8 @@ Commands:
                              (or only --driver when specified)
 
 Options:
-  --driver <name>   sim (default), xair, dl32s, wing
-  --addr <ip>       mixer address (xair/dl32s connect; sim ignores)
+  --driver <name>   sim (default), xair, dl32s, wing, x32
+  --addr <ip>       mixer address (xair/dl32s/wing/x32 connect; sim ignores)
   --preset <name>   sim scribbles: generic (default), xr18, dl32s, studio (owner rig)
   -h, --help        print this help
 ";
