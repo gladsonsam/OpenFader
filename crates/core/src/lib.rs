@@ -165,7 +165,7 @@ pub fn strip_key(family_key: &str, idx: u16) -> String {
     if fam == "main" {
         return "main".to_string();
     }
-    format!("{fam}/{:02}", idx.min(99))
+    format!("{fam}/{idx:02}")
 }
 
 /// Legacy family-key alias normalisation for strip keys: the sim bus family
@@ -232,7 +232,7 @@ pub fn strip_key_for_index(topology: &[StripFamily], index: usize) -> Option<Str
     if fam.count == 1 {
         return Some(canon.to_string());
     }
-    let local = (index - fam.first + 1).min(99);
+    let local = index - fam.first + 1;
     Some(format!("{canon}/{local:02}"))
 }
 
@@ -447,10 +447,55 @@ pub struct FaderScale {
     units: &'static [f32],
 }
 
+/// A fader table has too few entries to interpolate between adjacent points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidFaderScale {
+    entries: usize,
+}
+
+impl InvalidFaderScale {
+    /// Number of entries supplied in the rejected table.
+    pub const fn entries(self) -> usize {
+        self.entries
+    }
+}
+
+impl std::fmt::Display for InvalidFaderScale {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "fader scale requires at least two table entries, got {}",
+            self.entries
+        )
+    }
+}
+
+impl std::error::Error for InvalidFaderScale {}
+
 impl FaderScale {
-    /// Needs >= 2 entries (unchecked).
+    /// Build a scale from at least two uniformly spaced table entries.
+    ///
+    /// # Panics
+    /// Panics when the table has fewer than two entries.
     pub const fn from_uniform(units: &'static [f32]) -> Self {
-        Self { units }
+        match Self::try_from_uniform(units) {
+            Ok(scale) => scale,
+            Err(_) => panic!("fader scale requires at least two table entries"),
+        }
+    }
+
+    /// Build a scale after validating the table has enough points to interpolate.
+    ///
+    /// # Errors
+    /// Returns [`InvalidFaderScale`] when fewer than two entries are supplied.
+    pub const fn try_from_uniform(units: &'static [f32]) -> Result<Self, InvalidFaderScale> {
+        if units.len() < 2 {
+            Err(InvalidFaderScale {
+                entries: units.len(),
+            })
+        } else {
+            Ok(Self { units })
+        }
     }
 
     /// Level to engineering units; out-of-range clamps.
@@ -506,9 +551,7 @@ pub trait MixerDriver: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Total number of addressable channel strips (excl. buses/main).
-    fn channel_count(&self) -> usize {
-        32
-    }
+    fn channel_count(&self) -> usize;
 
     /// Provider-declared channel pairs. Empty means that stereo linking is
     /// not available through the shared surface. Indices are zero-based.
@@ -703,7 +746,7 @@ pub trait MixerDriver: Send + Sync {
     /// Driver-specific ids pass through to the driver override.
     ///
     /// [`capabilities`](MixerDriver::capabilities) advertises which
-    /// [`params`](crate::params) catalogue ids this driver implements;
+    /// [`params`] catalogue ids this driver implements;
     /// the relay `caps` frame renders the catalogue filtered by it.
     async fn set_param(
         &self,

@@ -179,6 +179,23 @@ mixin _AppStoreInput on _AppStoreContext {
   }
 
   @override
+  bool get canPatchInputSource {
+    final planes = engine.routingCaps['planes'];
+    if (planes is! List) return false;
+    for (final plane in planes) {
+      if (plane is! Map) continue;
+      final destinations = plane['destinations'];
+      if (destinations is! List) continue;
+      for (final destination in destinations) {
+        if (destination is Map && destination['key'] == stripKey) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  @override
   ChannelPreampVm get preamp => ChannelPreampVm(
         hasInput: supports('gain'),
         gain: paramNum('gain') ?? 0,

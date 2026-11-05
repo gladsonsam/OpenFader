@@ -51,7 +51,7 @@ int recorderChannelCount(dynamic value) {
   return 0;
 }
 
-Map<int, String> recorderChannelNames(Map source, Map<int, String> fallback) {
+Map<int, String> recorderChannelNames(Map source) {
   final manifest = source['manifest'];
   final names = source['channel_names'] ??
       (manifest is Map ? manifest['channel_names'] : null);
@@ -63,7 +63,8 @@ Map<int, String> recorderChannelNames(Map source, Map<int, String> fallback) {
           ? channels
           : null;
   return {
-    ...fallback,
+    // A connected network mixer's strips do not establish the audio interface's
+    // USB send mapping. Only names carried by this capture/take are authoritative.
     if (list != null)
       for (var i = 0; i < list.length && i < 64; i++)
         if (list[i] is String && (list[i] as String).isNotEmpty)
@@ -259,15 +260,68 @@ class _RecorderPageState extends State<RecorderPage> {
   int? _loopStart, _loopEnd, _loopTotal;
   Object? _loopTake;
   String? _previewTakeId;
+  String? _importedTakeId;
+  final _importedTakeKey = GlobalKey();
   bool _startingPlay = false;
 
   Map<String, dynamic> _snapshotLinks = {};
+  Map<String, String> _importNames = {};
   static const _snapshotKey = 'recorder.native_snapshot_links.v1';
+  static const _importNamesKey = 'recorder.import_names.v1';
+  static const _manualMappingKey = 'recorder.manual_mapping.v1';
 
   @override
   void initState() {
     super.initState();
     _loadSnapshotLinks();
+    _loadImportNames();
+  }
+
+  Future<void> _loadImportNames() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = jsonDecode(prefs.getString(_importNamesKey) ?? '{}');
+      if (mounted && value is Map) {
+        setState(() => _importNames = {
+              for (final entry in value.entries)
+                if (entry.key is String && entry.value is String)
+                  entry.key as String: entry.value as String,
+              ..._importNames,
+            });
+      }
+    } catch (_) {
+      _snapshotMessage('Could not read imported take names on this device.');
+    }
+  }
+
+  Future<void> _selectImportedTake(
+      String id, String source, String format) async {
+    if (!mounted) return;
+    final name = format == 'wav'
+        ? path.basenameWithoutExtension(source)
+        : path.basename(path.normalize(source));
+    setState(() {
+      _previewTakeId = id;
+      _importedTakeId = id;
+      _showTakes = true;
+      _loopStart = _loopEnd = _loopTotal = null;
+      _loopTake = null;
+      _importNames = {..._importNames, id: name};
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _importedTakeKey.currentContext;
+      if (mounted && target != null) Scrollable.ensureVisible(target);
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString(_importNamesKey, jsonEncode(_importNames))) {
+        throw StateError('Preferences write failed');
+      }
+      _snapshotMessage('Imported "$name". Ready to play.');
+    } catch (_) {
+      _snapshotMessage(
+          'Take imported and selected. Could not save its name on this device.');
+    }
   }
 
   Future<void> _loadSnapshotLinks() async {
@@ -575,6 +629,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted || selected == null) return;
     setState(() => _transferBusy = true);
     String? staged;
+    String? exportDestination;
     var safeToClean = false;
     try {
       final root = Platform.isMacOS
@@ -607,6 +662,20 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       await _rejectLinkedParents(root);
       await _rejectLinkedParents(selected);
+      if (!importing) {
+        final filename = switch (format) {
+          'wav' => '$takeId.wav',
+          'tracks' => '$takeId-tracks',
+          _ => '$takeId-native',
+        };
+        exportDestination = path.join(selected, filename);
+        if (await FileSystemEntity.type(exportDestination,
+                followLinks: false) !=
+            FileSystemEntityType.notFound) {
+          throw StateError(
+              'An export named "$filename" already exists. Choose another folder.');
+        }
+      }
       await Directory(root).create(recursive: true);
       if (await FileSystemEntity.type(root, followLinks: false) !=
           FileSystemEntityType.directory) {
@@ -640,18 +709,19 @@ class _RecorderPageState extends State<RecorderPage> {
       await store.command(importing ? 'import_take' : 'export_take',
           {'take_id': id, 'transfer_name': name, 'format': format});
       if (store.error != null) throw StateError(store.error!);
+      // The host acknowledged the transfer. A failed destination copy can
+      // discard staging; the source take and import source remain intact.
+      safeToClean = true;
       if (!importing) {
-        final destination =
-            path.join(selected, '$id${format == 'wav' ? '.wav' : ''}');
+        final destination = exportDestination!;
         await _copyTransfer(staged, destination);
         _snapshotMessage('Take exported to $destination');
       } else {
-        _snapshotMessage('Take imported.');
+        await _selectImportedTake(id, selected, format);
       }
-      safeToClean = true;
     } catch (e) {
-      _snapshotMessage(
-          'Transfer failed: $e${staged == null ? '' : ' Staging: $staged'}');
+      debugPrint('Take transfer failed: $e; staging: $staged');
+      _snapshotMessage('Transfer failed: ${e is StateError ? e.message : e}');
     } finally {
       if (safeToClean && staged != null) {
         try {
@@ -742,25 +812,23 @@ class _RecorderPageState extends State<RecorderPage> {
         return;
       }
       final caps = store.state['capabilities'] as Map? ?? {};
-      final choice = await showDialog<String>(
-          context: context,
-          builder: (context) => SimpleDialog(
-                  title: const Text('Choose soundcheck routing'),
-                  children: [
-                    SimpleDialogOption(
-                        onPressed: () => Navigator.pop(context, 'manual'),
-                        child: const Text(
-                            'Manual routing · any compatible interface')),
-                    if (caps['soundcheck'] == true)
-                      SimpleDialogOption(
-                          onPressed: () => Navigator.pop(context, 'automatic'),
-                          child: const Text('Automatic mixer routing')),
-                    if (caps['soundcheck'] != true)
-                      Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Text(
-                              'Automatic routing unavailable: ${store.state['soundcheck_reason'] ?? 'no verified mixer profile'}')),
-                  ]));
+      final choice = caps['soundcheck'] != true
+          ? 'manual'
+          : await showDialog<String>(
+              context: context,
+              builder: (context) => SimpleDialog(
+                      title: const Text('Choose soundcheck routing'),
+                      children: [
+                        SimpleDialogOption(
+                            onPressed: () => Navigator.pop(context, 'manual'),
+                            child: const Text(
+                                'Manual routing · any compatible interface')),
+                        if (caps['soundcheck'] == true)
+                          SimpleDialogOption(
+                              onPressed: () =>
+                                  Navigator.pop(context, 'automatic'),
+                              child: const Text('Automatic mixer routing')),
+                      ]));
       if (choice == null || !mounted) return;
       if (!await _offerSnapshotRecall(takeId) ||
           !mounted ||
@@ -787,19 +855,55 @@ class _RecorderPageState extends State<RecorderPage> {
           await store.command('enter_soundcheck', {'take_id': takeId});
         }
       } else {
-        final mapping =
+        var mapping =
             List<int?>.generate(takeChannels, (i) => i < outputs ? i : null);
+        final mappingContext = {
+          'device_id': deviceId,
+          'sample_rate': selected['sample_rate'],
+          'output_channels': outputs,
+          'take_channels': takeChannels,
+        };
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final saved = jsonDecode(prefs.getString(_manualMappingKey) ?? '{}');
+          final entries = saved is Map ? saved['mapping'] : null;
+          if (saved is Map &&
+              mappingContext.entries.every((e) => saved[e.key] == e.value) &&
+              entries is List &&
+              entries.length == takeChannels &&
+              entries.every(
+                  (v) => v == null || v is int && v >= 0 && v < outputs)) {
+            final assigned = entries.whereType<int>().toList();
+            if (assigned.isNotEmpty &&
+                assigned.toSet().length == assigned.length) {
+              mapping = List<int?>.from(entries);
+            }
+          }
+        } catch (_) {
+          message(
+              'Could not read the previous mapping. Review the outputs before playing.');
+        }
+        if (!mounted) return;
         final chosen = await showDialog<List<int?>>(
             context: context,
             builder: (context) => StatefulBuilder(
                 builder: (context, update) => AlertDialog(
-                      title: const Text('Map tracks to interface outputs'),
+                      title: const Text('Prepare manual playback'),
                       content: SizedBox(
                           width: 420,
                           child:
                               Column(mainAxisSize: MainAxisSize.min, children: [
                             Text(
                                 '${selected['name']} · ${selected['sample_rate']} Hz · $outputs outputs'),
+                            if (caps['soundcheck'] != true)
+                              Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  child: Text(
+                                      'Automatic routing unavailable: ${store.state['soundcheck_reason'] ?? 'no verified mixer profile'}')),
+                            const Text(
+                                'Route the mixer inputs to these interface returns and set safe output levels before playing. OpenFader will not change mixer routing. Restore live inputs yourself afterwards.'),
+                            const SizedBox(height: 8),
                             const Text(
                                 'Unassigned tracks are silent. Each assigned output must be unique.'),
                             Flexible(
@@ -843,26 +947,11 @@ class _RecorderPageState extends State<RecorderPage> {
                               }
                               Navigator.pop(context, mapping);
                             },
-                            child: const Text('Continue'))
+                            child: const Text('Routing is ready · play'))
                       ],
                     )));
         if (chosen == null || !mounted) return;
-        final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-                    title: const Text('Confirm manual routing'),
-                    content: const Text(
-                        'Before playing, route the mixer inputs to the selected interface returns and set safe output levels. OpenFader will not change mixer routing. You must restore live inputs yourself afterwards.'),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel')),
-                      FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Routing is ready · play'))
-                    ]));
-        if (confirmed != true ||
-            !mounted ||
+        if (!mounted ||
             store.pending ||
             !store.connected ||
             !_takeAvailable(takeId) ||
@@ -875,6 +964,17 @@ class _RecorderPageState extends State<RecorderPage> {
           'routing_confirmed': true,
           'expected_device_id': deviceId
         });
+        if (store.error == null) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            if (!await prefs.setString(_manualMappingKey,
+                jsonEncode({...mappingContext, 'mapping': chosen}))) {
+              throw StateError('Preferences write failed');
+            }
+          } catch (_) {
+            message('Could not remember this output mapping on this device.');
+          }
+        }
       }
       if (store.error != null) message(store.error!);
     } finally {
@@ -1146,6 +1246,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                   width: 60,
                                   height: 56,
                                   child: IconButton(
+                                      tooltip: 'Stop',
                                       onPressed: (store.pending ||
                                               (enabled &&
                                                   (recording || soundcheck)))
@@ -1157,6 +1258,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                   width: 60,
                                   height: 56,
                                   child: IconButton(
+                                      tooltip: 'Record',
                                       onPressed: enabled &&
                                               !needsLive &&
                                               !recording &&
@@ -1271,14 +1373,16 @@ class _RecorderPageState extends State<RecorderPage> {
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
+                                              if (!recording)
+                                                Text(
+                                                    'Position ${(s['position_frames'] is num && s['sample_rate'] is num && (s['sample_rate'] as num) > 0) ? ((s['position_frames'] as num) / (s['sample_rate'] as num)).toStringAsFixed(1) : '0.0'} s',
+                                                    style: TextStyle(
+                                                        fontSize: 20,
+                                                        height: 1.3,
+                                                        color:
+                                                            p.recorderMuted)),
                                               Text(
-                                                  'Position ${(s['position_frames'] is num && s['sample_rate'] is num && (s['sample_rate'] as num) > 0) ? ((s['position_frames'] as num) / (s['sample_rate'] as num)).toStringAsFixed(1) : '0.0'} s',
-                                                  style: TextStyle(
-                                                      fontSize: 20,
-                                                      height: 1.3,
-                                                      color: p.recorderMuted)),
-                                              Text(
-                                                  'Take length ${_time((completed.where((t) => t['id'] == previewId).firstOrNull)?['duration_frames'], (completed.where((t) => t['id'] == previewId).firstOrNull)?['sample_rate'] ?? s['sample_rate'])}',
+                                                  '${recording ? 'Captured' : 'Take length'} ${_time(recording ? s['recorded_frames'] : (completed.where((t) => t['id'] == previewId).firstOrNull)?['duration_frames'], recording ? s['sample_rate'] : (completed.where((t) => t['id'] == previewId).firstOrNull)?['sample_rate'] ?? s['sample_rate'])}',
                                                   style: TextStyle(
                                                       fontSize: 20,
                                                       height: 1.3,
@@ -1595,6 +1699,24 @@ class _RecorderPageState extends State<RecorderPage> {
               '${s['transport']}'.toLowerCase().contains('record');
           final soundcheck =
               '${s['input_mode']}'.toLowerCase().contains('soundcheck');
+          String takeSummary(Map<String, dynamic> take) {
+            final active = recording && take['id'] == s['selected_take_id'];
+            final frames = active
+                ? s['recorded_frames'] ?? take['duration_frames']
+                : take['duration_frames'];
+            final rate = active
+                ? s['sample_rate'] ?? take['sample_rate']
+                : take['sample_rate'];
+            final status = active
+                ? s['error'] == null
+                    ? 'Recording'
+                    : 'Recording error'
+                : take['complete'] == true
+                    ? 'Complete'
+                    : 'Recovery needed';
+            return '${_time(frames, rate)}  ·  $status';
+          }
+
           Widget panel({required Widget child}) => Container(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
               color: p.recorderSurface,
@@ -1631,6 +1753,9 @@ class _RecorderPageState extends State<RecorderPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         InkWell(
+                            key: take['id'] == _importedTakeId
+                                ? _importedTakeKey
+                                : null,
                             onTap: !recording &&
                                     !soundcheck &&
                                     take['complete'] == true
@@ -1672,7 +1797,9 @@ class _RecorderPageState extends State<RecorderPage> {
                                                                 .trim()
                                                                 .isNotEmpty)
                                                         ? take['name'] as String
-                                                        : 'Take ${index + 1}',
+                                                        : _importNames[
+                                                                take['id']] ??
+                                                            'Take ${index + 1}',
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -1683,7 +1810,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                             FontWeight.w600))))
                                       ]),
                                       Text(
-                                          '${_time(take['duration_frames'], take['sample_rate'])}  ·  ${take['complete'] == true ? 'Complete' : 'Recovery needed'}\n${_takeDate(take['id']).replaceFirst(' · ', '')}',
+                                          '${takeSummary(take)}\n${_takeDate(take['id']).replaceFirst(' · ', '')}',
                                           style: TextStyle(
                                               color: p.mutedText,
                                               fontSize: 19)),

@@ -5,7 +5,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -68,6 +68,11 @@ fn validate_playback_config(channels: u16, rate: u32, take_rate: u32) -> io::Res
         return Err(error("device sample rate differs from take"));
     }
     Ok(())
+}
+
+fn capture_segment_frames(rate: u32, layout: ChannelLayout) -> u64 {
+    // Ten minutes where possible, always below the RIFF/WAV 32-bit size limit.
+    (u64::from(rate) * 600).min((u64::from(u32::MAX) - 36) / layout.frame_bytes())
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecorderStatus {
@@ -205,7 +210,7 @@ fn playback_worker(
 ) -> io::Result<()> {
     let mut buffered = 0usize;
     let result = (|| -> io::Result<()> {
-        let mut open: Option<(usize, fs::File)> = None;
+        let mut open: Option<(usize, BufReader<fs::File>, u64)> = None;
         while !done.load(Ordering::Acquire) {
             if let Some((start, end)) = looping {
                 if at >= end {
@@ -229,15 +234,21 @@ fn playback_worker(
                 .iter()
                 .position(|s| at >= s.start_frame && at < s.start_frame + s.frames)
                 .ok_or_else(|| error("missing segment"))?;
-            if open.as_ref().is_none_or(|(i, _)| *i != idx) {
-                open = Some((idx, fs::File::open(dir.join(&manifest.segments[idx].file))?));
+            if open.as_ref().is_none_or(|(i, _, _)| *i != idx) {
+                let file = fs::File::open(dir.join(&manifest.segments[idx].file))?;
+                open = Some((idx, BufReader::with_capacity(64 * 1024, file), u64::MAX));
             }
-            let f = &mut open.as_mut().unwrap().1;
-            f.seek(SeekFrom::Start(
-                44 + (at - manifest.segments[idx].start_frame) * manifest.channels as u64 * 3,
-            ))?;
+            let (_, f, next_frame) = open.as_mut().expect("playback segment opened above");
+            if *next_frame != at {
+                f.seek(SeekFrom::Start(
+                    44 + (at - manifest.segments[idx].start_frame)
+                        * u64::from(manifest.channels)
+                        * 3,
+                ))?;
+            }
             let mut bytes = [0u8; MAX_CHANNELS * 3];
             f.read_exact(&mut bytes[..manifest.channels as usize * 3])?;
+            *next_frame = at + 1;
             let mut samples = [0f32; MAX_CHANNELS];
             for (sample, b) in samples.iter_mut().zip(bytes.as_chunks::<3>().0.iter()) {
                 let value =
@@ -487,14 +498,22 @@ impl RecorderService {
             .ok_or_else(|| error("selected device disconnected"))?;
         let default = device.default_input_config().map_err(error)?;
         let rate = default.sample_rate();
-        let channels = self
+        let selected_info = self
             .selected_info
             .as_ref()
-            .ok_or_else(|| error("select a device first"))?
-            .input_channels;
+            .ok_or_else(|| error("select a device first"))?;
+        let channels = selected_info.input_channels;
         ChannelLayout::new(channels)?;
-        if rate == 0 {
-            return Err(error("invalid device sample rate"));
+        if rate == 0 || rate != selected_info.sample_rate {
+            return Err(error(
+                "device sample rate changed; refresh and select the interface again",
+            ));
+        }
+        #[cfg(windows)]
+        if default.channels() != channels {
+            return Err(error(
+                "ASIO input layout changed; refresh and select the interface again",
+            ));
         }
         let supported = device
             .supported_input_configs()
@@ -523,7 +542,7 @@ impl RecorderService {
             ($sample:ty) => {
                 device
                     .build_input_stream(
-                        &config,
+                        config,
                         move |data: &[$sample], _| {
                             if cb_failed.load(Ordering::Relaxed) {
                                 return;
@@ -584,17 +603,22 @@ impl RecorderService {
             .prepared
             .take()
             .ok_or_else(|| error("capture not prepared"))?;
+        let layout = ChannelLayout::new(channels as u16)?;
         let mut writer = TakeWriter::create_with_layout(
             self.root.join(id),
             rate,
-            48_000 * 60 * 10,
-            ChannelLayout::new(channels as u16)?,
+            capture_segment_frames(rate, layout),
+            layout,
         )?;
         let worker_done = done.clone();
         let worker_failed = failed.clone();
         let worker_frames = frames.clone();
         let worker_peaks = peaks.clone();
+        let waveform_dir = self.root.join(id);
         let worker = thread::spawn(move || {
+            let mut waveform = crate::live_waveform::Writer::create(&waveform_dir, rate, channels)
+                .map_err(|e| eprintln!("live waveform unavailable: {e}"))
+                .ok();
             let mut batch = Vec::with_capacity(channels * 1024);
             let mut since_checkpoint = 0u64;
             loop {
@@ -619,6 +643,13 @@ impl RecorderService {
                         worker_failed.store(true, Ordering::Release);
                         return Err(e);
                     }
+                    if let Some(peaks) = &mut waveform {
+                        if let Err(e) = peaks.append(&batch) {
+                            eprintln!("live waveform stopped; recording continues: {e}");
+                            waveform = None;
+                            crate::live_waveform::discard(&waveform_dir);
+                        }
+                    }
                     worker_frames.fetch_add(n, Ordering::Relaxed);
                     since_checkpoint += n;
                     batch.clear();
@@ -641,7 +672,12 @@ impl RecorderService {
                 writer.checkpoint()?;
                 return Err(error("capture interrupted; recover take"));
             }
-            writer.finish()
+            let result = writer.finish();
+            drop(waveform);
+            if result.is_ok() {
+                crate::live_waveform::discard(&waveform_dir);
+            }
+            result
         });
         if let Err(e) = stream.play() {
             done.store(true, Ordering::Release);
@@ -828,7 +864,15 @@ impl RecorderService {
             }
         };
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        let current = device.default_output_config().map_err(error)?.sample_rate();
+        let default = device.default_output_config().map_err(error)?;
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        let current = default.sample_rate();
+        #[cfg(windows)]
+        if default.channels() != channels {
+            return Err(error(
+                "ASIO output layout changed; refresh and select the interface again",
+            ));
+        }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         if current != sample_rate {
             return Err(error("device sample rate differs from take"));
@@ -855,7 +899,7 @@ impl RecorderService {
             ($sample:ty) => {
                 device
                     .build_output_stream(
-                        &config,
+                        config,
                         move |data: &mut [$sample], _| output.render(data),
                         move |_| {
                             done.store(true, Ordering::Release);
@@ -1064,6 +1108,23 @@ impl Drop for RecorderService {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn capture_segments_fit_riff_at_high_channel_counts_and_rates() {
+        for rate in [44_100, 48_000, 96_000, 192_000] {
+            for channels in [1, 16, 32, 64] {
+                let layout = crate::ChannelLayout::new(channels).unwrap();
+                let frames = super::capture_segment_frames(rate, layout);
+                let mut header = std::io::Cursor::new(Vec::new());
+                crate::header(&mut header, rate, frames, layout).unwrap();
+                let bytes = header.into_inner();
+                assert_eq!(bytes.len(), 44);
+                let data_bytes = u32::from_le_bytes(bytes[40..44].try_into().unwrap());
+                assert_eq!(u64::from(data_bytes), frames * u64::from(channels) * 3);
+                assert!(frames > 0 && frames <= u64::from(rate) * 600);
+            }
+        }
+    }
+
+    #[test]
     fn playback_configuration_requires_channels_and_matching_rate() {
         assert!(super::validate_playback_config(0, 48_000, 48_000).is_err());
         assert!(super::validate_playback_config(18, 44_100, 48_000).is_err());
@@ -1226,7 +1287,13 @@ mod tests {
     #[test]
     fn generated_take_worker_delivers_eof_and_reports_read_failure() {
         let root = root();
-        let mut writer = TakeWriter::create(&root, 48_000, 8).unwrap();
+        let mut writer = TakeWriter::create(
+            &root,
+            48_000,
+            8,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         writer.append_interleaved(&[100; CHANNELS * 2]).unwrap();
         let manifest = writer.finish().unwrap();
         let (producer, mut consumer) = rtrb::RingBuffer::new(4);
@@ -1263,7 +1330,13 @@ mod tests {
     #[test]
     fn generated_take_worker_seeks_loops_and_stops_with_full_queue() {
         let root = root();
-        let mut writer = TakeWriter::create(&root, 48_000, 2).unwrap();
+        let mut writer = TakeWriter::create(
+            &root,
+            48_000,
+            2,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         for frame in 1..=4 {
             writer
                 .append_interleaved(&[frame * 100_000; CHANNELS])
@@ -1303,7 +1376,13 @@ mod tests {
     fn take_transport_validates_boundaries_without_opening_a_device() {
         let root = root();
         let mut service = RecorderService::new(&root).unwrap();
-        let mut writer = TakeWriter::create(root.join("take"), 48_000, 8).unwrap();
+        let mut writer = TakeWriter::create(
+            root.join("take"),
+            48_000,
+            8,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         writer.append_interleaved(&[7; CHANNELS * 4]).unwrap();
         writer.finish().unwrap();
         assert_eq!(service.load_take("take").unwrap().frames, 4);

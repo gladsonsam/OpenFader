@@ -60,7 +60,7 @@ pub struct RemoteAccess {
 
 fn random_hex(bytes: usize) -> anyhow::Result<String> {
     let mut data = vec![0; bytes];
-    getrandom::getrandom(&mut data)
+    getrandom::fill(&mut data)
         .map_err(|e| anyhow::anyhow!("OS randomness unavailable: {e}"))?;
     Ok(hex(&data))
 }
@@ -81,7 +81,7 @@ impl RemoteAccess {
             let generated = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
             Ok(TlsIdentity {
                 certificate_der: generated.cert.der().to_vec(),
-                private_key_der: generated.key_pair.serialize_der(),
+                private_key_der: generated.signing_key.serialize_der(),
             })
         })?;
         Ok(Self {
@@ -180,7 +180,9 @@ impl RemoteAccess {
             .map(|(id, client)| (id.clone(), client.active.subscribe()))
     }
     pub fn clients(&self) -> Vec<String> {
-        self.state.lock().unwrap().clients.keys().cloned().collect()
+        let mut clients: Vec<_> = self.state.lock().unwrap().clients.keys().cloned().collect();
+        clients.sort();
+        clients
     }
     pub fn revoke(&self, client_id: &str) -> bool {
         let mut state = self.state.lock().unwrap();

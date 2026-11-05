@@ -72,6 +72,18 @@ abstract class RoutingStore extends ChangeNotifier {
   bool get isModeSelector;
   bool get canPatch => routingSupported;
   int get controlAccessEpoch => 0;
+  // Provider-owned routing controls for the selected destination. Opaque
+  // descriptors: surface == 'routing' and target == selected destination id.
+  List<DestinationControlVm> get routingControls => [
+        if (tapControl case final control?) control,
+      ];
+  bool routingControlIsCurrent(DestinationControlVm control) =>
+      control == tapControl && tapIsCurrent(control);
+  Future<String?> setRoutingControl(
+          DestinationControlVm control, double value) async =>
+      control == tapControl
+          ? setTapControl(control, value)
+          : 'Routing control unavailable.';
   DestinationControlVm? get tapControl => null;
   bool tapIsCurrent(DestinationControlVm control) => false;
   Future<String?> setTapControl(

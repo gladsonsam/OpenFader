@@ -13,6 +13,10 @@ impl MixerDriver for Dl32sDriver {
         "dl32s"
     }
 
+    fn channel_count(&self) -> usize {
+        32
+    }
+
     fn topology(&self) -> Vec<openfader_core::StripFamily> {
         crate::strips::topology()
     }
@@ -603,7 +607,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     /// Only the verified pre-fader input tap: the first 32 meter words are
-    /// hardware-pinned input dB (see [`crate::telemetry::decode_input_meters`]). No `post`
+    /// hardware-pinned input dB (see `decode_input_meters`). No `post`
     /// (never `in` x fader — unconfirmed), no GR, no RTA.
     fn meter_taps(&self) -> &'static [&'static str] {
         &["in"]
@@ -655,9 +659,9 @@ impl MixerDriver for Dl32sDriver {
     /// Unknown selectors (and the unsettled/stale windows) report empty —
     /// unavailable, never fabricated. Source changes clear the cache, bump
     /// the epoch (monotonic across source/generation changes) and withhold
-    /// frames for [`crate::telemetry::RTA_SETTLE`] so in-flight old-source words are never
+    /// frames for `RTA_SETTLE` so in-flight old-source words are never
     /// misattributed. Stale (>1 s, same bound as input meters) reads
-    /// empty. Band edges are nominal (see [`crate::telemetry::rta_band_edges_hz`]). No
+    /// empty. Band edges are nominal (see `rta_band_edges_hz`). No
     /// Return-strip id or param is invented here — return processing stays
     /// a later slice.
     fn poll_spectrum(&self) -> Vec<AudioSpectrum> {

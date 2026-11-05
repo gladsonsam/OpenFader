@@ -198,7 +198,9 @@ mixin _AppStoreChannel on _AppStoreContext {
           'source_b',
           'source_select',
           'source',
-          'usbreturn'
+          'usbreturn',
+          if (mixerProviderPolicy(engine.driver).preampStateLeaf != null)
+            mixerProviderPolicy(engine.driver).preampStateLeaf!,
         ])
           if (engine.supportedParams.contains(field) &&
               ps.optimisticValue(_maps, channel, field) != null)
@@ -585,6 +587,10 @@ mixin _AppStoreChannel on _AppStoreContext {
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,
               type: _eqPresentationType(b),
+              typeControlValue:
+                  mixerProviderPolicy(engine.driver).useNativeEqChoices
+                      ? paramNum('eq${b}_type')?.toInt()
+                      : _eqPresentationType(b),
               typeChoices: _eqTypeChoices(b),
               fRange: _editableRange('eq${b}_freq'),
               gRange: _eqFixedCut(b) ? null : _editableRange('eq${b}_gain'),
@@ -789,16 +795,21 @@ mixin _AppStoreChannel on _AppStoreContext {
       cmdParam('eq${band}_$param', value);
 
   @override
-  void setEqBandType(int band, EqFilterShape shape) {
+  void setEqBandType(int band, int value) {
     if (band < 1 || band > _eqBandCount) return;
     final leaf = 'eq${band}_type';
     if (!supports(leaf) ||
-        _eqPresentationType(band) == null ||
-        !_eqTypeChoices(band).any((choice) => choice.value == shape.value)) {
+        paramNum(leaf) == null ||
+        !_eqTypeChoices(band).any((choice) => choice.value == value)) {
       return;
     }
-    final native = mixerProviderPolicy(engine.driver).eqNativeType(shape);
-    cmdParam(leaf, native);
+    final policy = mixerProviderPolicy(engine.driver);
+    if (policy.useNativeEqChoices) {
+      cmdParam(leaf, value);
+      return;
+    }
+    final shape = EqFilterShape.fromValue(value);
+    if (shape != null) cmdParam(leaf, policy.eqNativeType(shape));
   }
 
   @override
@@ -815,8 +826,18 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   void setHpfSlope(int slope) {
-    // The public VM uses dB/oct, while the catalogue uses a native enum.
-    // Neither supported hardware driver advertises a verified slope control.
+    // The public VM uses dB/oct while the catalogue uses a provider-native
+    // enum. Resolve through the connected provider's advertised choices so
+    // an unverified slope never writes: X32 documents 0..2 = 12/18/24
+    // (Maillot v4.09-02 `/ch/[01..32]/preamp/hpslope`).
+    if (!supports('hpf_slope')) return;
+    final policy = mixerProviderPolicy(engine.driver);
+    for (final choice in parameterChoices(paramMetadata('hpf_slope'))) {
+      if (policy.hpfSlope(choice.value) == slope) {
+        cmdParam('hpf_slope', choice.value);
+        return;
+      }
+    }
   }
 
   @override

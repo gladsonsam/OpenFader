@@ -6,8 +6,7 @@ impl Engine {
     /// Attach a client: allocate its id, register it, and queue the
     /// initial snapshot (`you`, `state`, `shows`, `clients`, `locks`,
     /// slim `caps` (essentials lane, the full catalogue follows on the
-    /// client's first `hello`, see
-    /// [`caps_slim_message`](Engine::caps_slim_message)), `devices`,
+    /// client's first `hello`), `devices`,
     /// `link`, `info`?, `scenes`, `fx`, `routing`,
     /// master-section frames (`bus`/`subgroup`/`mute_group` + sparse
     /// assigns + `main` + sparse `solo`), then one `params` frame per

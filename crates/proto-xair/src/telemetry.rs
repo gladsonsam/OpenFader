@@ -295,7 +295,7 @@ impl XAirDriver {
     /// (or a non-blob payload) bails: no guessing at unknown meter layouts.
     ///
     /// Ingestion also runs live: the per-connection task in `connect`
-    /// routes every streamed DYN blob through [`Self::decode_dyn_message`]
+    /// routes every streamed DYN blob through `decode_dyn_message`
     /// into the same cache, so the `gate_gr` / `comp_gr` param reads serve
     /// live reduction once the desk streams (see `subscribe_meters_once`).
     pub async fn ingest_dyn_message(&self, msg: &OscMessage) -> anyhow::Result<()> {

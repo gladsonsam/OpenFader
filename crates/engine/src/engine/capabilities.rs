@@ -159,10 +159,13 @@ impl Engine {
     }
 
     /// Max concurrent poller queries for one tick (config override or
-    /// per-driver default; clamped to 1..=16).
+    /// per-driver default; clamped to 1..=16). Unknown providers use one query.
     pub fn max_inflight(&self, driver: &str) -> usize {
+        let Some(registered) = self.drivers.get(driver) else {
+            return 1;
+        };
         self.poll_inflight
-            .unwrap_or_else(|| self.drv(driver).poll_inflight())
+            .unwrap_or_else(|| registered.driver.poll_inflight())
             .clamp(1, 16)
     }
 
