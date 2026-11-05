@@ -1335,10 +1335,11 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "openfader-core",
  "openfader-proto-dl32s",
  "openfader-proto-wing",
+ "openfader-proto-x32",
  "openfader-proto-xair",
  "openfader-sim",
  "openfader-transport",
@@ -1381,6 +1382,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "openfader-proto-x32"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "openfader-core",
+ "openfader-transport",
+ "rosc",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "openfader-proto-xair"
 version = "0.1.0"
 dependencies = [
@@ -1400,7 +1413,7 @@ dependencies = [
  "async-trait",
  "axum",
  "futures",
- "getrandom 0.2.17",
+ "getrandom 0.4.3",
  "hyper-util",
  "libc",
  "openfader-audio",
@@ -1909,13 +1922,13 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.10.9"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.2.17",
- "digest 0.10.7",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]

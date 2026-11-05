@@ -614,7 +614,11 @@ impl RecorderService {
         let worker_failed = failed.clone();
         let worker_frames = frames.clone();
         let worker_peaks = peaks.clone();
+        let waveform_dir = self.root.join(id);
         let worker = thread::spawn(move || {
+            let mut waveform = crate::live_waveform::Writer::create(&waveform_dir, rate, channels)
+                .map_err(|e| eprintln!("live waveform unavailable: {e}"))
+                .ok();
             let mut batch = Vec::with_capacity(channels * 1024);
             let mut since_checkpoint = 0u64;
             loop {
@@ -639,6 +643,13 @@ impl RecorderService {
                         worker_failed.store(true, Ordering::Release);
                         return Err(e);
                     }
+                    if let Some(peaks) = &mut waveform {
+                        if let Err(e) = peaks.append(&batch) {
+                            eprintln!("live waveform stopped; recording continues: {e}");
+                            waveform = None;
+                            crate::live_waveform::discard(&waveform_dir);
+                        }
+                    }
                     worker_frames.fetch_add(n, Ordering::Relaxed);
                     since_checkpoint += n;
                     batch.clear();
@@ -661,7 +672,12 @@ impl RecorderService {
                 writer.checkpoint()?;
                 return Err(error("capture interrupted; recover take"));
             }
-            writer.finish()
+            let result = writer.finish();
+            drop(waveform);
+            if result.is_ok() {
+                crate::live_waveform::discard(&waveform_dir);
+            }
+            result
         });
         if let Err(e) = stream.play() {
             done.store(true, Ordering::Release);

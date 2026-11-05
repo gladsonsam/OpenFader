@@ -558,6 +558,52 @@ pub fn waveform_peaks(
     Ok(result)
 }
 
+mod live_waveform;
+
+pub struct WaveformPreview {
+    pub start_frame: u64,
+    pub end_frame: u64,
+    pub buckets: usize,
+    pub complete: bool,
+    pub channels: Vec<Vec<[f32; 2]>>,
+}
+
+/// Live previews use disk-worker PCM extrema; completed takes use their WAVs.
+/// The live end is the last published full bin, never fabricated future audio.
+pub fn waveform_preview(
+    root: &Path,
+    id: &str,
+    start: u64,
+    end: u64,
+    buckets: usize,
+) -> io::Result<WaveformPreview> {
+    if id.is_empty() || id == "." || id == ".." || id.contains(['/', '\\']) {
+        return Err(invalid("invalid take ID"));
+    }
+    let length = end
+        .checked_sub(start)
+        .ok_or_else(|| invalid("invalid range"))?;
+    if length == 0
+        || length > 1_000_000
+        || buckets == 0
+        || buckets > 2048
+        || buckets as u64 > length
+    {
+        return Err(invalid("invalid waveform range or resolution"));
+    }
+    let manifest = read_manifest(root.join(id))?;
+    if !manifest.complete {
+        return live_waveform::read(&root.join(id), &manifest, start, end, buckets);
+    }
+    Ok(WaveformPreview {
+        start_frame: start,
+        end_frame: end,
+        buckets,
+        complete: true,
+        channels: waveform_peaks(root, id, start, end, buckets)?,
+    })
+}
+
 /// Inspect WAV headers and a bounded initial interval without exposing samples.
 pub fn inspect_take(root: &Path, id: &str) -> io::Result<serde_json::Value> {
     use std::io::BufReader;

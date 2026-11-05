@@ -46,11 +46,12 @@ impl Engine {
         // health strikes so the new session starts `connected` (see
         // `measure_latency`).
         self.health_strikes.store(0, Ordering::Release);
+        let sample_rate = self.active_drv().reported_sample_rate().await.unwrap_or(0);
         let mut link = self.link.write().unwrap();
         link.state = "connected".to_string();
         link.name = name;
         link.ip = ip.to_string();
-        link.fs = DESK_SAMPLE_RATE;
+        link.fs = sample_rate;
         link.device_id = device.or_else(|| device_id.map(str::to_string));
     }
 
@@ -159,12 +160,19 @@ impl Engine {
     /// Desk identity block for `info` (connect + on request). Errors when
     /// the driver cannot answer (hardware drivers while unconnected).
     pub(super) async fn info_message(&self) -> anyhow::Result<Event> {
+        let generation = self.connection_gen.load(Ordering::Acquire);
         let driver = self.active_driver();
-        let info = self.drv(&driver).query_info().await?;
+        let drv = self.drv(&driver);
+        let info = drv.query_info().await?;
+        let sample_rate = drv.reported_sample_rate().await.unwrap_or(0);
+        anyhow::ensure!(
+            self.connection_gen.load(Ordering::Acquire) == generation,
+            "connection changed during identity read"
+        );
         Ok(Event::Info {
             model: info.model,
             firmware: info.firmware,
-            sample_rate: DESK_SAMPLE_RATE,
+            sample_rate,
             console_name: info.name,
             driver,
         })

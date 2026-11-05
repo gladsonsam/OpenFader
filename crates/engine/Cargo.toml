@@ -12,11 +12,12 @@ path = "src/lib.rs"
 openfader-core = { path = "../core" }
 openfader-sim = { path = "../sim" }
 openfader-proto-xair = { path = "../proto-xair" }
+openfader-proto-x32 = { path = "../proto-x32" }
 openfader-proto-wing = { path = "../proto-wing" }
 openfader-proto-dl32s = { path = "../proto-dl32s" }
 openfader-transport = { path = "../transport" }
 anyhow = "1"
-getrandom = "0.3"
+getrandom = "0.4"
 async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }

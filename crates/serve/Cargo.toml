@@ -25,8 +25,8 @@ hyper-util = { version = "0.1", features = ["tokio", "service", "server", "http1
 serde_json = "1"
 futures = "0.3"
 rcgen = "0.13"
-sha2 = "0.10"
-getrandom = "0.2"
+sha2 = "0.11"
+getrandom = "0.4"
 subtle = "2"
 
 [target.'cfg(unix)'.dependencies]

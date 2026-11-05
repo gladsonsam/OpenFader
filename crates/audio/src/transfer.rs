@@ -427,6 +427,8 @@ pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
     serde_json::to_writer_pretty(&mut file, &manifest).map_err(io::Error::other)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
+    // Windows cannot rename the staging directory while its manifest is open.
+    drop(file);
     commit_dir(&staged, destination)?;
     Ok(m)
 }

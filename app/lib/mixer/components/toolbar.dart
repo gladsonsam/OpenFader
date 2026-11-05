@@ -174,6 +174,20 @@ class MixerToolbar extends StatelessWidget {
               compact: compact,
               onHome: onHome,
               trailingGap: compact ? 6.0 : 0.0),
+          if (controller.demo) ...[
+            Tooltip(
+                message:
+                    'Offline demo mixer: channel names and meters are simulated. Open Connections to connect to a physical mixer.',
+                child: TextButton(
+                    onPressed: () => onNavigate(MixerDestination.connect),
+                    style: TextButton.styleFrom(
+                        foregroundColor: ConsolePalette.of(context).amber,
+                        minimumSize: const Size(0, AppDesign.touchTarget),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppDesign.spaceSm)),
+                    child: Text(compact ? 'Demo' : 'Demo · simulated'))),
+            const SizedBox(width: AppDesign.spaceSm),
+          ],
           Expanded(
               child: compact
                   ? readout
