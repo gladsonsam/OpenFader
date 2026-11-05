@@ -60,7 +60,7 @@ pub struct RemoteAccess {
 
 fn random_hex(bytes: usize) -> anyhow::Result<String> {
     let mut data = vec![0; bytes];
-    getrandom::getrandom(&mut data)
+    getrandom::fill(&mut data)
         .map_err(|e| anyhow::anyhow!("OS randomness unavailable: {e}"))?;
     Ok(hex(&data))
 }
