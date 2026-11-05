@@ -9,13 +9,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
-cpal = "=0.17.3"
+cpal = "=0.18.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-cpal = { version = "=0.17.3", features = ["asio"] }
+cpal = { version = "=0.18.2", features = ["asio"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 rtrb = "=0.3.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[lints]
+workspace = true

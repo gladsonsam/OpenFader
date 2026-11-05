@@ -74,6 +74,9 @@ impl Engine {
     /// [`ClientHandle::send_json`]: parse failures and domain errors arrive
     /// as unicast `error` events, never closing the connection.
     pub async fn handle_json(&self, writer: &str, text: &str) {
+        if !self.has_client(writer) {
+            return;
+        }
         match crate::protocol::parse_cmd(text) {
             Ok(cmd) => self.apply_cmd(writer, cmd).await,
             Err(message) => {
@@ -96,6 +99,9 @@ impl Engine {
     /// [`handle_json`](Engine::handle_json): run [`apply`](Engine::apply),
     /// unicast the direct reply (or error), then broadcast.
     pub(super) async fn apply_cmd(&self, writer: &str, cmd: Cmd) {
+        if !self.has_client(writer) {
+            return;
+        }
         let connecting = matches!(
             cmd,
             Cmd::Connect { .. }
@@ -140,6 +146,10 @@ impl Engine {
     /// Connection work holds its intent lane through final publication, so
     /// an old handshake cannot publish frames after a newer command's epoch.
     pub(super) async fn dispatch_cmd(&self, writer: &str, cmd: Cmd, connecting: bool) {
+        // Connection commands may have waited in the intent lane after detach.
+        if !self.has_client(writer) {
+            return;
+        }
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
         let mut out = Vec::new();

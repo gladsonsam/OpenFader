@@ -40,7 +40,7 @@ impl SimDriver {
             .stereo_pairs()
             .into_iter()
             .find(|pair| pair.contains(&strip.0));
-        let snapshot = |params: &Vec<HashMap<String, ParamValue>>| -> anyhow::Result<Value> {
+        let snapshot = |params: &[HashMap<String, ParamValue>]| -> anyhow::Result<Value> {
             let mut links = Vec::new();
             for ch in pair.into_iter().flatten().map(usize::from) {
                 anyhow::ensure!(

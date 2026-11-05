@@ -52,13 +52,15 @@ fn property(id: u32, selector: u32, scope: u32) -> io::Result<Vec<u64>> {
         element: 0,
     };
     let mut size = 0;
-    // CoreAudio owns the source data; the buffer below is aligned for all the
-    // primitive and pointer-containing property types used here.
+    // SAFETY: address and size are live, correctly aligned values; no qualifier
+    // is supplied and CoreAudio retains none of these pointers.
     let status = unsafe { AudioObjectGetPropertyDataSize(id, &address, 0, ptr::null(), &mut size) };
     if status != 0 || size > 1_048_576 {
         return Err(io::Error::other("CoreAudio property size unavailable"));
     }
     let mut data = vec![0u64; (size as usize).div_ceil(8)];
+    // SAFETY: data is aligned for all queried property types and has at least
+    // the byte capacity returned above; size communicates that capacity.
     let status = unsafe {
         AudioObjectGetPropertyData(
             id,
@@ -81,11 +83,16 @@ fn string(id: u32, selector: u32) -> io::Result<String> {
         return Err(io::Error::other("CoreAudio string missing"));
     }
     let mut buf = vec![0 as c_char; 4096];
+    // SAFETY: these selectors return an owned CFStringRef; value is non-null
+    // and buf is writable for the supplied capacity during the conversion.
     let ok = unsafe { CFStringGetCString(value, buf.as_mut_ptr(), buf.len() as isize, 0x08000100) };
+    // SAFETY: release the reference obtained from CoreAudio once, after use.
     unsafe { CFRelease(value) };
     if !ok {
         return Err(io::Error::other("CoreAudio string unavailable"));
     }
+    // SAFETY: a successful CFStringGetCString writes a NUL-terminated string
+    // within buf, which stays live while it is copied into an owned String.
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) }
         .to_string_lossy()
         .into_owned())
@@ -106,6 +113,9 @@ fn channels(id: u32, scope: u32) -> io::Result<u16> {
     if needed > data.len() * 8 {
         return Err(io::Error::other("invalid CoreAudio buffer list"));
     }
+    // SAFETY: on supported 64-bit macOS targets AudioBufferList places its
+    // aligned AudioBuffer array at byte 8; needed validates the complete slice.
+    // CoreAudio initializes the buffer list for the stream-configuration selector.
     let buffers = unsafe {
         std::slice::from_raw_parts(data.as_ptr().cast::<u8>().add(8).cast::<Buffer>(), count)
     };

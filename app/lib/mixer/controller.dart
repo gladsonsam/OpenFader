@@ -107,16 +107,9 @@ class MixerController extends ChangeNotifier {
           : 'Disconnected';
   String get connectionDisplayName {
     final model = store.engine.model.trim();
-    final make = switch (store.engine.driver) {
-      'xair' || 'wing' => 'Behringer',
-      'dl32s' => 'Mackie',
-      _ => '',
-    };
-    if (model.isEmpty) return make.isEmpty ? 'Mixer' : make;
-    if (make.isEmpty || model.toLowerCase().startsWith(make.toLowerCase())) {
-      return model;
-    }
-    return '$make $model';
+    // Use the identity reported by the provider. One protocol can serve
+    // consoles from multiple manufacturers; the UI cannot infer a make.
+    return model.isEmpty ? 'Mixer' : model;
   }
 
   String? get sendsOnFadersBusName =>

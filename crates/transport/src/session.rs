@@ -6,7 +6,7 @@ use crate::meters::parse_meter_message;
 use crate::osc;
 use openfader_core::MeterFrame;
 use rosc::{OscMessage, OscType};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -119,6 +119,7 @@ pub struct OscSession {
     received_tx: broadcast::Sender<(std::time::Instant, OscMessage)>,
     latest_meter: Arc<std::sync::Mutex<Option<(std::time::Instant, MeterFrame)>>>,
     xair_secondary_meters_enabled: Arc<std::sync::atomic::AtomicBool>,
+    received_address_forwarding: Arc<std::sync::OnceLock<HashSet<String>>>,
     latest_xair_dca: XairMeterSnapshot,
     latest_xair_outputs: XairMeterSnapshot,
     _recv: JoinHandle<()>,
@@ -148,6 +149,7 @@ impl OscSession {
         let (received_tx, _) = broadcast::channel(2048);
         let latest_meter = Arc::new(std::sync::Mutex::new(None));
         let xair_secondary_meters_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let received_address_forwarding = Arc::new(std::sync::OnceLock::<HashSet<String>>::new());
         let latest_xair_dca = Arc::new(std::sync::Mutex::new(None));
         let latest_xair_outputs = Arc::new(std::sync::Mutex::new(None));
 
@@ -159,6 +161,7 @@ impl OscSession {
             let received_tx = received_tx.clone();
             let latest_meter = latest_meter.clone();
             let xair_secondary_meters_enabled = xair_secondary_meters_enabled.clone();
+            let received_address_forwarding = received_address_forwarding.clone();
             let latest_xair_dca = latest_xair_dca.clone();
             let latest_xair_outputs = latest_xair_outputs.clone();
             tokio::spawn(async move {
@@ -180,6 +183,15 @@ impl OscSession {
                     };
                     let received = std::time::Instant::now();
                     for msg in osc::flatten(packet) {
+                        // Drivers can claim opaque receive addresses before
+                        // the shared level parser consumes their payloads.
+                        if received_address_forwarding
+                            .get()
+                            .is_some_and(|addresses| addresses.contains(&msg.addr))
+                        {
+                            let _ = received_tx.send((received, msg.clone()));
+                            continue;
+                        }
                         // X-Air's DCA bank is a separate four-value stream.
                         // Opt-in keeps other OSC providers' meter semantics intact.
                         if xair_secondary_meters_enabled.load(std::sync::atomic::Ordering::Acquire)
@@ -280,11 +292,24 @@ impl OscSession {
             received_tx,
             latest_meter,
             xair_secondary_meters_enabled,
+            received_address_forwarding,
             latest_xair_dca,
             latest_xair_outputs,
             _recv: recv,
             _keepalive: keep,
         }
+    }
+
+    /// Forward these exact addresses to the ordered receive plane, bypassing
+    /// the shared level parser. Drivers own address and payload semantics.
+    /// Configure once per session; other sessions retain the default parser.
+    pub fn forward_received_addresses(
+        &self,
+        addresses: impl IntoIterator<Item = String>,
+    ) -> anyhow::Result<()> {
+        self.received_address_forwarding
+            .set(addresses.into_iter().collect())
+            .map_err(|_| anyhow::anyhow!("receive forwarding already configured"))
     }
 
     pub async fn send(&self, addr: &str, args: Vec<OscType>) -> anyhow::Result<()> {

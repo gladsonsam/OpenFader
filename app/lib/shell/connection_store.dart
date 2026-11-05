@@ -250,7 +250,9 @@ class ShellConnectionStore extends ShellStoreAdapter
   String get deskInfo => [
         engine.model,
         engine.firmware.isEmpty ? '' : 'FW ${engine.firmware}',
-        engine.sampleRate == 0 ? '' : '${engine.sampleRate ~/ 1000} kHz',
+        engine.sampleRate == 0
+            ? ''
+            : '${engine.sampleRate % 1000 == 0 ? engine.sampleRate ~/ 1000 : (engine.sampleRate / 1000).toStringAsFixed(1)} kHz',
         '${engine.strips.length} strips'
       ].where((s) => s.isNotEmpty).join(' · ');
 

@@ -29,9 +29,10 @@ use super::*;
 /// client); control frames are always counted, never coalesced.
 pub struct ClientMailbox {
     pub(super) rx: mpsc::UnboundedReceiver<SharedEvent>,
-    /// Promotes coalesced slots back into `rx` as the client drains (an
-    /// extra sender on the same channel: unbounded sends never block).
-    pub(super) tx: mpsc::UnboundedSender<SharedEvent>,
+    /// Promotes coalesced slots while attached without keeping the channel alive.
+    tx: mpsc::WeakUnboundedSender<SharedEvent>,
+    /// Final coalesced frames drain after the detached channel backlog.
+    detached_pending: VecDeque<SharedEvent>,
     pub(super) rt: Arc<std::sync::Mutex<RtSlots>>,
     pub(super) queued: Arc<AtomicUsize>,
 }
@@ -43,32 +44,59 @@ impl ClientMailbox {
         rt: Arc<std::sync::Mutex<RtSlots>>,
         queued: Arc<AtomicUsize>,
     ) -> Self {
-        Self { rx, tx, rt, queued }
+        Self {
+            rx,
+            tx: tx.downgrade(),
+            detached_pending: VecDeque::new(),
+            rt,
+            queued,
+        }
     }
 
     /// Next frame, waiting if empty (returns `None` once the engine has
     /// detached and the queue has drained).
     pub async fn recv(&mut self) -> Option<SharedEvent> {
-        let frame = self.rx.recv().await?;
-        self.after_yield(&frame);
-        Some(frame)
+        if let Some(frame) = self.rx.recv().await {
+            self.after_yield(&frame);
+            Some(frame)
+        } else {
+            self.next_detached_frame()
+        }
     }
 
     /// Next frame without waiting.
     pub fn try_recv(&mut self) -> Result<SharedEvent, mpsc::error::TryRecvError> {
-        let frame = self.rx.try_recv()?;
-        self.after_yield(&frame);
-        Ok(frame)
+        match self.rx.try_recv() {
+            Ok(frame) => {
+                self.after_yield(&frame);
+                Ok(frame)
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => self
+                .next_detached_frame()
+                .ok_or(mpsc::error::TryRecvError::Disconnected),
+            Err(error) => Err(error),
+        }
     }
 
     /// Frames this client is still owed: queued channel backlog plus
     /// coalesced realtime slots.
     pub fn len(&self) -> usize {
-        self.queued.load(Ordering::Relaxed) + self.rt.lock().map(|rt| rt.occupancy()).unwrap_or(0)
+        self.queued.load(Ordering::Relaxed)
+            + self.rt.lock().map(|rt| rt.occupancy()).unwrap_or(0)
+            + self.detached_pending.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn next_detached_frame(&mut self) -> Option<SharedEvent> {
+        if self.detached_pending.is_empty() {
+            let mut rt = self.rt.lock().expect("client realtime slots poisoned");
+            rt.inflight = false;
+            self.detached_pending.extend(rt.take_all());
+        }
+        self.detached_pending.pop_front()
     }
 
     /// Account for one yielded frame; on realtime frames, clear in-flight
@@ -78,27 +106,28 @@ impl ClientMailbox {
         if rt_slot_key(frame).is_none() {
             return;
         }
-        let pending = match self.rt.lock() {
-            Ok(mut rt) => {
-                rt.inflight = false;
-                rt.take_all()
-            }
-            Err(_) => Vec::new(),
+        let Some(tx) = self.tx.upgrade() else {
+            // Detached: finish the channel backlog, then drain the retained slots.
+            return;
         };
+        // Keep promotion and inflight publication atomic with concurrent producers.
+        let mut rt = self.rt.lock().expect("client realtime slots poisoned");
+        rt.inflight = false;
+        let pending = rt.take_all();
         if pending.is_empty() {
             return;
         }
         let mut promoted = false;
         for frame in pending {
-            if self.tx.send(frame).is_ok() {
-                self.queued.fetch_add(1, Ordering::Relaxed);
+            self.queued.fetch_add(1, Ordering::Relaxed);
+            if tx.send(frame).is_ok() {
                 promoted = true;
+            } else {
+                self.queued.fetch_sub(1, Ordering::Relaxed);
             }
         }
         if promoted {
-            if let Ok(mut rt) = self.rt.lock() {
-                rt.inflight = true;
-            }
+            rt.inflight = true;
         }
     }
 }
@@ -108,7 +137,7 @@ pub struct ClientHandle {
     pub id: String,
     pub(super) engine: Arc<Engine>,
     /// Live event mailbox: an unbounded channel plus per-mailbox
-    /// latest-only realtime slots (see [`RtSlots`]). Slow clients never
+    /// latest-only realtime slots. Slow clients never
     /// apply backpressure, but they no longer accumulate meter-class frames
     /// without bound: while a realtime frame sits queued, newer `meters` /
     /// `taps` / `spectrum` / `audio_spectrum` / `gr` frames supersede the

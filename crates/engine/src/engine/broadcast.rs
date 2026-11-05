@@ -65,14 +65,18 @@ impl Engine {
                 rt.store(key, frame);
                 return;
             }
+            // Count before publishing: a receiver can consume immediately.
+            entry.queued.fetch_add(1, Ordering::Relaxed);
             if entry.mailbox.send(frame).is_ok() {
-                entry.queued.fetch_add(1, Ordering::Relaxed);
                 rt.inflight = true;
+            } else {
+                entry.queued.fetch_sub(1, Ordering::Relaxed);
             }
             return;
         }
-        if entry.mailbox.send(frame).is_ok() {
-            entry.queued.fetch_add(1, Ordering::Relaxed);
+        entry.queued.fetch_add(1, Ordering::Relaxed);
+        if entry.mailbox.send(frame).is_err() {
+            entry.queued.fetch_sub(1, Ordering::Relaxed);
         }
     }
 
@@ -104,11 +108,14 @@ impl Engine {
         if !existed {
             return;
         }
-        let drv = self.active_drv();
-        let owner = id.to_string();
-        tokio::spawn(async move {
-            let _ = drv.set_spectrum_target(&owner, None).await;
-        });
+        // Drop can run after the runtime is gone; asynchronous cleanup is best effort.
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let drv = self.active_drv();
+            let owner = id.to_string();
+            runtime.spawn(async move {
+                let _ = drv.set_spectrum_target(&owner, None).await;
+            });
+        }
         self.focus_queue
             .write()
             .unwrap()
@@ -155,7 +162,8 @@ impl Engine {
             .unwrap()
             .get(id)
             .map(|e| e.policy.clone())
-            .unwrap_or_else(Policy::admin)
+            // A detached writer must not regain privileges in a guarded callback.
+            .unwrap_or_else(|| Policy::musician([]))
     }
 
     /// Current `clients` event (`count` + `writers` with a mutation in the
