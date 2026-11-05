@@ -44,9 +44,10 @@ impl Engine {
 
     /// Per-tap level vectors for the active driver, in
     /// `caps.meter_taps` order filtered to known taps. Drivers with a tap
-    /// source serve all their taps; hardware serves `post` from the meter
-    /// blob cache and GR from the DYN cache (`in` unavailable, no
-    /// `/meters/0` subscribe); tap-less drivers emit no tap frames. Every
+    /// source (`poll_taps`) serve all their taps; otherwise only declared
+    /// level taps are served from the meter blob cache (`post`, else `in`)
+    /// and GR from the DYN cache. Drivers declaring no level tap (x32:
+    /// GR only) emit GR frames without a level tap frame. Every
     /// entry is best-effort: a tap with no source reads back silence,
     /// never an error.
     pub(super) async fn tap_frames(&self) -> Vec<(String, Vec<f32>)> {
@@ -75,16 +76,16 @@ impl Engine {
         let n = self.driver_strips(&self.active_driver());
         let mut out = Vec::new();
         if !post.is_empty() {
-            // A driver declaring only the pre-fader `in` tap (dl32s: the
-            // meter words are verified input dB) serves it through
-            // `poll_meters`; labelling it `post` would invent an unverified
-            // tap. Anything else keeps the historical `post` label.
-            let tap = if drv.meter_taps() == ["in"] {
-                "in"
-            } else {
-                "post"
-            };
-            out.push((tap.to_string(), post));
+            // `poll_meters` carries one level vector with no tap position
+            // of its own: it serves the declared post tap, else the
+            // declared pre tap — never an invented one. Drivers declaring
+            // neither (x32: GR only) get no level tap; dl32s declares
+            // only `in`.
+            if drv.meter_taps().contains(&"post") {
+                out.push(("post".to_string(), post));
+            } else if drv.meter_taps().contains(&"in") {
+                out.push(("in".to_string(), post));
+            }
         }
         if drv.dyn_gr() {
             let mut gr_gate = vec![0.0f32; n];

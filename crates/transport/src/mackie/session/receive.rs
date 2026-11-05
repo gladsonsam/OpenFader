@@ -53,7 +53,7 @@ pub(super) async fn send_frame(
     command: Command,
     body: Vec<u8>,
 ) -> anyhow::Result<()> {
-    let msg = Message::new(seq, msg_type, command, body).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let msg = Message::new(seq, msg_type, command, body)?;
     let mut guard = write.lock().await;
     guard.write_all(&msg.encode()).await?;
     guard.flush().await?;

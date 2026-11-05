@@ -180,7 +180,9 @@ impl RemoteAccess {
             .map(|(id, client)| (id.clone(), client.active.subscribe()))
     }
     pub fn clients(&self) -> Vec<String> {
-        self.state.lock().unwrap().clients.keys().cloned().collect()
+        let mut clients: Vec<_> = self.state.lock().unwrap().clients.keys().cloned().collect();
+        clients.sort();
+        clients
     }
     pub fn revoke(&self, client_id: &str) -> bool {
         let mut state = self.state.lock().unwrap();

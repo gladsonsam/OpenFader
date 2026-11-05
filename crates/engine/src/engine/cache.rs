@@ -163,7 +163,7 @@ impl Engine {
             let changed = if param == "_fx_type" {
                 let name = self
                     .active_drv()
-                    .fx_type_name(*value as u8)
+                    .fx_type_name_for_slot(slot, *value as u8)
                     .unwrap_or("—")
                     .to_string();
                 if row.fx_type != name {

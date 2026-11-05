@@ -70,27 +70,41 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   int get controlAccessEpoch => app.controlAccessEpoch;
 
   @override
-  DestinationControlVm? get tapControl {
+  List<DestinationControlVm> get routingControls {
     final id = _selected?['id'];
-    return engine.destinationControls
-        .where((control) =>
-            control.target == id &&
-            control.surface == 'routing' &&
-            control.id == 'tap')
-        .firstOrNull;
+    if (id == null) return const [];
+    return List.unmodifiable(engine.destinationControls.where(
+        (control) => control.target == id && control.surface == 'routing'));
   }
 
   @override
-  bool tapIsCurrent(DestinationControlVm control) =>
+  bool routingControlIsCurrent(DestinationControlVm control) =>
       canPatch &&
+      control.surface == 'routing' &&
       control.target == _selected?['id'] &&
       app.destinationControlIsCurrent(control);
 
   @override
-  Future<String?> setTapControl(DestinationControlVm control, double value) =>
-      tapIsCurrent(control)
+  Future<String?> setRoutingControl(
+          DestinationControlVm control, double value) =>
+      routingControlIsCurrent(control)
           ? app.setDestinationControl(control, value)
           : Future.value('Routing changed; reopen the control.');
+
+  @override
+  DestinationControlVm? get tapControl {
+    return routingControls.where((control) => control.id == 'tap').firstOrNull;
+  }
+
+  @override
+  bool tapIsCurrent(DestinationControlVm control) =>
+      control.id == 'tap' && routingControlIsCurrent(control);
+
+  @override
+  Future<String?> setTapControl(DestinationControlVm control, double value) =>
+      control.id == 'tap'
+          ? setRoutingControl(control, value)
+          : Future.value('Routing tap unavailable.');
 
   Map? _route(Map d) {
     final route = engine.routing

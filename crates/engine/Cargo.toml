@@ -12,6 +12,7 @@ path = "src/lib.rs"
 openfader-core = { path = "../core" }
 openfader-sim = { path = "../sim" }
 openfader-proto-xair = { path = "../proto-xair" }
+openfader-proto-x32 = { path = "../proto-x32" }
 openfader-proto-wing = { path = "../proto-wing" }
 openfader-proto-dl32s = { path = "../proto-dl32s" }
 openfader-transport = { path = "../transport" }
@@ -25,3 +26,6 @@ serde = { version = "1", features = ["derive"] }
 # f32-derived f64 numbers (e.g. the 115.8 m delay bound) on the Dart roundtrip.
 serde_json = { version = "1", features = ["float_roundtrip"] }
 base64 = "0.23"
+
+[lints]
+workspace = true

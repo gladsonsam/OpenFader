@@ -336,6 +336,10 @@ class EqBandVm {
   /// 4 = high shelf. Other canonical values retain their driver meaning;
   /// null means unreported or an unverified native shape. Never a DL32S enum.
   final int? type;
+
+  /// Value in typeChoices. This may be a provider-native enum without a
+  /// verified response model; editing it must not depend on curve support.
+  final int? typeControlValue;
   final List<double>? fRange;
   final List<double>? gRange;
   final List<double>? qRange;
@@ -359,6 +363,7 @@ class EqBandVm {
     this.cutModel = EqCutModel.unavailable,
     this.on = true,
     this.type,
+    this.typeControlValue,
     this.typeChoices = const [],
     this.fRange,
     this.gRange,
@@ -377,6 +382,7 @@ class EqBandVm {
         cutModel: cutModel,
         on: on ?? this.on,
         type: type,
+        typeControlValue: typeControlValue,
         typeChoices: typeChoices,
         fRange: fRange,
         gRange: gRange,

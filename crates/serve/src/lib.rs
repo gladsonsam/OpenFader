@@ -10,17 +10,17 @@
 //! the private engine protocol notes.
 //!
 //! Realtime duties of this adapter (MR1):
-//! - `TCP_NODELAY` on every accepted socket ([`configure_accepted`], wired
+//! - `TCP_NODELAY` on every accepted socket (`configure_accepted`, wired
 //!   into the accept loop below); no permessage-deflate anywhere, the
 //!   upgrade path (`axum` over a raw hyper connection) never negotiates
 //!   extensions, so frames go out uncompressed.
 //! - Latest-only meter delivery: per client, per stream (`meters`, `gr`,
-//!   `spectrum`) a bounded slot of 1 ([`Outbox`]). A slow socket's stale
+//!   `spectrum`) a bounded slot of 1 (`Outbox`). A slow socket's stale
 //!   frame is replaced, never queued; drops are counted and exposed via the
 //!   [`stats_json`] reply to `{"cmd":"stats"}`. Control frames (`state`,
 //!   `params`, `locks`, …) keep reliable ordered delivery.
 //! - Binary meter encoding for opted-in clients
-//!   (`{"cmd":"hello","binary_meters":true}` → [`Event::to_binary`]).
+//!   (`{"cmd":"hello","binary_meters":true}` → [`openfader_engine::Event::to_binary`]).
 
 pub mod capture_client;
 pub mod coordinator_backend;
@@ -266,7 +266,7 @@ impl Outbox {
 
     /// Next frame to put on the socket: control FIFO first, then one
     /// stream frame. Encodes binary when the client opted in and the event
-    /// supports it ([`Event::to_binary`](openfader_engine::Event::to_binary));
+    /// supports it ([`openfader_engine::Event::to_binary`]);
     /// control frames (and `spectrum`, which stays JSON) always encode as
     /// text, so JSON stays byte-identical for clients that did not opt in.
     /// R2 taps frames encode binary (type 3) only for taps-negotiated
@@ -377,7 +377,7 @@ pub fn stats_json(s: &StatsSnapshot) -> String {
 }
 
 /// True when `text` is a `stats` request (answered locally from the
-/// connection's [`Outbox`] counters, never forwarded to the engine).
+/// connection's `Outbox` counters, never forwarded to the engine).
 fn is_stats_request(text: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(text)
         .ok()
@@ -397,7 +397,7 @@ enum SenderJob {
 ///
 /// Three tasks, one concern each: `inbound` forwards commands (and answers
 /// `stats` requests via the sender), `pump` drains the engine mailbox into
-/// the latest-only [`Outbox`] without ever blocking on the socket, and
+/// the latest-only `Outbox` without ever blocking on the socket, and
 /// `sender` puts frames on the wire. Parse failures and command errors
 /// arrive as unicast `error` events; leaving the loop detaches the client.
 async fn handle_socket(
@@ -798,14 +798,14 @@ async fn recorder_waveform(
     let worker_id = id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        openfader_audio::waveform_peaks(&root, &worker_id, start, end, buckets)
+        openfader_audio::waveform_preview(&root, &worker_id, start, end, buckets)
     })
     .await;
     match result {
-        Ok(Ok(channels)) => (
+        Ok(Ok(preview)) => (
             StatusCode::OK,
             Json(
-                serde_json::json!({"take_id":id,"start_frame":start,"end_frame":end,"buckets":buckets,"channels":channels}),
+                serde_json::json!({"take_id":id,"start_frame":preview.start_frame,"end_frame":preview.end_frame,"buckets":preview.buckets,"complete":preview.complete,"channels":preview.channels}),
             ),
         ),
         Ok(Err(e)) => (
@@ -1154,11 +1154,11 @@ fn remote_router(app: AppState) -> Router {
         .with_state(app)
 }
 
-/// Accept loop with MR1 socket options (see [`configure_accepted`]).
+/// Accept loop with MR1 socket options (see `configure_accepted`).
 ///
 /// `axum::serve` applies the same `TCP_NODELAY` via `.tcp_nodelay(true)`,
 /// but its accept path is not unit-testable from here; this loop keeps the
-/// option-setting in [`configure_accepted`], covered by
+/// option-setting in `configure_accepted`, covered by
 /// `accepted_socket_has_nodelay` below. Otherwise identical behaviour:
 /// HTTP/1 + upgrades, one task per connection.
 async fn serve_loop(
@@ -1166,10 +1166,13 @@ async fn serve_loop(
     app: Router,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> std::io::Result<()> {
+    let (drain, draining) = tokio::sync::watch::channel(false);
+    let mut connections = tokio::task::JoinSet::new();
     loop {
         let accepted = tokio::select! {
             result = listener.accept() => result,
-            _ = shutdown.notified() => return Ok(()),
+            _ = shutdown.notified() => break,
+            Some(_) = connections.join_next(), if !connections.is_empty() => continue,
         };
         let (stream, _peer) = match accepted {
             Ok(v) => v,
@@ -1182,16 +1185,39 @@ async fn serve_loop(
             eprintln!("openfader-serve: TCP_NODELAY failed: {e:#}");
         }
         let svc = TowerToHyperService::new(app.clone());
-        tokio::spawn(async move {
+        let mut draining = draining.clone();
+        connections.spawn(async move {
             let io = TokioIo::new(stream);
-            if let Err(e) = Builder::new(TokioExecutor::new())
-                .serve_connection_with_upgrades(io, svc)
-                .await
-            {
+            let builder = Builder::new(TokioExecutor::new());
+            let connection = builder.serve_connection_with_upgrades(io, svc);
+            tokio::pin!(connection);
+            let result = tokio::select! {
+                result = &mut connection => result,
+                _ = draining.changed() => {
+                    connection.as_mut().graceful_shutdown();
+                    connection.await
+                }
+            };
+            if let Err(e) = result {
                 eprintln!("openfader-serve: connection error: {e:#}");
             }
         });
     }
+    drop(listener);
+    // The shutdown handler notifies before its HTTP response is flushed.
+    // Drain responses before main drops the runtime; otherwise Windows resets
+    // the socket and the GUI interprets the successful quit as a failure.
+    let _ = drain.send(true);
+    if tokio::time::timeout(Duration::from_secs(2), async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await
+    .is_err()
+    {
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
+    }
+    Ok(())
 }
 
 /// Serve the API + static UI until the listener errors or the future is
@@ -1294,7 +1320,9 @@ pub async fn run_with_full(
     let remote = Arc::new(RemoteHost {
         access: remote_access::RemoteAccess::new(&MemoryIdentity::default())?,
         listener: tokio::sync::Mutex::new(None),
-        microphone_authorized: std::sync::atomic::AtomicBool::new(false),
+        // Only macOS requires authorization relayed from the desktop UI. ASIO
+        // reports its own device access failures when the stream is opened.
+        microphone_authorized: std::sync::atomic::AtomicBool::new(!cfg!(target_os = "macos")),
     });
     let app = Router::new()
         .route(
@@ -1355,6 +1383,64 @@ pub async fn run_with_full(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn shutdown_flushes_response_before_server_returns() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let shutdown = Arc::new(Notify::new());
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let router = Router::new().route(
+            "/shutdown",
+            axum::routing::post({
+                let shutdown = shutdown.clone();
+                let entered = entered.clone();
+                let release = release.clone();
+                move || {
+                    let release = release.clone();
+                    shutdown.notify_one();
+                    entered.notify_one();
+                    async move {
+                        axum::body::Body::from_stream(futures::stream::once(async move {
+                            release.notified().await;
+                            Ok::<_, std::io::Error>(axum::body::Bytes::from_static(
+                                b"{\"ok\":true}",
+                            ))
+                        }))
+                    }
+                }
+            }),
+        );
+        let mut server = tokio::spawn(serve_loop(listener, router, shutdown));
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client.write_all(b"POST /shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut server)
+                .await
+                .is_err(),
+            "shutdown returned before the response body was available"
+        );
+        release.notify_one();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), client.read_to_end(&mut response))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8(response)
+            .unwrap()
+            .contains("{\"ok\":true}"));
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
 
     /// The accept path sets TCP_NODELAY on the accepted stream (MR1):
     /// real loopback pair, real `configure_accepted`, real `getsockopt`.

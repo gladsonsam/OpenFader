@@ -19,6 +19,19 @@ impl XAirDriver {
         resolve_peer(host, addrs::PORT)
     }
 
+    /// True for X-Air family `/info` models (XR12/XR16/XR18, MR18).
+    /// X32/M32 desks answer the same `/info` shape on UDP 10023 with
+    /// models like `X32`, `X32RACK`, `M32` (Maillot protocol v4.09-02);
+    /// the connect-time fallback sweep reaches that port, so the model
+    /// must be checked before any X-Air map is applied.
+    pub(super) fn is_xair_model(model: &str) -> bool {
+        let norm: String = model
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_lowercase();
+        matches!(norm.as_str(), "xr12" | "xr16" | "xr18" | "mr18") || norm.contains("xair")
+    }
     /// Map a raw `/info` reply to [`MixerInfo`]. Hardware order (baseline
     /// §1, XR18 FW 1.20 `/info` → `[V0.04, Studio, XR18, 1.20]`):
     /// index 1 = name, 2 = model, 3 = firmware (index 0 is the protocol
@@ -51,25 +64,32 @@ impl XAirDriver {
         // wifi; a desk that answers nothing fails fast with the address in
         // the message so the UI can offer a retry. Attempts use the
         // connect-burst budget (not the steady-state 2 s query timeout).
-        let mut verified = false;
+        let mut verified: Option<Vec<String>> = None;
         for _ in 0..2 {
-            if session
+            if let Ok(reply) = session
                 .query_timeout(
                     addrs::INFO,
                     openfader_transport::session::CONNECT_BURST_TIMEOUT,
                 )
                 .await
-                .is_ok()
             {
-                verified = true;
+                verified = Some(openfader_transport::osc::string_args(&reply));
                 break;
             }
         }
-        if !verified {
+        let Some(strings) = verified else {
             anyhow::bail!(
                 "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
             );
-        }
+        };
+        // Provider-owned identity: the 10023 fallback can reach an
+        // X32/M32 desk whose `/info` shape matches ours. Never apply
+        // X-Air maps to a foreign model.
+        let model = strings.get(2).cloned().unwrap_or_default();
+        anyhow::ensure!(
+            Self::is_xair_model(&model),
+            "not an X-Air mixer (model {model:?} at {peer}) — refusing to apply X-Air maps"
+        );
         for task in self.tasks.lock().unwrap().drain(..) {
             task.abort();
         }

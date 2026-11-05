@@ -37,9 +37,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
     if (widget.control.numeric) {
       final value = widget.control.value!;
       _number = TextEditingController(
-          text: value == value.roundToDouble()
-              ? value.toStringAsFixed(0)
-              : value.toString());
+          text: value.toStringAsFixed(widget.control.decimals));
     }
   }
 
