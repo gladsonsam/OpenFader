@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../core/native_library_store.dart';
 import '../ui/console.dart';
 import 'package:flutter/material.dart';
@@ -128,6 +130,224 @@ class NativeLibrarySection extends StatelessWidget {
     }, captured);
   }
 
+  /// Slot + name prompt for a provider-described bank. Bounds come from the
+  /// descriptor; nothing is assumed about any particular desk.
+  Future<Map<String, dynamic>?> _slotName(
+    BuildContext context, {
+    required String title,
+    required int min,
+    required int max,
+    String initialName = '',
+  }) async {
+    final formKey = GlobalKey<FormState>();
+    final slotCtl = TextEditingController();
+    final nameCtl = TextEditingController(text: initialName);
+    try {
+      final result = await showDialog<Map<String, dynamic>>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 400,
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: slotCtl,
+                    validator: (text) {
+                      final slot = int.tryParse(text?.trim() ?? '');
+                      return slot == null || slot < min || slot > max
+                          ? 'Choose a slot from $min to $max.'
+                          : null;
+                    },
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Slot ($min-$max)',
+                      hintText: '$min',
+                    ),
+                  ),
+                  TextFormField(
+                    controller: nameCtl,
+                    validator: (text) {
+                      final name = text ?? '';
+                      if (name.isEmpty ||
+                          name.trim() != name ||
+                          utf8.encode(name).length > 63 ||
+                          RegExp(r'[\x00-\x1f\x7f-\x9f]').hasMatch(name)) {
+                        return 'Use 1–63 UTF-8 bytes, without control characters or surrounding spaces.';
+                      }
+                      return null;
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Name (1-63 bytes, no surrounding space)',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() != true) return;
+                Navigator.pop(context, {
+                  'slot': int.parse(slotCtl.text.trim()),
+                  'name': nameCtl.text,
+                });
+              },
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      return result;
+    } finally {
+      slotCtl.dispose();
+      nameCtl.dispose();
+    }
+  }
+
+  /// Name-only prompt for provider-described rename rows.
+  Future<String?> _newName(BuildContext context, String initial) async {
+    final ctl = TextEditingController(text: initial);
+    try {
+      return await showDialog<String>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Rename desk slot'),
+          content: TextField(
+            controller: ctl,
+            decoration: const InputDecoration(
+              labelText: 'Name (1-63 bytes, no surrounding space)',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, ctl.text),
+              child: const Text('Rename'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      ctl.dispose();
+    }
+  }
+
+  /// Paste a previously exported local archive document for inspection or
+  /// import. Anything that is not a JSON object is rejected before dispatch;
+  /// schema/kind/node validation happens provider-side with no mixer write
+  /// for inspection.
+  Future<Map<String, dynamic>?> _archivePaste(
+      BuildContext context, String title) async {
+    final ctl = TextEditingController();
+    try {
+      final text = await showDialog<String>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 480,
+            child: TextField(
+              controller: ctl,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                labelText: 'Paste exported archive JSON',
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, ctl.text),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (text == null || text.trim().isEmpty) return null;
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      ctl.dispose();
+    }
+  }
+
+  /// Integer-argument prompt driven by a provider-described copy form.
+  Future<Map<String, int>?> _copyArgs(
+      BuildContext context, NativeCopyForm form) async {
+    final ctls = {
+      for (final field in form.fields) field.key: TextEditingController()
+    };
+    try {
+      return await showDialog<Map<String, int>>(
+        animationStyle: AnimationStyle.noAnimation,
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(form.title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final field in form.fields)
+                TextField(
+                  controller: ctls[field.key],
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: '${field.label} (${field.min}-${field.max})',
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            TextButton(
+              onPressed: () {
+                final args = <String, int>{};
+                for (final field in form.fields) {
+                  final value =
+                      int.tryParse((ctls[field.key]!.text).trim()) ?? -1;
+                  if (value < field.min || value > field.max) {
+                    Navigator.pop(context);
+                    return;
+                  }
+                  args[field.key] = value;
+                }
+                Navigator.pop(context, args);
+              },
+              child: Text(form.submitLabel),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      for (final ctl in ctls.values) {
+        ctl.dispose();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
@@ -172,8 +392,9 @@ class NativeLibrarySection extends StatelessWidget {
                       ? () => _confirm(
                             context,
                             {'op': 'refresh'},
-                            policy.refreshTitle,
-                            policy.refreshDescription,
+                            view?.refreshTitle ?? policy.refreshTitle,
+                            view?.refreshDescription ??
+                                policy.refreshDescription,
                           )
                       : null,
                   child: const Text('Transfer / refresh reports'),
@@ -246,116 +467,375 @@ class NativeLibrarySection extends StatelessWidget {
               '${view.capacity} user slots',
               style: TextStyle(color: palette.text7),
             ),
+            for (final header in view.headers)
+              Text(header, style: TextStyle(color: palette.text7)),
             Text(
               view.limitations,
               style: TextStyle(color: palette.text7, fontSize: 12),
             ),
-            if (view.guard['default_slot'] != null)
-              TextButton(
-                onPressed: enabled &&
-                        view.connected &&
-                        store.nativeWritable &&
-                        view.supports('recall')
-                    ? () => _confirm(
-                          context,
-                          {'op': 'recall', 'slot': view.guard['default_slot']},
-                          'Recall Default 0?',
-                          'This resets the mixer to the native default snapshot. '
-                              'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
+            if (view.banks.isEmpty) ...[
+              if (view.guard['default_slot'] != null)
+                TextButton(
+                  onPressed: enabled &&
+                          view.connected &&
+                          store.nativeWritable &&
+                          view.supports('recall')
+                      ? () => _confirm(
+                            context,
+                            {
+                              'op': 'recall',
+                              'slot': view.guard['default_slot']
+                            },
+                            'Recall Default 0?',
+                            'This resets the mixer to the native default snapshot. '
+                                'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
+                          )
+                      : null,
+                  child: const Text('0 · Default — recall only'),
+                ),
+              if (view.slots.isEmpty)
+                Text(
+                  view.complete
+                      ? 'No captured slots.'
+                      : 'No names reported. This does not prove the show is empty.',
+                  style: TextStyle(color: palette.text7),
+                ),
+              for (final slot in view.slots)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    Text(
+                      '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
+                      '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
+                      style: TextStyle(color: palette.text1),
+                    ),
+                    if (view.supports('set_scope'))
+                      if (view.scopeFields != null && view.hasScope(slot))
+                        TextButton(
+                          onPressed:
+                              enabled && view.connected && store.nativeWritable
+                                  ? () => _scope(context, view, slot)
+                                  : null,
+                          child: const Text('Recall scope'),
                         )
-                    : null,
-                child: const Text('0 · Default — recall only'),
-              ),
-            if (view.slots.isEmpty)
-              Text(
-                view.complete
-                    ? 'No captured slots.'
-                    : 'No names reported. This does not prove the show is empty.',
-                style: TextStyle(color: palette.text7),
-              ),
-            for (final slot in view.slots)
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                children: [
-                  Text(
-                    '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
-                    '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
-                    style: TextStyle(color: palette.text1),
-                  ),
-                  if (view.supports('set_scope'))
-                    if (view.scopeFields != null && view.hasScope(slot))
+                      else
+                        Text(
+                          'Recall scope unavailable',
+                          style: TextStyle(color: palette.text7),
+                        ),
+                    if (view.supports('recall'))
                       TextButton(
                         onPressed:
                             enabled && view.connected && store.nativeWritable
-                                ? () => _scope(context, view, slot)
+                                ? () => _confirm(
+                                      context,
+                                      {'op': 'recall', 'slot': slot['slot']},
+                                      'Recall provider snapshot?',
+                                      'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
+                                          'Safe behavior and audio state are not verified here. No automatic retry.',
+                                    )
                                 : null,
-                        child: const Text('Recall scope'),
-                      )
-                    else
-                      Text(
-                        'Recall scope unavailable',
-                        style: TextStyle(color: palette.text7),
+                        child: const Text('Recall'),
                       ),
-                  if (view.supports('recall'))
-                    TextButton(
-                      onPressed:
-                          enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'recall', 'slot': slot['slot']},
-                                    'Recall provider snapshot?',
-                                    'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
-                                        'Safe behavior and audio state are not verified here. No automatic retry.',
-                                  )
-                              : null,
-                      child: const Text('Recall'),
-                    ),
-                  if (view.supports('replace'))
-                    TextButton(
-                      onPressed:
-                          enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'replace', 'slot': slot['slot']},
-                                    view.authority == 'mixer'
-                                        ? 'Update native snapshot?'
-                                        : 'Replace simulated capture?',
-                                    policy.replaceDescription(
-                                        view.authority == 'mixer'),
-                                  )
-                              : null,
-                      child: Text(policy.replaceLabel),
-                    ),
-                  if (view.supports('rename'))
-                    TextButton(
-                      onPressed:
-                          enabled && view.connected && store.nativeWritable
-                              ? () => _name(context, slot)
-                              : null,
-                      child: const Text('Rename'),
-                    ),
-                  if (view.supports('delete'))
-                    TextButton(
-                      onPressed:
-                          enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'delete', 'slot': slot['slot']},
-                                    view.authority == 'mixer'
-                                        ? 'Delete native snapshot?'
-                                        : 'Delete simulated slot?',
-                                    policy.deleteDescription(
-                                        view.authority == 'mixer'),
-                                  )
-                              : null,
-                      child: const Text('Delete'),
-                    ),
-                ],
+                    if (view.supports('replace'))
+                      TextButton(
+                        onPressed:
+                            enabled && view.connected && store.nativeWritable
+                                ? () => _confirm(
+                                      context,
+                                      {'op': 'replace', 'slot': slot['slot']},
+                                      view.authority == 'mixer'
+                                          ? 'Update native snapshot?'
+                                          : 'Replace simulated capture?',
+                                      policy.replaceDescription(
+                                          view.authority == 'mixer'),
+                                    )
+                                : null,
+                        child: Text(policy.replaceLabel),
+                      ),
+                    if (view.supports('rename'))
+                      TextButton(
+                        onPressed:
+                            enabled && view.connected && store.nativeWritable
+                                ? () => _name(context, slot)
+                                : null,
+                        child: const Text('Rename'),
+                      ),
+                    if (view.supports('delete'))
+                      TextButton(
+                        onPressed:
+                            enabled && view.connected && store.nativeWritable
+                                ? () => _confirm(
+                                      context,
+                                      {'op': 'delete', 'slot': slot['slot']},
+                                      view.authority == 'mixer'
+                                          ? 'Delete native snapshot?'
+                                          : 'Delete simulated slot?',
+                                      policy.deleteDescription(
+                                          view.authority == 'mixer'),
+                                    )
+                                : null,
+                        child: const Text('Delete'),
+                      ),
+                  ],
+                ),
+            ],
+            if (view.banks.isNotEmpty)
+              _DescriptorBanks(
+                view: view,
+                enabled: enabled,
+                onAction: (action) =>
+                    store.nativeAction(action, store.nativeContext),
+                onConfirm: (action, title, message) =>
+                    _confirm(context, action, title, message),
+                onNewName: (initial) => _newName(context, initial),
+                onSlotName: (title, min, max) =>
+                    _slotName(context, title: title, min: min, max: max),
+                onCopy: (form) => _copyArgs(context, form),
+                onArchivePaste: (title) => _archivePaste(context, title),
               ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Provider-described desk banks: slot ranges, row labels, operation ids and
+/// argument contracts all come from the descriptor. Slot numbers are shown
+/// verbatim and never remapped to OpenFader local scenes; archive transfers
+/// are local JSON copies, never desk USB images.
+class _DescriptorBanks extends StatelessWidget {
+  final NativeLibraryVm view;
+  final bool enabled;
+  final Future<void> Function(Map<String, dynamic> action) onAction;
+  final Future<void> Function(
+      Map<String, dynamic> action, String title, String message) onConfirm;
+  final Future<String?> Function(String initial) onNewName;
+  final Future<Map<String, dynamic>?> Function(String title, int min, int max)
+      onSlotName;
+  final Future<Map<String, int>?> Function(NativeCopyForm form) onCopy;
+  final Future<Map<String, dynamic>?> Function(String title) onArchivePaste;
+
+  const _DescriptorBanks({
+    required this.view,
+    required this.enabled,
+    required this.onAction,
+    required this.onConfirm,
+    required this.onNewName,
+    required this.onSlotName,
+    required this.onCopy,
+    required this.onArchivePaste,
+  });
+
+  String _fill(String template,
+      {Object? slot, Object? name, String? bank, Object? number}) {
+    return template
+        .replaceAll('{slot}', '${slot ?? ''}')
+        .replaceAll('{name}', '${name ?? ''}')
+        .replaceAll('{bank}', bank ?? '')
+        .replaceAll('{number}', '${number ?? slot ?? ''}');
+  }
+
+  Future<void> _save(BuildContext context, NativeBankDescriptor bank,
+      NativeBankAction save) async {
+    final input = await onSlotName(
+        save.promptTitle ?? 'Save ${bank.title}', bank.slotMin, bank.slotMax);
+    if (input == null || !context.mounted) return;
+    await onAction({
+      'op': save.op,
+      if (bank.bank != null) 'bank': bank.bank,
+      'slot': input['slot'],
+      'name': input['name'],
+    });
+  }
+
+  Future<void> _rename(BuildContext context, NativeBankDescriptor bank,
+      NativeBankAction rename, Map<String, dynamic> row) async {
+    final key = bank.rowKey == 'position' ? 'position' : 'slot';
+    final name = await onNewName((row['name'] ?? '') as String);
+    if (name == null || !context.mounted) return;
+    await onAction({
+      'op': rename.op,
+      if (bank.bank != null) 'bank': bank.bank,
+      key: row[bank.rowKey],
+      'name': name,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    bool writable = enabled && view.connected && view.complete;
+    Future<void> act(Map<String, dynamic> a) => onAction(a);
+    TextStyle head =
+        TextStyle(color: palette.text1, fontWeight: FontWeight.w700);
+    TextStyle sub = TextStyle(color: palette.text7, fontSize: 12);
+    Widget bankTitle(String t, String? extra) => Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Text(extra == null ? t : '$t · $extra', style: head),
+        );
+    Wrap bankRow(String label, List<Widget> buttons) => Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          children: [
+            Text(label, style: TextStyle(color: palette.text1)),
+            ...buttons,
+          ],
+        );
+    TextButton btn(String label, VoidCallback? onPressed) => TextButton(
+          onPressed: onPressed,
+          child: Text(label),
+        );
+    VoidCallback? guard(VoidCallback fn) => writable ? fn : null;
+
+    String rowLabel(NativeBankDescriptor bank, Map<String, dynamic> row) {
+      final name = (row['name'] as String).isEmpty ? '(unnamed)' : row['name'];
+      final prefix = bank.bank == null ? '' : '${bank.bank} ';
+      if (bank.rowKey == 'position') {
+        return '$prefix${row['position']} · №${row['number']} · $name';
+      }
+      return '$prefix${row['slot']} · $name';
+    }
+
+    Object rowKeyOf(NativeBankDescriptor bank, Map<String, dynamic> row) =>
+        row[bank.rowKey] as Object;
+
+    List<Widget> rowButtons(
+        NativeBankDescriptor bank, Map<String, dynamic> row) {
+      final key = bank.rowKey == 'position' ? 'position' : 'slot';
+      final id = rowKeyOf(bank, row);
+      final name = row['name'];
+      final buttons = <Widget>[];
+      final recall = bank.recall;
+      if (recall != null && view.supports(recall.op)) {
+        buttons.add(btn(
+            'Recall',
+            guard(() => onConfirm(
+                  {
+                    'op': recall.op,
+                    if (bank.bank != null) 'bank': bank.bank,
+                    key: id,
+                  },
+                  recall.confirmTitle == null
+                      ? 'Recall?'
+                      : _fill(recall.confirmTitle!,
+                          slot: id, name: name, bank: bank.bank),
+                  recall.confirmMessage == null
+                      ? 'Apply this change on the mixer?'
+                      : _fill(recall.confirmMessage!,
+                          slot: id, name: name, bank: bank.bank),
+                ))));
+      }
+      final rename = bank.rename;
+      if (rename != null && view.supports(rename.op)) {
+        buttons.add(
+            btn('Rename', guard(() => _rename(context, bank, rename, row))));
+      }
+      final delete = bank.delete;
+      if (delete != null && view.supports(delete.op)) {
+        buttons.add(btn(
+            'Delete',
+            guard(() => onConfirm(
+                  {
+                    'op': delete.op,
+                    if (bank.bank != null) 'bank': bank.bank,
+                    key: id,
+                  },
+                  delete.confirmTitle == null
+                      ? 'Delete?'
+                      : _fill(delete.confirmTitle!,
+                          slot: id, name: name, bank: bank.bank),
+                  delete.confirmMessage == null
+                      ? 'Apply this change on the mixer?'
+                      : _fill(delete.confirmMessage!,
+                          slot: id, name: name, bank: bank.bank),
+                ))));
+      }
+      return buttons;
+    }
+
+    final archive = view.archive;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (view.banksNote != null) Text(view.banksNote!, style: sub),
+        for (final bank in view.banks) ...[
+          bankTitle(bank.title, '${bank.rows.length} observed'),
+          if (bank.save != null && view.supports(bank.save!.op))
+            btn('Save', guard(() => _save(context, bank, bank.save!))),
+          if (bank.add != null && view.supports(bank.add!.op))
+            btn('Add', guard(() async {
+              final add = bank.add!;
+              final input = await onSlotName(
+                  add.promptTitle ?? 'Add ${bank.title}',
+                  bank.slotMin,
+                  bank.slotMax);
+              if (input == null || !context.mounted) return;
+              await act({
+                'op': add.op,
+                if (bank.bank != null) 'bank': bank.bank,
+                add.numberArg ?? 'number': input['slot'],
+                'name': input['name'],
+              });
+            })),
+          for (final row in bank.rows) ...[
+            if (rowButtons(bank, row).isEmpty)
+              Text(rowLabel(bank, row), style: sub)
+            else
+              bankRow(rowLabel(bank, row), rowButtons(bank, row)),
+          ],
+        ],
+        for (final form in view.copyForms)
+          if (view.supports(form.op))
+            btn(form.title, guard(() async {
+              final args = await onCopy(form);
+              if (args == null || !context.mounted) return;
+              await act({'op': form.op, ...args});
+            })),
+        if (archive != null) ...[
+          bankTitle('Local archives (JSON)', null),
+          Wrap(spacing: 8, children: [
+            for (final kind in archive.kinds)
+              if (kind.slotMin != null && kind.slotMax != null)
+                btn('Export ${kind.label}', guard(() async {
+                  final input = await onSlotName(
+                      'Export ${kind.label}', kind.slotMin!, kind.slotMax!);
+                  if (input == null || !context.mounted) return;
+                  await act({
+                    'op': archive.exportOp,
+                    'kind': kind.id,
+                    'slot': input['slot'],
+                  });
+                }))
+              else
+                btn(
+                    'Export ${kind.label}',
+                    guard(
+                        () => act({'op': archive.exportOp, 'kind': kind.id}))),
+            if (view.supports(archive.inspectOp))
+              btn('Inspect archive JSON', guard(() async {
+                final doc = await onArchivePaste(
+                    'Inspect local archive (no mixer write)');
+                if (doc == null || !context.mounted) return;
+                await act({'op': archive.inspectOp, 'archive': doc});
+              })),
+            if (view.supports(archive.importOp))
+              btn('Import archive JSON', guard(() async {
+                final doc = await onArchivePaste(
+                    'Import local archive (writes mixer nodes)');
+                if (doc == null || !context.mounted) return;
+                await onConfirm({'op': archive.importOp, 'archive': doc},
+                    archive.importConfirmTitle, archive.importConfirmMessage);
+              })),
+          ]),
+          Text(
+            'Local archives are OpenFader JSON copies, not desk USB files.',
+            style: sub,
+          ),
+        ],
+      ],
     );
   }
 }

@@ -97,6 +97,14 @@ class _MixerPageState extends State<MixerPage> {
                     });
                   }
                   final channels = controller.channels;
+                  // Shared footer geometry keeps faders and Solo rows aligned
+                  // when only some channels have icons. An icon-free bank can
+                  // collapse the artwork band as a whole.
+                  final reserveArtwork = channels.any((ch) =>
+                      (controller.demo && !ch.hasIconChoices) ||
+                      (ch.iconChoice != null &&
+                          ch.iconChoice!.symbol.isNotEmpty &&
+                          ch.iconChoice!.symbol != 'none'));
                   final railWidth = sideRail
                       ? MixerGeometry.railWidth(constraints.maxWidth)
                       : 0.0;
@@ -107,6 +115,7 @@ class _MixerPageState extends State<MixerPage> {
                       key: ValueKey(ch.key),
                       channel: ch,
                       controller: controller,
+                      reserveArtwork: reserveArtwork,
                       identityChannel: ch.master ? controller.masterIdentityChannel : null,
                       compact: mobile,
                       bottomInset:

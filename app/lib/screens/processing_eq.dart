@@ -108,37 +108,40 @@ class _EqTabState extends State<_EqTab> {
   }
 
   Widget _shapeChoices(EqBandVm band, {bool compact = false}) {
+    final value = band.typeControlValue ?? band.type;
     final enabled =
-        band.type != null && widget.store.supports('eq${band.band}_type');
+        value != null && widget.store.supports('eq${band.band}_type');
     if (band.typeChoices.length > 2) {
-      return DropdownButton<EqFilterShape>(
+      return DropdownButton<int>(
         isExpanded: true,
-        value: EqFilterShape.fromValue(band.type),
+        value: band.typeChoices.any((choice) => choice.value == value)
+            ? value
+            : null,
         hint: const Text('Shape'),
         items: [
           for (final choice in band.typeChoices)
-            if (EqFilterShape.fromValue(choice.value.toInt()) case final shape?)
-              DropdownMenuItem(value: shape, child: Text(choice.label)),
+            DropdownMenuItem(
+                value: choice.value.toInt(), child: Text(choice.label)),
         ],
         onChanged: enabled
-            ? (shape) {
-                if (shape != null) widget.store.setEqBandType(band.band, shape);
+            ? (value) {
+                if (value != null) widget.store.setEqBandType(band.band, value);
               }
             : null,
       );
     }
     return Wrap(spacing: 2, runSpacing: 2, children: [
       for (final choice in band.typeChoices)
-        if (EqFilterShape.fromValue(choice.value.toInt()) case final shape?)
-          _ProcessingButton(
-            label: choice.label,
-            semanticsLabel: 'Band ${band.band} ${choice.label}',
-            fontSize: compact ? 12 : 14,
-            active: band.type == shape.value,
-            onTap: enabled
-                ? () => widget.store.setEqBandType(band.band, shape)
-                : null,
-          ),
+        _ProcessingButton(
+          label: choice.label,
+          semanticsLabel: 'Band ${band.band} ${choice.label}',
+          fontSize: compact ? 12 : 14,
+          active: value == choice.value,
+          onTap: enabled
+              ? () =>
+                  widget.store.setEqBandType(band.band, choice.value.toInt())
+              : null,
+        ),
     ]);
   }
 

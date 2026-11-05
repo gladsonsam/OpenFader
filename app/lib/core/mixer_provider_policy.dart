@@ -87,6 +87,41 @@ class XairProviderPolicy extends MixerProviderPolicy {
   EqShelfModel get shelfModel => EqShelfModel.xair96k;
 }
 
+class X32ProviderPolicy extends MixerProviderPolicy {
+  const X32ProviderPolicy();
+  @override
+  bool get masterChannelProcessing => true;
+  @override
+  String get eqBandCountLeaf => 'x32:eq_bands';
+  @override
+  bool get requiresRoutedPreamp => true;
+  @override
+  String get preampStateLeaf => 'x32:preamp_state';
+  @override
+  String parameterLeaf(String leaf) => switch (leaf) {
+        'provider:automix_gain' => 'x32:automix_gain',
+        'provider:insert_position' => 'x32:insert_pos',
+        _ => leaf,
+      };
+  // Documented native EQ enum (X32.c Xeqty1): 0 LCut, 1 LShv, 2 PEQ, 3 VEQ,
+  // 4 HShv, 5 HCut — identical to the canonical presentation values.
+  // Out-of-range natives stay unrepresented; no X-Air DSP response model is
+  // assumed, so cuts/VEQ render as unavailable until a verified model lands.
+  @override
+  int? eqPresentationType(int? native) =>
+      native != null && native >= 0 && native <= 5 ? native : null;
+  @override
+  int eqNativeType(EqFilterShape shape) => shape.value;
+  // Documented HPF slopes (X32.c Xhslop): native 0..2 = 12/18/24 dB/oct.
+  @override
+  int hpfSlope(double? native) => switch (native?.toInt()) {
+        0 => 12,
+        1 => 18,
+        2 => 24,
+        _ => 12,
+      };
+}
+
 class Dl32sProviderPolicy extends MixerProviderPolicy {
   const Dl32sProviderPolicy();
   @override
@@ -298,6 +333,7 @@ class UnsupportedProviderPolicy extends MixerProviderPolicy {
 
 MixerProviderPolicy mixerProviderPolicy(String driver) => switch (driver) {
       'xair' => const XairProviderPolicy(),
+      'x32' => const X32ProviderPolicy(),
       'dl32s' => const Dl32sProviderPolicy(),
       'wing' => const WingProviderPolicy(),
       'sim' => const SimProviderPolicy(),

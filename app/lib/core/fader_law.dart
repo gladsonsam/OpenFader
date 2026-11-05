@@ -128,10 +128,23 @@ const FaderLaw designLaw = FaderLaw(
   topDb: topDb,
 );
 
-/// X-Air / X32 law (the default engine law).
+/// X-Air law (the default engine law; X32 registers its own entry below
+/// sharing this documented curve).
 const FaderLaw xairLaw = FaderLaw(
   id: 'xair',
   label: 'X-Air / X32',
+  toDb: _xairToDb,
+  fromDb: _xairFromDb,
+  floorDb: floorDb,
+  topDb: topDb,
+);
+
+/// Behringer X32 law: the documented X-Air/X32 "level" curve
+/// (Maillot v4.09-02 appendix: joints 0.0625/-60 .. 1/+10), registered
+/// explicitly so X32 never silently inherits another provider's law.
+const FaderLaw x32Law = FaderLaw(
+  id: 'x32',
+  label: 'Behringer X32',
   toDb: _xairToDb,
   fromDb: _xairFromDb,
   floorDb: floorDb,
@@ -169,6 +182,7 @@ const Map<String, FaderLaw> _laws = {
   'wing': wingLaw,
   'design': designLaw,
   'xair': xairLaw,
+  'x32': x32Law,
   'dl32s': dl32sLaw,
 };
 
