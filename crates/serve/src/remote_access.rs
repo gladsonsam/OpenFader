@@ -81,7 +81,7 @@ impl RemoteAccess {
             let generated = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
             Ok(TlsIdentity {
                 certificate_der: generated.cert.der().to_vec(),
-                private_key_der: generated.key_pair.serialize_der(),
+                private_key_der: generated.signing_key.serialize_der(),
             })
         })?;
         Ok(Self {
