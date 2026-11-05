@@ -6,18 +6,19 @@ impl Engine {
     /// Supported catalogue ids of the named driver (its
     /// [`DynDriver::capabilities`]).
     pub(super) fn driver_capabilities(&self, driver: &str) -> Vec<&'static str> {
-        self.drv(driver).capabilities().to_vec()
+        self.drivers
+            .get(driver)
+            .map_or_else(Vec::new, |registered| {
+                registered.driver.capabilities().to_vec()
+            })
     }
 
     /// Merged param registry of the named driver (canonical catalogue +
-    /// that provider's contributed rows). Unknown drivers fall back to
-    /// `sim`, mirroring [`Engine::drv`], `sim` is always registered.
+    /// that provider's contributed rows). Names must be registered before dispatch.
     pub(super) fn registry(&self, driver: &str) -> &ParamRegistry {
-        self.registries.get(driver).unwrap_or_else(|| {
-            self.registries
-                .get("sim")
-                .expect("sim is always registered")
-        })
+        self.registries
+            .get(driver)
+            .expect("registered drivers have a parameter registry")
     }
 
     /// Channel-strip count of the named driver (legacy `channel_count`;

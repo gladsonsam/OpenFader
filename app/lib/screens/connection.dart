@@ -9,6 +9,7 @@ import '../ui/console.dart';
 enum MixerType {
   automatic('Automatic', 'auto'),
   xair('Behringer X-Air', 'xair'),
+  x32('Behringer X32', 'x32'),
   dl32s('Mackie DL32S', 'dl32s'),
   wing('Behringer WING', 'wing');
 

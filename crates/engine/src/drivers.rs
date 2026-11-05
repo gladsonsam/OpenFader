@@ -8,7 +8,7 @@
 //! [`async_trait`](async_trait::async_trait) erasure and adds the
 //! engine-only extensions that used to be concrete-type branches in
 //! `engine.rs` (FX design rack, patch plane, meter taps, GR, hardware
-//! flags). The [`impl_dyn_driver`] macro forwards the whole
+//! flags). The `impl_dyn_driver` macro forwards the whole
 //! [`MixerDriver`] surface; each provider then overrides only the
 //! extensions it supports (defaults are honestly unsupported).
 //!
@@ -287,7 +287,7 @@ pub trait DynDriver: Send + Sync {
         None
     }
     /// Driver-specific canonical range overrides, merged into this
-    /// provider's [`ParamRegistry`](openfader_core::params::ParamRegistry)
+    /// provider's [`ParamRegistry`]
     /// at boot (see [`RegisteredDriver::param_registry`]). Defaults to
     /// empty (canonical ranges); mirrors
     /// [`MixerDriver::param_range_overrides`].
@@ -356,7 +356,7 @@ pub trait DynDriver: Send + Sync {
     fn poll_meters(&self) -> MeterFrame;
     fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum>;
     /// Read-only native desk snapshot view (see
-    /// [`MixerDriver::native_snapshots`](openfader_core::MixerDriver::native_snapshots)):
+    /// [`MixerDriver::native_snapshots`]):
     /// `None` = the driver does not model native slots (honest
     /// `unsupported`, never faked). Sync lock-local read, no I/O.
     fn native_library(&self) -> Option<serde_json::Value> {
@@ -605,6 +605,12 @@ pub trait DynDriver: Send + Sync {
     async fn recall(&self, snapshot: &MixerSnapshot) -> anyhow::Result<()>;
     async fn recall_scene(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()>;
     async fn query_info(&self) -> anyhow::Result<MixerInfo>;
+    /// Observed console clock rate. None means unknown; shared code must
+    /// not infer hardware clocking from the engine's DSP/simulator rate.
+    async fn reported_sample_rate(&self) -> Option<u32> {
+        None
+    }
+
     async fn subscribe_meters(
         &self,
     ) -> anyhow::Result<tokio::sync::broadcast::Receiver<MeterFrame>>;
@@ -1153,6 +1159,29 @@ pub trait DynDriver: Send + Sync {
         let _ = fx_type;
         None
     }
+    /// Slot-aware reverse lookup: effect name back to its desk type index
+    /// for one slot. Rack type tables can differ by slot domain, so the
+    /// bare [`fx_type_index_of`](DynDriver::fx_type_index_of) answer is
+    /// ambiguous there. Defaults to the slot-independent table;
+    /// slot-domained racks override.
+    fn fx_type_index_for_slot(&self, slot: u8, fx_type: &str) -> Option<u8> {
+        let _ = slot;
+        self.fx_type_index_of(fx_type)
+    }
+    /// Slot-aware desk-native FX type name. Rack type tables can differ by
+    /// slot domain (X32 slots 1..4 vs 5..8); the bare
+    /// [`fx_type_name`](DynDriver::fx_type_name) index is ambiguous there.
+    /// Defaults to the slot-independent table; slot-domained racks override.
+    fn fx_type_name_for_slot(&self, slot: u8, type_index: u8) -> Option<&'static str> {
+        let _ = slot;
+        self.fx_type_name(type_index)
+    }
+    /// Slot-aware param count for a desk-native effect index. Defaults to
+    /// the slot-independent table; slot-domained racks override.
+    fn fx_type_param_count_for_slot(&self, slot: u8, type_index: u8) -> Option<usize> {
+        let _ = slot;
+        self.fx_type_param_count(type_index)
+    }
     /// Desk-native FX type catalogue behind `caps.fx` (Numbered racks).
     fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
         Vec::new()
@@ -1486,6 +1515,7 @@ fn soundcheck_update(
 }
 
 impl_dyn_driver!(openfader_sim::SimDriver {
+    async fn reported_sample_rate(&self) -> Option<u32> { Some(crate::engine::DESK_SAMPLE_RATE) }
     fn selector_change(&self, expected: crate::engine::selector_session::InputRouteSelectors, desired: crate::engine::selector_session::InputRouteSelectors) -> anyhow::Result<(&'static str, Option<(&'static str, u8)>)> {
         crate::engine::providers::xair_routes::selector_change(expected, desired)
     }
@@ -2475,6 +2505,7 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 });
 
 mod wing;
+mod x32;
 
 /// One registered provider: its key, default address, and erased driver.
 /// New providers append one row in [`registered_drivers`].
@@ -2538,6 +2569,11 @@ pub fn registered_drivers(preset: Option<openfader_sim::SimPreset>) -> Vec<Regis
             name: "wing",
             default_addr: "192.168.1.1",
             driver: Arc::new(openfader_proto_wing::WingDriver::new()),
+        },
+        RegisteredDriver {
+            name: "x32",
+            default_addr: "192.168.1.1",
+            driver: Arc::new(openfader_proto_x32::X32Driver::new()),
         },
     ]
 }

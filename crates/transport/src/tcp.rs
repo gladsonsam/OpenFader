@@ -15,7 +15,9 @@ pub fn split_frames(buf: &[u8]) -> (Vec<Vec<u8>>, Vec<u8>) {
     let mut i = 0;
     while i + 4 <= buf.len() {
         let len = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]) as usize;
-        if i + 4 + len > buf.len() {
+        // Compare against the remaining payload before adding an untrusted
+        // length, which may otherwise overflow usize on 32-bit targets.
+        if len > buf.len() - i - 4 {
             break;
         }
         frames.push(buf[i + 4..i + 4 + len].to_vec());

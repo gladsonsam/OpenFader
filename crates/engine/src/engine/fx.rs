@@ -104,7 +104,7 @@ impl Engine {
                     Instant::now(),
                     Some(started),
                 );
-                let param_count = drv.fx_type_param_count(effect).unwrap_or(0);
+                let param_count = drv.fx_type_param_count_for_slot(slot, effect).unwrap_or(0);
                 for index in 0..param_count {
                     if self
                         .fx_cache
@@ -133,7 +133,9 @@ impl Engine {
                         .unwrap()
                         .iter()
                         .find(|r| r.slot == slot)
-                        .is_some_and(|r| drv.fx_type_index_of(&r.fx_type) == Some(effect))
+                        .is_some_and(|r| {
+                            drv.fx_type_index_for_slot(slot, &r.fx_type) == Some(effect)
+                        })
                     {
                         break;
                     }
@@ -286,12 +288,14 @@ impl Engine {
         let drv = self.active_drv();
         let index = drv.fx_type_index(slot).await;
         let name = index
-            .and_then(|i| drv.fx_type_name(i))
+            .and_then(|i| drv.fx_type_name_for_slot(slot, i))
             .unwrap_or("—")
             .to_string();
         let mut params = BTreeMap::new();
         if let Some(type_idx) = index {
-            let used = drv.fx_type_param_count(type_idx).unwrap_or(0);
+            let used = drv
+                .fx_type_param_count_for_slot(slot, type_idx)
+                .unwrap_or(0);
             for i in 0..used as u8 {
                 if let Ok(v) = drv.get_fx_param_with_type(slot, i, Some(type_idx)).await {
                     params.insert(format!("par{:02}", i + 1), v);
@@ -376,7 +380,7 @@ impl Engine {
             Instant::now(),
             Some(started),
         );
-        let used = drv.fx_type_param_count(effect).unwrap_or(0);
+        let used = drv.fx_type_param_count_for_slot(slot, effect).unwrap_or(0);
         if used == 0 {
             return;
         }
@@ -400,7 +404,7 @@ impl Engine {
                     .unwrap()
                     .iter()
                     .find(|r| r.slot == slot)
-                    .is_some_and(|r| drv.fx_type_index_of(&r.fx_type) == Some(effect));
+                    .is_some_and(|r| drv.fx_type_index_for_slot(slot, &r.fx_type) == Some(effect));
                 if same_type {
                     self.apply_received(
                         slot as u16,

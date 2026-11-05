@@ -44,3 +44,11 @@ pub struct LanWriteError {
     /// A dispatch was attempted; some preferences may have been staged.
     pub possibly_staged: bool,
 }
+
+impl std::fmt::Display for LanWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for LanWriteError {}

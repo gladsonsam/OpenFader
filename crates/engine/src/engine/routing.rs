@@ -174,10 +174,16 @@ impl Engine {
             return true;
         }
         self.fx_cache.read().unwrap().iter().all(|row| {
-            match self.active_drv().fx_type_index_of(&row.fx_type) {
+            match self
+                .active_drv()
+                .fx_type_index_for_slot(row.slot, &row.fx_type)
+            {
                 None => true,
                 Some(index) => {
-                    let used = self.active_drv().fx_type_param_count(index).unwrap_or(0);
+                    let used = self
+                        .active_drv()
+                        .fx_type_param_count_for_slot(row.slot, index)
+                        .unwrap_or(0);
                     row.params.len() >= used
                 }
             }

@@ -11,6 +11,10 @@ use tokio::sync::oneshot;
 #[path = "soundcheck_backend.rs"]
 pub mod soundcheck_backend;
 
+#[cfg(any(windows, test))]
+#[path = "device_scan.rs"]
+mod device_scan;
+
 #[derive(Clone)]
 pub struct Recorder {
     tx: tokio::sync::mpsc::UnboundedSender<(Value, oneshot::Sender<Value>)>,
@@ -349,7 +353,8 @@ async fn worker_with_config(
                                 Ok(Ok(found)) => {
                                     devices = found;
                                     scan = None;
-                                    scan_error = None;
+                                    scan_error = (cfg!(windows) && devices.is_empty()).then(||
+                                        "No usable ASIO interfaces found. Install the interface manufacturer's 64-bit ASIO driver, connect its USB audio cable, and close other audio applications before refreshing.".into());
                                 }
                                 Ok(Err(e)) => {
                                     scan = None;
@@ -362,13 +367,40 @@ async fn worker_with_config(
                                 Err(mpsc::TryRecvError::Empty) => {}
                             }
                         }
-                        if scan.is_none() && (!scan_started || request["op"] == "refresh_devices") {
+                        let transport_active = pending.is_some()
+                            || client.is_some()
+                            || backend_task.is_some()
+                            || cached_backend
+                                .as_ref()
+                                .is_some_and(|(state, _)| state.input_mode != "live");
+                        if transport_active && request["op"] == "refresh_devices" {
+                            scan_error = Some("Stop capture or playback and return to live before refreshing audio interfaces".into());
+                        }
+                        if scan.is_none()
+                            && !transport_active
+                            && (!scan_started || request["op"] == "refresh_devices")
+                        {
                             let (tx, rx) = mpsc::channel();
+                            #[cfg(not(windows))]
                             let scan_root = root.clone();
+                            #[cfg(windows)]
+                            let scan_helper = helper.clone();
                             std::thread::spawn(move || {
+                                #[cfg(not(windows))]
                                 let result = openfader_audio::RecorderService::new(scan_root)
                                     .and_then(|service| service.devices())
                                     .map_err(|e| e.to_string());
+                                #[cfg(windows)]
+                                let result = scan_helper
+                                    .ok_or_else(|| {
+                                        "audio device scan helper unavailable".to_string()
+                                    })
+                                    .and_then(|helper| {
+                                        device_scan::in_helper(
+                                            &helper,
+                                            Instant::now() + Duration::from_secs(10),
+                                        )
+                                    });
                                 let _ = tx.send(result);
                             });
                             scan_started = true;

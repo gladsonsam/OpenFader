@@ -3,7 +3,7 @@
 //! Serves the static `ui/` directory over HTTP plus a WebSocket mixer API
 //! on one port, backed by any `openfader-core` driver (sim default).
 //!
-//! Browsers cannot speak UDP/OSC, so hardware mixers (X-Air, DL32S) need
+//! Browsers cannot speak UDP/OSC, so hardware mixers need
 //! this bridge on the LAN: the browser talks WebSocket to `openfader-serve`,
 //! which translates to mixer UDP on the server side.
 
@@ -14,7 +14,7 @@ mod desktop;
 use openfader_serve::ServeOptions;
 
 const HELP: &str = "\
-Usage: openfader-serve [--port PORT] [--bind ADDR] [--driver sim|xair|dl32s]
+Usage: openfader-serve [--port PORT] [--bind ADDR] [--driver sim|xair|x32|dl32s|wing]
                      [--preset generic|xr18|dl32s|studio] [--addr IP] [--static-dir DIR]
                      [--data-dir DIR] [--poll-inflight N]
 
@@ -22,10 +22,10 @@ Options:
   --sim-only      Disable hardware connections and LAN discovery
   --port <n>       HTTP+WS port (default 8080)
   --bind <addr>    bind address (default 0.0.0.0, reachable over LAN)
-  --driver <name>  sim (default), xair, dl32s
+  --driver <name>  sim (default), xair, x32, dl32s, wing
   --preset <name>  sim desk preset: generic (default), xr18, dl32s, studio
                    (hardware drivers ignore it)
-  --addr <ip>      mixer address (xair/dl32s; sim ignores it)
+  --addr <ip>      hardware mixer address (sim ignores it)
   --static-dir <d> UI directory (default: auto-detect ui/)
   --data-dir <d>   scene library directory (R2: persisted scenes.json;
                    default: in-memory scenes only)

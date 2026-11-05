@@ -7,19 +7,13 @@ impl Engine {
         self.active.read().unwrap().clone()
     }
 
-    /// Erased driver for `name` (falls back to `sim`, which is always
-    /// registered, `known` gates every path that reaches here).
+    /// Erased driver for a registered name; external names must pass `known` first.
     pub(super) fn drv(&self, name: &str) -> Arc<dyn DynDriver> {
         self.drivers
             .get(name)
-            .map(|r| r.driver.clone())
-            .unwrap_or_else(|| {
-                self.drivers
-                    .get("sim")
-                    .expect("sim is always registered")
-                    .driver
-                    .clone()
-            })
+            .expect("driver names are validated against the registry before dispatch")
+            .driver
+            .clone()
     }
 
     /// Erased driver behind the current selection.
@@ -40,8 +34,8 @@ impl Engine {
     pub(super) fn default_addr(&self, driver: &str) -> &str {
         self.drivers
             .get(driver)
-            .map(|r| r.default_addr)
-            .unwrap_or("192.168.1.1")
+            .expect("connection driver is validated before resolving its default address")
+            .default_addr
     }
 
     /// Select `driver` and connect it. Failures leave the old driver

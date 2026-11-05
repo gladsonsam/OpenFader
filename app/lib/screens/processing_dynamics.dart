@@ -111,25 +111,37 @@ class _DynTab extends StatelessWidget {
             Expanded(
               child: kind == DynKind.comp &&
                       store.paramMetadata('comp_knee')?['hidden'] != true
-                  ? Container(
-                      padding: const EdgeInsets.all(AppDesign.spaceXs),
-                      decoration: BoxDecoration(
-                          color: ConsolePalette.of(context).chip,
-                          borderRadius: U4.rBtn),
-                      child: Row(children: [
-                        for (final soft in [true, false])
-                          Expanded(
-                              child: Semantics(
-                                  toggled: d.softKnee == soft,
-                                  child: _ProcessingButton(
-                                      fontSize: optionFontSize,
-                                      label: soft ? 'Soft Knee' : 'Hard Knee',
-                                      active: d.softKnee == soft,
-                                      onTap: store.supports('comp_knee') &&
-                                              d.softKnee != null
-                                          ? () => store.setCompSoftKnee(soft)
-                                          : null)))
-                      ]))
+                  ? parameterChoices(store.paramMetadata('comp_knee'))
+                          .isNotEmpty
+                      ? _ParameterChoices(
+                          store: store,
+                          leaf: 'comp_knee',
+                          label: 'Knee',
+                          fallback: 'Loading…',
+                          compact: compact,
+                          onChanged: (value) =>
+                              store.setDynParam(DynKind.comp, 'knee', value))
+                      : Container(
+                          padding: const EdgeInsets.all(AppDesign.spaceXs),
+                          decoration: BoxDecoration(
+                              color: ConsolePalette.of(context).chip,
+                              borderRadius: U4.rBtn),
+                          child: Row(children: [
+                            for (final soft in [true, false])
+                              Expanded(
+                                  child: Semantics(
+                                      toggled: d.softKnee == soft,
+                                      child: _ProcessingButton(
+                                          fontSize: optionFontSize,
+                                          label:
+                                              soft ? 'Soft Knee' : 'Hard Knee',
+                                          active: d.softKnee == soft,
+                                          onTap: store.supports('comp_knee') &&
+                                                  d.softKnee != null
+                                              ? () =>
+                                                  store.setCompSoftKnee(soft)
+                                              : null)))
+                          ]))
                   : const SizedBox.shrink(),
             ),
           ]),

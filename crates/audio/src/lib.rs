@@ -5,7 +5,7 @@ pub mod transfer;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -18,7 +18,9 @@ pub struct DeviceInfo {
     pub sample_rate: u32,
 }
 
-pub const CHANNELS: usize = 18;
+// An explicit 18-channel storage fixture; production layouts come from the device.
+#[cfg(test)]
+const CHANNELS: usize = 18;
 /// Normalize an optional output mask against the selected device layout.
 pub fn playback_output_mask(mask: Option<Vec<bool>>, channels: u16) -> std::io::Result<Vec<bool>> {
     ChannelLayout::new(channels)?;
@@ -117,7 +119,12 @@ pub struct TakeManifest {
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
-fn header(file: &mut File, rate: u32, frames: u64, layout: ChannelLayout) -> io::Result<()> {
+fn header(
+    file: &mut (impl Write + Seek),
+    rate: u32,
+    frames: u64,
+    layout: ChannelLayout,
+) -> io::Result<()> {
     let size = frames
         .checked_mul(layout.frame_bytes())
         .and_then(|n| u32::try_from(n).ok())
@@ -191,20 +198,21 @@ pub struct TakeWriter {
     dir: PathBuf,
     manifest: TakeManifest,
     limit: u64,
-    file: Option<File>,
+    file: Option<BufWriter<File>>,
 }
 impl TakeWriter {
+    /// Create a take with the caller's explicit device or imported channel layout.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid rate or segment size, an existing take,
+    /// or a failure to create and durably publish its initial manifest.
     pub fn create(
         dir: impl AsRef<Path>,
         sample_rate: u32,
         segment_frames: u64,
+        layout: ChannelLayout,
     ) -> io::Result<Self> {
-        Self::create_with_layout(
-            dir,
-            sample_rate,
-            segment_frames,
-            ChannelLayout(CHANNELS as u16),
-        )
+        Self::create_with_layout(dir, sample_rate, segment_frames, layout)
     }
     pub fn create_with_layout(
         dir: impl AsRef<Path>,
@@ -274,7 +282,7 @@ impl TakeWriter {
                     start_frame: self.manifest.frames,
                     frames: 0,
                 });
-                self.file = Some(f);
+                self.file = Some(BufWriter::with_capacity(64 * 1024, f));
             }
             let f = self.file.as_mut().unwrap();
             let mut bytes = [0u8; MAX_CHANNELS * 3];
@@ -302,7 +310,8 @@ impl TakeWriter {
                 frames,
                 ChannelLayout(self.manifest.channels),
             )?;
-            f.sync_all()?;
+            f.flush()?;
+            f.get_ref().sync_all()?;
             f.seek(SeekFrom::End(0))?;
         }
         publish(&self.dir, &self.manifest)
@@ -415,7 +424,13 @@ mod tests {
     #[test]
     fn segments_keep_channel_frames_together() {
         let dir = path();
-        let mut w = TakeWriter::create(&dir, 48_000, 2).unwrap();
+        let mut w = TakeWriter::create(
+            &dir,
+            48_000,
+            2,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         let samples: Vec<i32> = (0..CHANNELS * 5).map(|i| i as i32 - 45).collect();
         w.append_interleaved(&samples).unwrap();
         let m = w.finish().unwrap();
@@ -435,7 +450,13 @@ mod tests {
     #[test]
     fn recovery_discards_uncheckpointed_frames_and_segments() {
         let dir = path();
-        let mut w = TakeWriter::create(&dir, 48_000, 3).unwrap();
+        let mut w = TakeWriter::create(
+            &dir,
+            48_000,
+            3,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         w.append_interleaved(&[1; CHANNELS * 2]).unwrap();
         w.checkpoint().unwrap();
         w.append_interleaved(&[2; CHANNELS * 2]).unwrap();
@@ -454,7 +475,13 @@ mod tests {
     #[test]
     fn rejects_incomplete_or_out_of_range_frames() {
         let dir = path();
-        let mut w = TakeWriter::create(&dir, 48_000, 5).unwrap();
+        let mut w = TakeWriter::create(
+            &dir,
+            48_000,
+            5,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         assert!(w.append_interleaved(&[0]).is_err());
         assert!(w.append_interleaved(&[8_388_608; CHANNELS]).is_err());
         assert_eq!(w.finish().unwrap().frames, 0);
@@ -529,6 +556,52 @@ pub fn waveform_peaks(
         }
     }
     Ok(result)
+}
+
+mod live_waveform;
+
+pub struct WaveformPreview {
+    pub start_frame: u64,
+    pub end_frame: u64,
+    pub buckets: usize,
+    pub complete: bool,
+    pub channels: Vec<Vec<[f32; 2]>>,
+}
+
+/// Live previews use disk-worker PCM extrema; completed takes use their WAVs.
+/// The live end is the last published full bin, never fabricated future audio.
+pub fn waveform_preview(
+    root: &Path,
+    id: &str,
+    start: u64,
+    end: u64,
+    buckets: usize,
+) -> io::Result<WaveformPreview> {
+    if id.is_empty() || id == "." || id == ".." || id.contains(['/', '\\']) {
+        return Err(invalid("invalid take ID"));
+    }
+    let length = end
+        .checked_sub(start)
+        .ok_or_else(|| invalid("invalid range"))?;
+    if length == 0
+        || length > 1_000_000
+        || buckets == 0
+        || buckets > 2048
+        || buckets as u64 > length
+    {
+        return Err(invalid("invalid waveform range or resolution"));
+    }
+    let manifest = read_manifest(root.join(id))?;
+    if !manifest.complete {
+        return live_waveform::read(&root.join(id), &manifest, start, end, buckets);
+    }
+    Ok(WaveformPreview {
+        start_frame: start,
+        end_frame: end,
+        buckets,
+        complete: true,
+        channels: waveform_peaks(root, id, start, end, buckets)?,
+    })
 }
 
 /// Inspect WAV headers and a bounded initial interval without exposing samples.
@@ -609,7 +682,13 @@ mod waveform_tests {
                 .as_nanos()
         ));
         fs::create_dir(&root).unwrap();
-        let mut writer = TakeWriter::create(root.join("take"), 48000, 2).unwrap();
+        let mut writer = TakeWriter::create(
+            root.join("take"),
+            48000,
+            2,
+            ChannelLayout::new(CHANNELS as u16).unwrap(),
+        )
+        .unwrap();
         let mut data = vec![0; CHANNELS * 4];
         for (frame, sample) in [-8_388_608, 4_194_304, -4_194_304, 8_388_607]
             .into_iter()

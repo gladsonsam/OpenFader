@@ -166,15 +166,11 @@ impl MackieSession {
         timeout: std::time::Duration,
     ) -> anyhow::Result<()> {
         fn pack_ip(s: &str) -> anyhow::Result<u32> {
-            let parts: Vec<&str> = s.split('.').collect();
-            if parts.len() != 4 {
-                anyhow::bail!("bad ip");
-            }
-            let mut v = 0u32;
-            for p in parts {
-                v = (v << 8) | p.parse::<u32>().map_err(|_| anyhow::anyhow!("bad ip"))?;
-            }
-            Ok(v)
+            use anyhow::Context;
+            let address = s
+                .parse::<std::net::Ipv4Addr>()
+                .with_context(|| format!("invalid IPv4 address {s:?}"))?;
+            Ok(u32::from(address))
         }
         let body_bytes: [u8; 20] = {
             let mut b = [0u8; 20];

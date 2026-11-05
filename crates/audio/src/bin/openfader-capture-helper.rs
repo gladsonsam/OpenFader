@@ -133,6 +133,17 @@ fn main() {
         }
         service.stop()
     }
+    if std::env::args().nth(1).as_deref() == Some("--list-devices") {
+        let result = RecorderService::new(std::env::temp_dir()).and_then(|s| s.devices());
+        let response = match result {
+            Ok(devices) => json!({"state":"DEVICES", "devices":devices}),
+            Err(error) => json!({"state":"ERROR", "error":error.to_string()}),
+        };
+        if send(response).is_err() {
+            std::process::exit(1);
+        }
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--probe-output") {
         let _ = send(json!({"stage":"starting"}));
         let result = (|| -> io::Result<()> {

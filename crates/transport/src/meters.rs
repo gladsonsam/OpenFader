@@ -158,6 +158,7 @@ pub fn parse_meter_message(msg: &OscMessage) -> Option<MeterFrame> {
 }
 
 /// Fixed-capacity ring of recent meter frames (UI reads latest, drops old).
+#[derive(Debug)]
 pub struct MeterRing {
     buf: VecDeque<MeterFrame>,
     cap: usize,
@@ -191,6 +192,7 @@ impl MeterRing {
     }
 }
 
+#[derive(Debug)]
 pub struct MeterHub {
     tx: broadcast::Sender<MeterFrame>,
 }
@@ -223,7 +225,7 @@ impl MeterHub {
         }
         // `send` fails only with zero receivers; checked above, but map
         // the error anyway instead of panicking.
-        self.tx.send(frame).map_err(|e| anyhow::anyhow!("{e}"))?;
+        self.tx.send(frame)?;
         Ok(n)
     }
 
