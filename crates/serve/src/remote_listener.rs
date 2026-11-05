@@ -137,7 +137,7 @@ mod tests {
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         TlsIdentity {
             certificate_der: cert.cert.der().to_vec(),
-            private_key_der: cert.key_pair.serialize_der(),
+            private_key_der: cert.signing_key.serialize_der(),
         }
     }
     fn connector(identity: &TlsIdentity) -> TlsConnector {

@@ -24,7 +24,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 hyper-util = { version = "0.1", features = ["tokio", "service", "server", "http1"] }
 serde_json = "1"
 futures = "0.3"
-rcgen = "0.13"
+rcgen = "0.14"
 sha2 = "0.11"
 getrandom = "0.4"
 subtle = "2"
