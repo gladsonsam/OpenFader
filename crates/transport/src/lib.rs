@@ -38,6 +38,7 @@ pub use osc::{
     mute_is_muted, on_arg, query_message, string_args,
 };
 pub use session::{
-    keepalive_ticker, resolve_peer, KeepaliveConfig, OscSession, UdpPeer, DEFAULT_QUERY_TIMEOUT,
+    dial_addr_with_port, keepalive_ticker, resolve_peer, KeepaliveConfig, OscSession, UdpPeer,
+    DEFAULT_QUERY_TIMEOUT,
 };
 pub use tcp::{encode_frame, split_frames};

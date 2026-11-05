@@ -87,6 +87,7 @@ abstract class ConnectionStore extends ChangeNotifier {
   String get title;
   String get sub;
   bool get isConnected;
+  bool get isOffline;
   bool get scanning;
   String get lastScan;
   String? get scanError;
@@ -151,45 +152,64 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
           listenable: widget.store,
           builder: (context, _) {
             final store = widget.store;
+            final palette = ConsolePalette.of(context);
             return SingleChildScrollView(
               padding: AppDesign.pagePadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _StatusCard(store: store),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                  const SizedBox(height: AppDesign.spaceLg),
+                  Text('CONNECT A MIXER',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: palette.text4)),
+                  const SizedBox(height: AppDesign.spaceXs),
+                  Text(
+                    store.isOffline
+                        ? 'Find a mixer on this network or connect directly by IP.'
+                        : 'Find a mixer on this network, or continue without hardware.',
+                    style: TextStyle(fontSize: 12, color: palette.text7),
+                  ),
+                  const SizedBox(height: AppDesign.spaceMd),
+                  Row(
                     children: [
-                      _Btn(
-                        label: store.scanning ? 'Searching…' : 'Find mixers',
-                        enabled: !store.scanning,
-                        primary: true,
-                        onTap: store.scan,
+                      Expanded(
+                        child: _Btn(
+                          label: store.scanning ? 'Searching…' : 'Find mixers',
+                          enabled: !store.scanning,
+                          primary: true,
+                          onTap: store.scan,
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      _Btn(
-                        label: 'Work offline',
-                        onTap: store.connectSim,
-                      ),
-                      if (store.isConnected) ...[
-                        const SizedBox(width: 6),
-                        _Btn(
-                          label: 'Disconnect',
-                          danger: true,
-                          onTap: store.disconnect,
+                      if (!store.isConnected) ...[
+                        const SizedBox(width: AppDesign.spaceSm),
+                        Expanded(
+                          child: _Btn(
+                            label: 'Work offline',
+                            onTap: store.connectSim,
+                          ),
+                        ),
+                      ],
+                      if (store.isConnected && !store.isOffline) ...[
+                        const SizedBox(width: AppDesign.spaceSm),
+                        Expanded(
+                          child: _Btn(
+                            label: 'Disconnect',
+                            danger: true,
+                            onTap: store.disconnect,
+                          ),
                         ),
                       ],
                     ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(store.lastScan,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: ConsolePalette.of(context).text7)),
-                  ),
+                  if (store.lastScan != 'never')
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppDesign.spaceXs),
+                      child: Text('Last search: ${store.lastScan}',
+                          style: TextStyle(fontSize: 11, color: palette.text7)),
+                    ),
                   if (store.scanning)
                     Padding(
                       padding: EdgeInsets.only(top: 4),
@@ -199,8 +219,8 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                               color: ConsolePalette.of(context).text4)),
                     ),
                   if (store.scanError != null) _ErrorBanner(store: store),
-                  const SizedBox(height: 10),
-                  Text('MIXERS',
+                  const SizedBox(height: AppDesign.spaceLg),
+                  Text('AVAILABLE MIXERS',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -220,8 +240,8 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                         device: d,
                         onConnect: () => store.connectDevice(d.id),
                       ),
-                  const SizedBox(height: 10),
-                  Text('ADD BY IP',
+                  const SizedBox(height: AppDesign.spaceLg),
+                  Text('CONNECT MANUALLY',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -298,10 +318,12 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                               fontSize: 12,
                               color: ConsolePalette.of(context).text4)),
                     ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppDesign.spaceLg),
                   ExpansionTile(
-                    title: const Text('Connection details'),
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+                    title: const Text('Technical details'),
+                    subtitle: const Text('Link, simulator, and client status'),
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
                     expansionAnimationStyle: AnimationStyle.noAnimation,
                     children: [
                       _InfoCard(store: store, onOpenDebug: widget.onOpenDebug)
@@ -414,7 +436,10 @@ class _StatusCard extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: ConsolePalette.of(context).text1)),
-                Text(store.sub,
+                Text(
+                    store.isOffline
+                        ? 'No hardware mixer connected. Mixer controls remain available.'
+                        : store.sub,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -7,7 +7,7 @@ use crate::osc;
 use openfader_core::MeterFrame;
 use rosc::{OscMessage, OscType};
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -64,6 +64,25 @@ pub fn keepalive_ticker(interval: Duration) -> tokio::time::Interval {
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     ticker
+}
+
+/// Discovered-device dial address: a bare IPv4 address gains an explicit
+/// port; `host:port` / `SocketAddr` forms and every other input pass
+/// through untouched (hostnames, bare IPv6 which contains ':'). Providers
+/// pass their own `PORT`; no default is implied for other drivers.
+pub fn dial_addr_with_port(ip: &str, port: u16) -> String {
+    if ip.parse::<SocketAddr>().is_ok() {
+        return ip.to_string();
+    }
+    if let Some((h, p)) = ip.rsplit_once(':') {
+        if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
+            return ip.to_string();
+        }
+    }
+    if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
+        return format!("{ip}:{port}");
+    }
+    ip.to_string()
 }
 
 /// Parse `host[:port]` with a default port (X-Air: 10024).

@@ -116,13 +116,13 @@ class _InputAssignments extends StatelessWidget {
     ];
     final Widget assignments;
     if (wide) {
-      assignments =
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        for (var i = 0; i < columns.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
-          Expanded(child: columns[i])
-        ]
-      ]);
+      assignments = LayoutBuilder(builder: (context, box) {
+        final count = (box.maxWidth / 112).floor().clamp(1, 4);
+        final width = (box.maxWidth - 8 * (count - 1)) / count;
+        return Wrap(spacing: 8, runSpacing: 12, children: [
+          for (final column in columns) SizedBox(width: width, child: column),
+        ]);
+      });
     } else {
       assignments = Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -140,7 +140,7 @@ class _InputAssignments extends StatelessWidget {
               collapsedShape:
                   const RoundedRectangleBorder(borderRadius: U4.rBtn),
               title: Row(children: [
-                Text('Assignments',
+                Text('Groups',
                     style: AppDesign.type(16, weight: FontWeight.w600)),
                 const SizedBox(width: 8),
                 Expanded(
@@ -360,7 +360,7 @@ class _ProcessingSend extends StatelessWidget {
             return _ProcessingSlider(
                 label: send.destName,
                 compact: !wide,
-                showValue: false,
+                showValue: true,
                 value: level,
                 min: dbToPos(minDb.toDouble()),
                 max: dbToPos(maxDb.toDouble()),

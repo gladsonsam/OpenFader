@@ -1,6 +1,7 @@
 import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../design.dart';
+import '../../ui/motion.dart';
 
 /// Shared mute/solo control. A minimum 44-point hit target is independent of
 /// the strip density, and screen readers receive both name and toggle state.
@@ -34,9 +35,8 @@ class MixerToggle extends StatelessWidget {
           '$channelName $label${unavailableReason == null ? '' : ', $unavailableReason'}',
       child: Tooltip(
           message: unavailableReason ?? '$label $channelName',
-          child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onPressed,
+          child: ConsolePressFeedback(
+              enabled: onPressed != null,
               child: SizedBox(
                   height: visualHeight < 44 ? 44 : visualHeight,
                   width: double.infinity,
@@ -67,7 +67,7 @@ class MixerToggle extends StatelessWidget {
                                 animationDuration:
                                     MediaQuery.disableAnimationsOf(context)
                                         ? Duration.zero
-                                        : const Duration(milliseconds: 40),
+                                        : ConsoleMotion.state,
                                 overlayColor:
                                     WidgetStateProperty.resolveWith((states) {
                                   if (states.contains(WidgetState.pressed)) {

@@ -207,6 +207,27 @@ mixin _AppStoreStrips on _AppStoreContext {
   List<Strip> get assignmentStrips => List.unmodifiable(engine.strips);
 
   @override
+  bool isMixerStripVisible(Strip strip) {
+    // A stale saved layer or legacy state snapshot cannot extend the current
+    // provider's declared geometry. Never derive channel existence from an
+    // unhydrated control value (or a permission/lock readiness bit).
+    if (engine.topology.isNotEmpty &&
+        !engine.topology.any((family) {
+          final first = (family['first'] as num).toInt();
+          final count = (family['count'] as num).toInt();
+          return strip.ch >= first && strip.ch < first + count;
+        })) {
+      return false;
+    }
+    if (!engine.capsReady) return true;
+    // Sends-on-faders is a surface of source/destination routes, not every
+    // strip in the bank. A source without this route has no fader to render.
+    return _busId.startsWith('bus')
+        ? _mixerSendLevel(strip.ch) != null
+        : _stripParamApplies(strip.ch, 'fader');
+  }
+
+  @override
   List<Strip> get strips {
     final cached = _stripsCache;
     if (cached != null) return cached;
@@ -238,15 +259,15 @@ mixin _AppStoreStrips on _AppStoreContext {
           : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
     }
     final built = List<Strip>.unmodifiable(
-      visible.map(
-        (s) => Strip(
-          ch: s.ch,
-          key: s.key,
-          name: s.name,
-          fader: _stripFaderValue(s.ch, s.fader),
-          muted: _stripMuteValue(s.ch, s.muted),
-        ),
-      ),
+      visible.where(isMixerStripVisible).map(
+            (s) => Strip(
+              ch: s.ch,
+              key: s.key,
+              name: s.name,
+              fader: _stripFaderValue(s.ch, s.fader),
+              muted: _stripMuteValue(s.ch, s.muted),
+            ),
+          ),
     );
     _stripsCache = built;
     return built;

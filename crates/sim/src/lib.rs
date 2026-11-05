@@ -622,6 +622,30 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
     // for alternate mix/matrix strips + main.
     let pos_in_family = (idx % 8) as u8;
     m.insert("eq_on".into(), b(idx % 4 != 3));
+    // This fixture's mix processors use standard shelves and parametric bells.
+    // Catalogue enum defaults are low cuts; copying those to every band made
+    // the six-band output look like six stacked cuts with no supported curve.
+    if matches!(kind, StripKind::Bus | StripKind::Main) {
+        for (band, frequency) in [80.0, 250.0, 630.0, 1600.0, 4000.0, 10000.0]
+            .into_iter()
+            .enumerate()
+        {
+            let number = band + 1;
+            m.insert(format!("eq{number}_freq"), f(frequency));
+            m.insert(format!("eq{number}_gain"), f(0.0));
+            m.insert(format!("eq{number}_q"), f(1.0));
+            m.insert(
+                format!("eq{number}_type"),
+                f(if band == 0 {
+                    1.0
+                } else if band == 5 {
+                    4.0
+                } else {
+                    2.0
+                }),
+            );
+        }
+    }
     let compressed = matches!(kind, StripKind::Bus | StripKind::Mtx | StripKind::Main)
         && pos_in_family.is_multiple_of(2);
     m.insert("comp_on".into(), b(compressed));

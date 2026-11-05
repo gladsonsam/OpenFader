@@ -24,7 +24,8 @@ class MixerPage extends StatefulWidget {
       {super.key,
       required this.controller,
       required this.onNavigate,
-      this.onHome, this.embedded = false});
+      this.onHome,
+      this.embedded = false});
   @override
   State<MixerPage> createState() => _MixerPageState();
 }
@@ -100,33 +101,42 @@ class _MixerPageState extends State<MixerPage> {
                   // Shared footer geometry keeps faders and Solo rows aligned
                   // when only some channels have icons. An icon-free bank can
                   // collapse the artwork band as a whole.
-                  final reserveArtwork = channels.any((ch) =>
-                      (controller.demo && !ch.hasIconChoices) ||
-                      (ch.iconChoice != null &&
-                          ch.iconChoice!.symbol.isNotEmpty &&
-                          ch.iconChoice!.symbol != 'none'));
+                  final reserveArtwork = channels.any((ch) => ch.showsArtwork);
                   final railWidth = sideRail
                       ? MixerGeometry.railWidth(constraints.maxWidth)
                       : 0.0;
                   final stripWidth = MixerGeometry.stripWidth(
-                      constraints.maxWidth, mobile,
-                      controller.isCustomLayerActive ? controller.effectivePageSize : 8);
+                      constraints.maxWidth,
+                      mobile,
+                      controller.isCustomLayerActive
+                          ? controller.effectivePageSize
+                          : 8);
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,
                       controller: controller,
                       reserveArtwork: reserveArtwork,
-                      identityChannel: ch.master ? controller.masterIdentityChannel : null,
+                      identityChannel:
+                          ch.master ? controller.masterIdentityChannel : null,
                       compact: mobile,
                       bottomInset:
                           mobile ? MediaQuery.paddingOf(context).bottom : 0,
-                      onOpenProcessing: ch.master ? () {
-                        controller.select(ch);
-                        if (controller.openMasterProcessing()) {
-                          widget.onNavigate(MixerDestination.channel);
-                        }
-                      } : null,
-                      onOpenAt: ch.master ? (anchor) => showMixerBuses(anchor, controller) : null,
+                      onOpenProcessing: ch.master
+                          ? () {
+                              controller.select(ch);
+                              if (controller.openMasterProcessing()) {
+                                widget.onNavigate(MixerDestination.channel);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(controller
+                                            .masterProcessingUnavailableReason)));
+                              }
+                            }
+                          : null,
+                      onOpenAt: ch.master
+                          ? (anchor) => showMixerBuses(anchor, controller)
+                          : null,
                       onOpen: () {
                         controller.select(ch);
                         if (ch.master) {
@@ -158,25 +168,27 @@ class _MixerPageState extends State<MixerPage> {
                           focusNode: _focus,
                           autofocus: true,
                           child: Column(children: [
-                            if (!widget.embedded) MixerToolbar(
-                                controller: controller,
-                                onNavigate: widget.onNavigate,
-                                onHome: widget.onHome,
-                                compact: constraints.maxWidth < 800,
-                                onOpenTools: widget.onHome),
+                            if (!widget.embedded)
+                              MixerToolbar(
+                                  controller: controller,
+                                  onNavigate: widget.onNavigate,
+                                  onHome: widget.onHome,
+                                  compact: constraints.maxWidth < 800,
+                                  onOpenTools: widget.onHome),
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
-                            if (!widget.embedded) Container(
-                                height: mobile ? 6 : 8,
-                                color: ConsolePalette.of(context).bus),
+                            if (!widget.embedded)
+                              Container(
+                                  height: mobile ? 6 : 8,
+                                  color: ConsolePalette.of(context).bus),
                             // Custom layer banner: names the active layer.
                             // Tapping opens the layer list; the master strip
                             // stays fixed and is never part of a layer.
                             if (controller.isCustomLayerActive)
                               GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () => showMixerLayers(
-                                      context, controller),
+                                  onTap: () =>
+                                      showMixerLayers(context, controller),
                                   child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 12, vertical: 6),
@@ -190,8 +202,7 @@ class _MixerPageState extends State<MixerPage> {
                                             child: Text(
                                                 controller.activeLayer.name,
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: mixerType(context, 14,
                                                     weight: FontWeight.w600))),
                                         Text(
@@ -225,27 +236,6 @@ class _MixerPageState extends State<MixerPage> {
                                                     style:
                                                         mixerType(context, 12)))
                                           ])))),
-                            if (controller.hasSolo && !sideRail)
-                              SizedBox(
-                                  height: 34,
-                                  child: Row(children: [
-                                    const SizedBox(width: 10),
-                                    Text('SOLO ${controller.store.soloCount}',
-                                        style: mixerType(context, 12,
-                                            color: ConsolePalette.of(context)
-                                                .solo)),
-                                    const Spacer(),
-                                    TextButton(
-                                        onPressed:
-                                            controller.store.canClearSolos
-                                                ? controller.store.clearSolos
-                                                : null,
-                                        child: Text('Clear solos',
-                                            style: mixerType(context, 12,
-                                                color:
-                                                    ConsolePalette.of(context)
-                                                        .solo))),
-                                  ])),
                             Expanded(
                                 child: Row(
                                     crossAxisAlignment:
@@ -254,47 +244,45 @@ class _MixerPageState extends State<MixerPage> {
                                   Expanded(
                                       child: channels.isEmpty
                                           ? Center(
-                                              child: controller
-                                                      .isCustomLayerActive
-                                                  ? Column(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                          Text(
-                                                              controller
-                                                                  .activeLayer
-                                                                  .name,
-                                                              style: mixerType(
-                                                                  context, 18,
-                                                                  weight:
-                                                                      FontWeight
+                                              child:
+                                                  controller.isCustomLayerActive
+                                                      ? Column(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                              Text(
+                                                                  controller
+                                                                      .activeLayer
+                                                                      .name,
+                                                                  style: mixerType(
+                                                                      context,
+                                                                      18,
+                                                                      weight: FontWeight
                                                                           .w600)),
-                                                          const SizedBox(
-                                                              height: 8),
-                                                          Padding(
-                                                              padding:
-                                                                  const EdgeInsets
+                                                              const SizedBox(
+                                                                  height: 8),
+                                                              Padding(
+                                                                  padding: const EdgeInsets
                                                                       .symmetric(
                                                                       horizontal:
                                                                           32),
-                                                              child: Text(
-                                                                  controller
-                                                                      .layerEmptyMessage,
-                                                                  textAlign:
-                                                                      TextAlign
-                                                                          .center,
-                                                                  style: mixerType(
-                                                                      context,
-                                                                      15,
-                                                                      color: ConsolePalette.of(
-                                                                              context)
-                                                                          .mutedText))),
-                                                        ])
-                                                  : Text(
-                                                      controller.store
-                                                          .emptyBankMessage,
-                                                      style: mixerType(
-                                                          context, 16)))
+                                                                  child: Text(
+                                                                      controller
+                                                                          .layerEmptyMessage,
+                                                                      textAlign:
+                                                                          TextAlign
+                                                                              .center,
+                                                                      style: mixerType(
+                                                                          context,
+                                                                          15,
+                                                                          color:
+                                                                              ConsolePalette.of(context).mutedText))),
+                                                            ])
+                                                      : Text(
+                                                          controller.store
+                                                              .emptyBankMessage,
+                                                          style: mixerType(
+                                                              context, 16)))
                                           : ScrollConfiguration(
                                               behavior:
                                                   const MaterialScrollBehavior()
@@ -307,13 +295,12 @@ class _MixerPageState extends State<MixerPage> {
                                                   }),
                                               child: ListView.builder(
                                                   controller: _scroll,
-                                                      scrollDirection:
-                                                          Axis.horizontal,
-                                                      itemExtent: stripWidth,
-                                                      itemCount:
-                                                          channels.length,
-                                                      itemBuilder: (context, i) =>
-                                                          strip(channels[i])))),
+                                                  scrollDirection:
+                                                      Axis.horizontal,
+                                                  itemExtent: stripWidth,
+                                                  itemCount: channels.length,
+                                                  itemBuilder: (context, i) =>
+                                                      strip(channels[i])))),
                                   SizedBox(
                                       width: stripWidth,
                                       child: strip(controller.master)),

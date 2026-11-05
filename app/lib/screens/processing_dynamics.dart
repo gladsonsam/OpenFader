@@ -15,9 +15,23 @@ class _DynTab extends StatelessWidget {
     final presetKind = kind == DynKind.gate
         ? ProcessorPresetKind.gate
         : ProcessorPresetKind.compressor;
-    // Keep the same five slots across processors, even when a provider hides
-    // a control. Shared parameters must not move when changing tabs.
     final knobs = _dynKnobs(kind, d);
+    final knobMetadata = <String, Map<String, Object?>?>{
+      for (final knob in knobs)
+        knob.prop: store.paramMetadata('${kind.name}_${knob.prop}'),
+    };
+    final visibleKnobs = [
+      for (final knob in knobs)
+        if (store.supports('${kind.name}_${knob.prop}') &&
+            knobMetadata[knob.prop]?['hidden'] != true)
+          knob,
+    ];
+    final visibleKnobProps = <String>{
+      for (final knob in visibleKnobs) knob.prop,
+    };
+    final knobByProp = <String, _KnobDef>{
+      for (final knob in visibleKnobs) knob.prop: knob,
+    };
     void focus(_KnobDef k) => onFocus(_parameterFocus(
         store,
         '${kind.name}_${k.prop}',
@@ -42,11 +56,7 @@ class _DynTab extends StatelessWidget {
         compact: compact,
         onChanged: (v) => apply(k, v));
     Widget control(_KnobDef k, {bool threshold = false}) {
-      if (store.paramMetadata('${kind.name}_${k.prop}')?['hidden'] == true) {
-        return const SizedBox.shrink();
-      }
-      return parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
-              .isNotEmpty
+      return parameterChoices(knobMetadata[k.prop]).isNotEmpty
           ? choiceControl(k)
           : Container(
               padding: EdgeInsets.symmetric(
@@ -173,36 +183,33 @@ class _DynTab extends StatelessWidget {
                       compact: compact,
                       enabled: (prop) =>
                           d.ranges[prop] != null &&
-                          store.paramMetadata(
-                                  '${kind.name}_$prop')?['hidden'] !=
-                              true,
-                      onFocus: (prop) =>
-                          focus(knobs.firstWhere((k) => k.prop == prop)),
-                      onChanged: (prop, v) =>
-                          apply(knobs.firstWhere((k) => k.prop == prop), v));
+                          visibleKnobProps.contains(prop),
+                      onFocus: (prop) {
+                        final knob = knobByProp[prop];
+                        if (knob != null) focus(knob);
+                      },
+                      onChanged: (prop, v) {
+                        final knob = knobByProp[prop];
+                        if (knob != null) apply(knob, v);
+                      });
                 })),
         const SizedBox(height: AppDesign.spaceSm),
-        if (compact) ...[
-          SizedBox(height: 80, child: control(knobs.first, threshold: true)),
-          const SizedBox(height: 8),
-          SizedBox(
-              height: 216,
-              child: Column(children: [
-                for (var row = 0; row < (knobs.length - 1 + 1) ~/ 2; row++) ...[
-                  if (row > 0) const SizedBox(height: 8),
-                  Expanded(
-                      child: Row(children: [
-                    for (var col = 0; col < 2; col++) ...[
-                      if (col > 0) const SizedBox(width: 8),
-                      Expanded(
-                          child: 1 + row * 2 + col < knobs.length
-                              ? control(knobs[1 + row * 2 + col])
-                              : const SizedBox.shrink()),
-                    ]
-                  ])),
-                ]
-              ])),
-        ] else ...[
+        if (compact && visibleKnobs.isNotEmpty) ...[
+          if (knobByProp['thr'] case final threshold?) ...[
+            SizedBox(height: 80, child: control(threshold, threshold: true)),
+            if (visibleKnobs.length > 1) const SizedBox(height: 8),
+          ],
+          if (visibleKnobs.any((knob) => knob.prop != 'thr'))
+            LayoutBuilder(builder: (context, controlsBounds) {
+              const gap = 8.0;
+              final width = (controlsBounds.maxWidth - gap) / 2;
+              return Wrap(spacing: gap, runSpacing: gap, children: [
+                for (final knob in visibleKnobs)
+                  if (knob.prop != 'thr')
+                    SizedBox(width: width, height: 104, child: control(knob)),
+              ]);
+            }),
+        ] else if (!compact && visibleKnobs.isNotEmpty) ...[
           Container(
               height: (200 * scale).clamp(128.0, 200.0),
               decoration: BoxDecoration(
@@ -210,13 +217,15 @@ class _DynTab extends StatelessWidget {
                   borderRadius: U4.rWell),
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(children: [
-                for (var i = 0; i < knobs.length; i++) ...[
+                for (var i = 0; i < visibleKnobs.length; i++) ...[
                   if (i > 0)
                     Container(
                         width: 1,
                         height: 100 * scale,
                         color: ConsolePalette.of(context).lineCtl),
-                  Expanded(child: control(knobs[i], threshold: i == 0)),
+                  Expanded(
+                      child: control(visibleKnobs[i],
+                          threshold: visibleKnobs[i].prop == 'thr')),
                 ]
               ])),
         ],
@@ -334,37 +343,6 @@ class _AdvancedDynamics extends StatelessWidget {
                 focus();
               })));
     }
-    // Input delay is a shared channel utility, not a compressor-only footer.
-    // Keep it in Advanced for both processors so their main canvas stays equal.
-    final delayRange = _controlRange(store, 'delay_ms');
-    if (delayRange != null) {
-      void focusDelay() => onFocus(_parameterFocus(
-          store,
-          'delay_ms',
-          'Input',
-          'Delay',
-          () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
-          (value) => store.setPreamp('delay_ms', value)));
-      controls.add(Container(
-          padding: AppDesign.panelPadding,
-          decoration: BoxDecoration(
-              color: palette.processingPanel, borderRadius: U4.rWell),
-          child: _ProcessingSlider(
-              label: 'Input delay',
-              text: '${store.preamp.delayMs.toStringAsFixed(1)} ms',
-              value: store.preamp.delayMs,
-              min: delayRange.first,
-              max: delayRange.last,
-              compact: true,
-              solidFill: true,
-              color: palette.cyan,
-              valueColor: palette.text1,
-              onFocus: focusDelay,
-              onChanged: (value) {
-                store.setPreamp('delay_ms', value);
-                focusDelay();
-              })));
-    }
     if (controls.isEmpty) return const SizedBox.shrink();
     return Padding(
         padding: const EdgeInsets.only(top: 12),
@@ -375,10 +353,19 @@ class _AdvancedDynamics extends StatelessWidget {
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),
             childrenPadding: const EdgeInsets.all(8),
             children: [
-              for (final control in controls) ...[
-                control,
-                const SizedBox(height: 8),
-              ],
+              LayoutBuilder(builder: (context, bounds) {
+                final columns = compact
+                    ? 1
+                    : bounds.maxWidth >= 900
+                        ? 3
+                        : 2;
+                const gap = 8.0;
+                final width = (bounds.maxWidth - gap * (columns - 1)) / columns;
+                return Wrap(spacing: gap, runSpacing: gap, children: [
+                  for (final control in controls)
+                    SizedBox(width: width, child: control),
+                ]);
+              }),
             ]));
   }
 }

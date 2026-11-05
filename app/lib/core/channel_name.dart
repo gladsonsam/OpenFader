@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'channel_icon.dart';
+export 'channel_icon.dart';
 
 /// Captured identity; selection changes must never retarget an open editor.
 class ChannelNameTarget {
@@ -11,8 +13,9 @@ class ChannelNameTarget {
 
   /// Actual parameter value; null means it was not available at capture.
   final String? name;
+  final String? iconScope;
   const ChannelNameTarget(this.session, this.channel, this.key, this.name,
-      {this.accessEpoch, this.label});
+      {this.accessEpoch, this.label, this.iconScope});
 }
 
 class ChannelColorChoice {
@@ -112,10 +115,20 @@ abstract class ChannelNameStore implements Listenable {
 
   /// Null after the backend accepts the write; this does not claim readback.
   Future<String?> colorChannel(ChannelNameTarget target, double value);
-  List<ChannelIconChoice> iconsForChannel(ChannelNameTarget target);
-  double? iconForChannel(ChannelNameTarget target);
+  ChannelIconSelection iconForChannel(ChannelNameTarget target);
+  ResolvedChannelIcon resolveChannelIcon(ChannelNameTarget target,
+      [ChannelIconSelection? selection]);
+  List<ChannelIconSelection> get importedChannelIcons;
   String? iconEditError(ChannelNameTarget target);
-  Future<String?> iconChannel(ChannelNameTarget target, double value);
+  String? nativeIconEditError(
+      ChannelNameTarget target, ChannelIconSelection value);
+  Future<ChannelIconEditResult> iconChannel(
+      ChannelNameTarget target, ChannelIconSelection value,
+      {bool syncNative = false});
+  Future<ChannelIconSelection> importChannelIcon(
+      ChannelNameTarget target, Uint8List bytes);
+  Future<void> removeUnusedChannelIcon(
+      ChannelNameTarget target, ChannelIconSelection selection);
   int? linkPartnerForChannel(ChannelNameTarget target);
   bool? linkedForChannel(ChannelNameTarget target);
   String? linkEditError(ChannelNameTarget target);

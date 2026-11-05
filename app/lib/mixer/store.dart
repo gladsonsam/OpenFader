@@ -54,6 +54,10 @@ class MixerBusRow {
 abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   List<Strip> get strips;
 
+  /// Descriptor-based membership of the current mixer surface. Independent
+  /// of hydration, permissions, locks and whether a fader is currently ready.
+  bool isMixerStripVisible(Strip strip);
+
   /// Complete roster for group editing, independent of the current bank.
   List<Strip> get assignmentStrips;
   double panOf(int ch);

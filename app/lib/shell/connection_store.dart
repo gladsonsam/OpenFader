@@ -128,12 +128,10 @@ class ShellConnectionStore extends ShellStoreAdapter
     if (engine.linkState == 'reconnecting') {
       return 'Connection lost · ${engine.linkName}';
     }
+    if (_isSim && engine.connected) return 'Working offline';
     if (!isConnected) {
-      return _isSim
-          ? 'Not connected · sim (demo — not a desk)'
-          : 'Not connected · ${engine.driver}';
+      return 'No mixer connected';
     }
-    if (_isSim) return 'Demo desk · SIM — not a real desk';
     final link = engine.linkState.isEmpty ? '' : ' · ${engine.linkState}';
     final name = engine.linkName.isEmpty ? '' : ' · ${engine.linkName}';
     return 'Connected · desk ${engine.driver}$link$name';
@@ -159,6 +157,9 @@ class ShellConnectionStore extends ShellStoreAdapter
 
   @override
   bool get isConnected => engine.connected;
+
+  @override
+  bool get isOffline => engine.connected && _isSim;
 
   @override
   bool get scanning => _scanning;

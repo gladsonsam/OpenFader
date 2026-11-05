@@ -307,11 +307,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     return n;
   }
 
-  @override
-  Future<void> pollMeters() async {
-    await app.pollMeters();
-    _syncFxMeters();
-  }
+  /// Publish telemetry after the shell's single engine drain.
+  void syncMeters() => _syncFxMeters();
 
   void _syncFxMeters() {
     if (isDisposed) return;

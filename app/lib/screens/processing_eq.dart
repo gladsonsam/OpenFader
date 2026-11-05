@@ -268,26 +268,6 @@ class _EqTabState extends State<_EqTab> {
                         widget.onFocus(_eqQFocus(store, band));
                       },
                     ),
-                    if (frame != null)
-                      Positioned(
-                          top: 4,
-                          left: 40,
-                          right: 14,
-                          child: IgnorePointer(
-                              child: Align(
-                                  alignment: Alignment.topLeft,
-                                  child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                          color:
-                                              ConsolePalette.of(context).chip,
-                                          borderRadius: U4.rBtn),
-                                      child: Text(frame.label,
-                                          style: AppDesign.type(14,
-                                              color: ConsolePalette.of(context)
-                                                  .cyan,
-                                              weight: FontWeight.w600))))))
                   ]);
                 })),
         const SizedBox(height: 8),
@@ -296,7 +276,7 @@ class _EqTabState extends State<_EqTab> {
             for (var i = 0; i < eq.bands.length; i++) ...[
               if (i > 0) const SizedBox(width: 10),
               Expanded(
-                  child: _panel(eq.bands[i], (500 * scale).clamp(360, 500))),
+                  child: _panel(eq.bands[i], (500 * scale).clamp(400, 500))),
             ],
           ])
         else ...[

@@ -37,6 +37,7 @@ mixin _AppStoreMeters on _AppStoreContext {
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
   @override
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
+  List<double>? _lastSyntheticBins;
   @override
   final ValueNotifier<AudioSpectrumFrame?> _audioSpectrum = ValueNotifier(null);
   final ValueNotifier<AudioSpectrumPeaks> _audioSpectrumPeaks =
@@ -114,8 +115,14 @@ mixin _AppStoreMeters on _AppStoreContext {
     final bins = mixerProviderPolicy(engine.driver).syntheticSpectrum
         ? engine.spectrum[_channel]
         : null;
-    _spectrum.value =
-        engine.connected && bins != null ? List.of(bins) : const [];
+    final visibleBins = engine.connected ? bins : null;
+    // Engine spectrum frames replace their list. Repeated meter/GR updates
+    // can reuse that snapshot without allocating or rebuilding the graph.
+    if (!identical(visibleBins, _lastSyntheticBins)) {
+      _lastSyntheticBins = visibleBins;
+      _spectrum.value =
+          visibleBins == null ? const [] : List.unmodifiable(visibleBins);
+    }
     final frame = engine.audioSpectrum;
     if (frame != null && !frame.isFresh) engine.clearAudioSpectrum();
     _audioSpectrum.value = engine.connected &&

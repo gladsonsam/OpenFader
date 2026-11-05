@@ -14,6 +14,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../core/access_policy.dart';
 import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
+import 'channel_icons.dart';
 
 class PrefsService extends ChangeNotifier {
   PrefsService._();
@@ -21,12 +22,15 @@ class PrefsService extends ChangeNotifier {
   static Future<void>? _initializing;
 
   SharedPreferences? _prefs;
+  ChannelIconRepository? channelIcons;
   bool get loaded => _prefs != null;
 
   static Future<void> ensureInitialized() => _initializing ??= _initialize();
   static Future<void> _initialize() async {
     try {
       instance._prefs = await SharedPreferences.getInstance();
+      instance.channelIcons = ChannelIconRepository(instance._prefs!);
+      await instance.channelIcons!.initialize();
     } catch (_) {
       _initializing = null;
       rethrow;
@@ -376,6 +380,8 @@ class PrefsService extends ChangeNotifier {
   Future<void> clearAll() async {
     await ensureInitialized();
     requireAccessEditable();
+    final icons = channelIcons;
+    await icons?.prepareForReset();
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;
     for (final key in p.getKeys().where(
@@ -390,6 +396,9 @@ class PrefsService extends ChangeNotifier {
         throw StateError("The preference could not be removed.");
       }
     }
+    await icons?.removeManagedImages();
+    channelIcons = ChannelIconRepository(p);
+    await channelIcons!.initialize();
     _applyWakeLock();
     notifyListeners();
   }

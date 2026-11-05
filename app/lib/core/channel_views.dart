@@ -810,6 +810,49 @@ const tapLabels = <int, String>{
 
 typedef ChannelModeChoice = ({int value, String label});
 
+class ChannelInputSourceChoice {
+  final String group, label;
+  final int index;
+  final bool selected;
+  const ChannelInputSourceChoice(
+      {required this.group,
+      required this.index,
+      required this.label,
+      required this.selected});
+}
+
+/// Provider-described input patch, captured with the current readback guard.
+class ChannelInputSourceVm {
+  final Object context;
+  final String label;
+  final List<ChannelInputSourceChoice> choices;
+  final bool editable;
+  final String? unavailableReason;
+  const ChannelInputSourceVm(
+      {required this.context,
+      required this.label,
+      required this.choices,
+      required this.editable,
+      this.unavailableReason});
+}
+
+/// A provider insert surface presented as one Off-or-source choice.
+class ChannelInsertVm {
+  final Object context;
+  final String label;
+  final List<DestinationChoiceVm> choices;
+  final double value;
+  final bool editable;
+  final String? unavailableReason;
+  const ChannelInsertVm(
+      {required this.context,
+      required this.label,
+      required this.choices,
+      required this.value,
+      required this.editable,
+      this.unavailableReason});
+}
+
 /// Captured shared source and mode, bound to the current input/connection.
 class ChannelSourceModeVm {
   final Object context;
