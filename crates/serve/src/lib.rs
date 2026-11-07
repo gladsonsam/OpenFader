@@ -78,6 +78,8 @@ pub struct ServeOptions {
     pub web_dir: Option<PathBuf>,
     pub web_port: Option<u16>,
     pub web_bind: std::net::IpAddr,
+    pub app_port: Option<u16>,
+    pub app_bind: std::net::IpAddr,
     /// R2 poller pipelining: max concurrent driver queries per poll tick
     /// (`--poll-inflight`; `None` = per-driver default: sim 4, xair 1).
     pub poll_inflight: Option<usize>,
@@ -97,6 +99,8 @@ impl Default for ServeOptions {
             web_dir: None,
             web_port: None,
             web_bind: std::net::Ipv4Addr::UNSPECIFIED.into(),
+            app_port: None,
+            app_bind: std::net::Ipv4Addr::UNSPECIFIED.into(),
             poll_inflight: None,
             data_dir: None,
         }
@@ -1028,6 +1032,37 @@ struct RemoteHost {
     web_dir: Option<PathBuf>,
     microphone_authorized: std::sync::atomic::AtomicBool,
 }
+/// The desktop toggle and headless CLI start the same native TLS service.
+async fn enable_app_listener(
+    app: &AppState,
+    listener: &mut Option<RemoteListener>,
+    ip: std::net::IpAddr,
+    port: u16,
+) -> Result<(), String> {
+    if listener.is_some() {
+        return Ok(());
+    }
+    let bound = tokio::net::TcpListener::bind((ip, port))
+        .await
+        .map_err(|e| format!("Could not bind app port: {e}"))?;
+    let addr = bound.local_addr().map_err(|e| e.to_string())?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.remote.access.set_enabled(true);
+    let mut remote_app = app.clone();
+    remote_app.remote_audience = true;
+    remote_app.web_audience = false;
+    let router = remote_router(remote_app);
+    let identity = app.remote.access.tls_identity().clone();
+    let task = tokio::spawn(async move {
+        let _ = remote_listener::serve(bound, router, identity, async {
+            let _ = rx.await;
+        })
+        .await;
+    });
+    *listener = Some((addr, tx, task));
+    Ok(())
+}
+
 async fn remote_admin(
     AxumState(app): AxumState<AppState>,
     headers: axum::http::HeaderMap,
@@ -1136,29 +1171,12 @@ async fn remote_admin(
                         Json(serde_json::json!({"error":"invalid port"})),
                     );
                 };
-                let bound = match tokio::net::TcpListener::bind((ip, port)).await {
-                    Ok(v) => v,
-                    Err(_) => {
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(serde_json::json!({"error":"bind failed"})),
-                        )
-                    }
-                };
-                let addr = bound.local_addr().unwrap();
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                app.remote.access.set_enabled(true);
-                let mut remote_app = app.clone();
-                remote_app.remote_audience = true;
-                let router = remote_router(remote_app);
-                let identity = app.remote.access.tls_identity().clone();
-                let task = tokio::spawn(async move {
-                    let _ = remote_listener::serve(bound, router, identity, async {
-                        let _ = rx.await;
-                    })
-                    .await;
-                });
-                *listener = Some((addr, tx, task));
+                if let Err(error) = enable_app_listener(&app, &mut listener, ip, port).await {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error":error})),
+                    );
+                }
             }
             serde_json::json!({"enabled":true,"port":listener.as_ref().unwrap().0.port()})
         }
@@ -1398,8 +1416,8 @@ pub async fn run_with_full(
 
     let local = listener.local_addr()?;
     anyhow::ensure!(
-        opts.web_port.is_none() || local.ip().is_loopback(),
-        "Browser hosting requires a loopback administration listener"
+        (opts.web_port.is_none() && opts.app_port.is_none()) || local.ip().is_loopback(),
+        "Remote hosting requires a loopback administration listener"
     );
     if opts.sim_only
         && (opts.driver != "sim"
@@ -1449,7 +1467,7 @@ pub async fn run_with_full(
     let token = std::env::var("OPENFADER_RECORDER_TOKEN")
         .ok()
         .filter(|s| s.len() >= 32 && s.is_ascii());
-    let token = if token.is_none() && opts.web_port.is_some() {
+    let token = if token.is_none() && (opts.web_port.is_some() || opts.app_port.is_some()) {
         let mut bytes = [0u8; 32];
         getrandom::fill(&mut bytes)
             .map_err(|e| anyhow::anyhow!("Could not initialize host credential: {e}"))?;
@@ -1542,10 +1560,25 @@ pub async fn run_with_full(
                 .ok_or_else(|| anyhow::anyhow!("Server password is not valid Unicode"))?,
         )?;
     }
+    if let Some(port) = opts.app_port {
+        enable_app_listener(
+            &state,
+            &mut *remote.listener.lock().await,
+            opts.app_bind,
+            port,
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+    }
     if let Some(port) = opts.web_port {
-        web_host::enable(&state, opts.web_bind, port)
-            .await
-            .map_err(anyhow::Error::msg)?;
+        if let Err(error) = web_host::enable(&state, opts.web_bind, port).await {
+            remote.access.set_enabled(false);
+            if let Some((_, stop, task)) = remote.listener.lock().await.take() {
+                let _ = stop.send(());
+                let _ = task.await;
+            }
+            return Err(anyhow::Error::msg(error));
+        }
     }
     let app = app.with_state(state.clone());
 
@@ -1832,6 +1865,92 @@ mod remote_router_tests {
             .await
             .unwrap()
     }
+    #[tokio::test]
+    async fn native_startup_listener_uses_shared_optional_password() {
+        let root = std::env::temp_dir().join(format!(
+            "openfader-native-startup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let remote = Arc::new(RemoteHost {
+            access: remote_access::RemoteAccess::new(&MemoryIdentity::default())
+                .unwrap()
+                .with_password_file(root.join("password.json"))
+                .unwrap(),
+            listener: Mutex::new(None),
+            web_listener: Mutex::new(None),
+            web_clients: std::sync::Mutex::new(Default::default()),
+            web_dir: None,
+            microphone_authorized: std::sync::atomic::AtomicBool::new(false),
+        });
+        let app = AppState {
+            engine: openfader_engine::Engine::new(Default::default()),
+            static_dir: None,
+            sim_only: true,
+            recorder: None,
+            recorder_token: Some(Arc::new(MASTER.into())),
+            desktop_instance: None,
+            shutdown: Arc::new(Notify::new()),
+            remote: remote.clone(),
+            remote_audience: false,
+            web_audience: false,
+        };
+        enable_app_listener(
+            &app,
+            &mut *remote.listener.lock().await,
+            "127.0.0.1".parse().unwrap(),
+            0,
+        )
+        .await
+        .unwrap();
+        let addr = remote.listener.lock().await.as_ref().unwrap().0;
+        let identity = remote.access.tls_identity().clone();
+        let no_password = request(tls(addr, &identity).await, "POST", "/connect", "", "{}").await;
+        assert_eq!(no_password.0, 200);
+        let original = no_password.1["token"].as_str().unwrap();
+        assert!(remote.access.authenticate(original).is_some());
+        remote
+            .access
+            .set_password("native-startup-fixture")
+            .unwrap();
+        assert!(remote.access.authenticate(original).is_none());
+        assert_eq!(
+            request(tls(addr, &identity).await, "GET", "/connect", "", "")
+                .await
+                .1["password_required"],
+            true
+        );
+        assert_eq!(
+            request(tls(addr, &identity).await, "POST", "/connect", "", "{}")
+                .await
+                .0,
+            401
+        );
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert_eq!(
+            request(
+                tls(addr, &identity).await,
+                "POST",
+                "/connect",
+                "",
+                r#"{"password":"native-startup-fixture"}"#
+            )
+            .await
+            .0,
+            200
+        );
+        remote.access.set_enabled(false);
+        if let Some((_, stop, task)) = remote.listener.lock().await.take() {
+            let _ = stop.send(());
+            task.await.unwrap();
+        }
+        assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn remote_host_routes_and_lifecycle() {
         let engine = openfader_engine::Engine::new(Default::default());

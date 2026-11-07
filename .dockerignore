@@ -1,5 +1,7 @@
-# Docker build context: Rust workspace only. Everything else is host noise.
+# Keep the Rust workspace and actual Flutter app sources/assets in the context.
+# Exclude host build products so container stages produce their own artifacts.
 target/
+**/target/
 dist/
 .git/
 .github/
@@ -8,5 +10,10 @@ scripts/
 artifacts/
 *.log
 .DS_Store
-.dart_tool/
+**/.dart_tool/
 **/build/
+**/.flutter-plugins*
+**/.symlinks/
+app/**/Pods/
+app/**/ephemeral/
+app/design/
