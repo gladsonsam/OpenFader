@@ -23,8 +23,6 @@ Up to 64 channels. Takes are saved as 24-bit WAV.
 2. Tap the settings button in the recorder's top bar.
 3. Under **AUDIO INTERFACE**, tap **Refresh devices**, then pick your interface. Each one is listed with its input and output count.
 
-![The recorder](/docs/shots/recorder.png)
-
 The recorder uses the interface's current sample rate. There is no sample rate setting in OpenFader. Set the rate, buffer size and clock in your interface's own control panel. If you change any of them, tap **Refresh devices** and pick the interface again.
 
 ## Record

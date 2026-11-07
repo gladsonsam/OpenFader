@@ -31,7 +31,7 @@ Your device and the mixer must be on the same network. Discovery does not cross 
 
 The app opens on the Connections screen and starts looking for mixers straight away.
 
-![The Connections screen with Discover mixers, Add manually and Work offline](/docs/shots/start-connections.png)
+![The Connections screen with Discover mixers, Add manually and Work offline](/screenshots/ipad-2026-11-07/start-connections-framed.png)
 
 1. Tap **Discover mixers**. On Android, allow the **Nearby Wi-Fi devices** permission when asked (older Android versions ask for **Location**).
 2. Tap **Connect** next to your mixer.
@@ -46,7 +46,7 @@ If your mixer does not show up, add it by address. The mixer shows its IP addres
 3. Choose the **Mixer type**, or leave it on **Automatic**.
 4. Tap **Add mixer**.
 
-![The Add mixer manually dialog](/docs/shots/connect-add.png)
+![The Add mixer manually dialog](/screenshots/ipad-2026-11-07/connect-add-detail.png)
 
 > A Mackie DL32S can take up to 90 seconds to load. Discover mixers can also miss a DL32S the first time, so adding it by IP address is the reliable way in.
 

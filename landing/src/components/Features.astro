@@ -1,33 +1,80 @@
 ---
 const features = [
-  ['Mixing', 'Faders, mute, solo, pan and meters for every channel, bus and DCA.'],
-  ['Monitor mixes', 'Switch the faders to any bus to set monitor sends.'],
-  ['Channel processing', 'Gain, gate, compressor and EQ on every channel.'],
-  ['Effects', 'Change effect types and settings.'],
-  ['Routing', 'Patch inputs and outputs.'],
-  ['Scenes', 'Save and recall scenes.'],
-  ['Recording', 'Record every channel to your computer.'],
-  ['Virtual soundcheck', 'Play a recording back through the mixer.'],
+  { id: 'mixing', title: 'Mixing', description: 'Control levels, mute, solo and pan. See live meters as you mix.', image: '/screenshots/ipad-2026-11-07/mixing-framed.png', width: 2896, height: 2208, alt: 'OpenFader mixer with individual channel EQ curves, faders and meters.' },
+  { id: 'processing', title: 'Channel processing', description: 'Adjust gain, gate, compression and EQ where your mixer supports them.', image: '/screenshots/ipad-2026-11-07/channel-processing-framed.png', width: 2896, height: 2208, alt: 'Channel EQ controls and frequency curve in OpenFader.' },
+  { id: 'effects', title: 'Effects', description: 'Choose effects and adjust their settings.', image: '/screenshots/ipad-2026-11-07/effects-framed.png', width: 2896, height: 2208, alt: 'OpenFader effects rack and effect settings.' },
+  { id: 'routing', title: 'Routing', description: 'Choose where inputs and outputs are connected.', image: '/screenshots/ipad-2026-11-07/routing-framed.png', width: 2896, height: 2208, alt: 'Input and output routing in OpenFader.' },
+  { id: 'scenes', title: 'Scenes', description: 'Save and recall mixer scenes on supported desks.', image: '/screenshots/ipad-2026-11-07/scenes-framed.png', width: 2896, height: 2208, alt: 'Saved mixer scenes in OpenFader.' },
 ];
 ---
-<section class="wrap section features">
-  <div class="features-list">
-    <h2>Features</h2>
-    <dl>
-      {features.map(([title, body]) => (
-        <div class="feature">
-          <dt>{title}</dt>
-          <dd>{body}</dd>
-        </div>
+<section class="wrap section features" id="features" aria-labelledby="features-heading">
+  <h2 id="features-heading">Features</h2>
+  <div class="feature-showcase" role="region" aria-roledescription="carousel" aria-label="OpenFader features">
+    <div class="feature-track" id="feature-track" tabindex="0" aria-label="Feature screenshots. Scroll to see more.">
+      {features.map((feature, index) => (
+        <article class="feature-slide" role="group" aria-roledescription="slide" aria-label={`${index + 1} of ${features.length}: ${feature.title}`}>
+          <div class="feature-preview">
+            <img src={feature.image} width={feature.width} height={feature.height} loading="lazy" alt={feature.alt} />
+          </div>
+          <div class="feature-summary">
+            <h3>{feature.title}</h3>
+            <p>{feature.description}</p>
+          </div>
+        </article>
       ))}
-    </dl>
+    </div>
+    <div class="feature-controls" hidden>
+      <button type="button" data-direction="-1" aria-label="Previous feature" aria-controls="feature-track" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+      </button>
+      <span class="feature-count" aria-live="polite" aria-atomic="true">1 / {features.length}</span>
+      <button type="button" data-direction="1" aria-label="Next feature" aria-controls="feature-track">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg>
+      </button>
+    </div>
   </div>
-  <img
-    class="phone-shot"
-    src="/screenshots/mixer-iphone-da5d55326774.gif"
-    width="520"
-    height="1084"
-    loading="lazy"
-    alt="The OpenFader mixer on an iPhone."
-  />
 </section>
+
+<script>
+  const showcase = document.querySelector<HTMLElement>('.feature-showcase');
+  if (showcase) {
+    const track = showcase.querySelector<HTMLElement>('.feature-track')!;
+    const slides = [...track.querySelectorAll<HTMLElement>('.feature-slide')];
+    const controls = showcase.querySelector<HTMLElement>('.feature-controls')!;
+    const buttons = [...controls.querySelectorAll<HTMLButtonElement>('button')];
+    const count = controls.querySelector<HTMLElement>('.feature-count')!;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let current = 0;
+    let pending = false;
+    const position = (slide: HTMLElement) => Math.min(slide.offsetLeft, track.scrollWidth - track.clientWidth);
+    const update = () => {
+      current = slides.reduce((nearest, slide, i) =>
+        Math.abs(position(slide) - track.scrollLeft) < Math.abs(position(slides[nearest]) - track.scrollLeft) ? i : nearest, 0);
+      count.textContent = `${current + 1} / ${slides.length}`;
+      buttons[0].disabled = track.scrollLeft <= 1;
+      buttons[1].disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 1;
+    };
+    const go = (index: number) => {
+      const target = Math.max(0, Math.min(slides.length - 1, index));
+      track.scrollTo({ left: position(slides[target]), behavior: motion.matches ? 'instant' : 'smooth' });
+    };
+    buttons.forEach((button) => button.addEventListener('click', () => go(current + Number(button.dataset.direction))));
+    track.addEventListener('keydown', (event) => {
+      if (event.target !== track) return;
+      if (event.key === 'ArrowRight') go(current + 1);
+      else if (event.key === 'ArrowLeft') go(current - 1);
+      else if (event.key === 'Home') go(0);
+      else if (event.key === 'End') go(slides.length - 1);
+      else return;
+      event.preventDefault();
+    });
+    track.addEventListener('scroll', () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => { update(); pending = false; });
+    }, { passive: true });
+    new ResizeObserver(update).observe(track);
+    controls.hidden = false;
+    update();
+  }
+</script>

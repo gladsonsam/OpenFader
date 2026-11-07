@@ -21,7 +21,7 @@ A page only appears if your mixer has that processing for this kind of channel. 
 
 ## Input
 
-![The Input page](/docs/shots/channel-input.png)
+![The Input page](/screenshots/ipad-2026-11-07/channel-input-framed.png)
 
 - **Gain** sets the preamp gain.
 - **Trim** adjusts the level after the preamp. The **Ø** button next to it flips polarity.
@@ -42,7 +42,7 @@ A button that does nothing when tapped is waiting for the mixer to report its cu
 
 ## Gate
 
-![The Gate page](/docs/shots/channel-gate.png)
+![The Gate page](/screenshots/ipad-2026-11-07/channel-gate-framed.png)
 
 Tap the **Gate** header to turn the gate on. Set it with **Threshold**, **Range**, **Attack**, **Hold** and **Release**, or drag the handle on the graph. The **IN**, **GR** and **OUT** meters show what the gate is doing.
 
@@ -50,13 +50,13 @@ Tap the **Gate** header to turn the gate on. Set it with **Threshold**, **Range*
 
 ## Compressor
 
-![The Compressor page](/docs/shots/channel-compressor.png)
+![The Compressor page](/screenshots/ipad-2026-11-07/channel-compressor-framed.png)
 
 Tap the **Compressor** header to turn it on. Set it with **Threshold**, **Ratio**, **Attack**, **Gain** (make-up gain) and **Release**, or drag the handles on the graph. **Soft Knee** and **Hard Knee** set the knee. Some mixers offer a **Knee** list instead.
 
 ## EQ
 
-![The EQ page](/docs/shots/channel-eq.png)
+![The EQ page](/screenshots/ipad-2026-11-07/channel-processing-framed.png)
 
 Tap the **EQ** header to turn the EQ on.
 
@@ -89,7 +89,7 @@ If the mixer refuses a change, the reason appears in the dialog.
 
 ## On a phone
 
-![Channel processing on a phone](/docs/shots/channel-phone.png)
+![Channel processing on a phone](/screenshots/ipad-2026-11-07/channel-phone-detail.png)
 
 The pages move to tabs along the bottom, and the channel's fader stays on the right.
 

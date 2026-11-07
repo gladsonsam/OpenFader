@@ -7,7 +7,7 @@ description: Faders, mutes, banks, layers and monitor mixes.
 
 The mixer screen is a row of channel strips with the master strip fixed on the right. On a tablet or computer there is also a side rail with mute groups and outputs.
 
-![The mixer screen on a tablet](/docs/shots/mixer.png)
+![The mixer screen on a tablet](/screenshots/ipad-2026-11-07/mixing-framed.png)
 
 ## Channel strips
 
@@ -54,8 +54,6 @@ Banks are groups of channels, such as inputs 1 to 16 or the effects returns. The
 
 To switch bank, tap **Tools**, then **Mixer layout**, then pick a bank. The current one has a check mark.
 
-![The effects return bank](/docs/shots/mixer-banks.png)
-
 ## Layers
 
 A layer is your own set of channels in your own order, for example just the vocal mics. Each layer can show 4, 6, 8 or 12 strips per page. The master strip is never part of a layer and stays on the right.
@@ -64,7 +62,7 @@ A layer is your own set of channels in your own order, for example just the voca
 2. Under **New from template**, tap **Vocals**, **Drums**, **Band** or **Stream**. The template picks channels by name, so a channel called "Lead Vox" or "Choir" lands in Vocals. If no names match, it starts with the first few channels.
 3. In the editor, tick channels under **Channels**, drag them into order, and choose the **Strips per page**.
 
-![The Layers sheet](/docs/shots/layers.png)
+![The Layers sheet](/screenshots/ipad-2026-11-07/layers-framed.png)
 
 To go back to every channel, open **Layers** and tap **All**. Picking a bank also switches you back to All.
 
@@ -77,8 +75,6 @@ Pick a bus and the faders turn into sends to that bus, so you can mix someone's 
 1. Tap a bus in the **OUTPUTS** list on the side rail, or tap the master strip and pick a bus.
 2. The top bar now reads **Send → BUS1** (or whatever the bus is called), and the master strip becomes that bus's master.
 3. To go back to the main mix, pick **MAIN**.
-
-![Faders showing sends to BUS1](/docs/shots/mixer-sends.png)
 
 This only works for buses. Picking a subgroup does not turn the faders into sends. If the mixer does not report a send level for a channel, that channel's fader is locked and shows `-`.
 
@@ -98,7 +94,7 @@ Long-press a channel's name to open its settings, then turn on **Link with chann
 
 On a phone the strips are shorter and there is no side rail. Use **Tools** for banks, layers and mute groups.
 
-![The mixer on a phone](/docs/shots/mixer-phone.png)
+![The mixer on a phone](/screenshots/ipad-2026-11-07/mixer-phone-detail.png)
 
 ## Changing how strips look
 
@@ -115,6 +111,6 @@ You can also turn single parts on or off, change the **Fader size**, reorder the
 
 For a bigger view of levels, tap **Tools**, then **Meters**.
 
-![The Meters screen](/docs/shots/meters.png)
+![The Meters screen](/screenshots/ipad-2026-11-07/meters-framed.png)
 
 Peak hold time, clip hold and meter refresh rate are in **Settings**, **Appearance & controls**.

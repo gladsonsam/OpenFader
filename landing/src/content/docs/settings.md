@@ -7,7 +7,7 @@ description: App settings and access limits.
 
 Open Settings with the gear button in the top bar, or **Tools**, then **Settings**. On a tablet or computer the sections are listed down the left. On a phone, tap a section to open it.
 
-![Settings, Connections section](/docs/shots/settings.png)
+![Settings, Connections section](/screenshots/ipad-2026-11-07/settings-framed.png)
 
 ## Connections
 
@@ -36,7 +36,7 @@ Local mixes are mix files stored on this device. Add one with **Import mix**, an
 
 Access limits stop this device from changing certain controls. Use them to hand a phone or tablet to a volunteer without risking the whole mix.
 
-![Access limits](/docs/shots/settings-access.png)
+![Access limits](/screenshots/ipad-2026-11-07/settings-access-framed.png)
 
 1. Turn on the limits you want under **Restrict controls**, for example **Input routing**, **Mic preamps**, **Channel mute** or **Pan**. **Restrict all** turns them all on.
 2. Tap **Lock** and set a four-character passcode.

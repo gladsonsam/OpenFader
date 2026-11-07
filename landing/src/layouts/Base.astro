@@ -41,7 +41,7 @@ const appSchema = {
     ? <meta name="robots" content="noindex, nofollow" />
     : <meta name="robots" content="index, follow" />}
   <link rel="canonical" href={canonicalURL} />
-  <meta name="theme-color" content="#151515" />
+  <meta name="theme-color" content="#090909" />
   <meta name="author" content="OpenFader" />
   <link rel="icon" type="image/png" href="/brand/open-fader-logo-32.png" />
   <link rel="apple-touch-icon" href="/brand/open-fader-logo-512.png" />
@@ -61,7 +61,7 @@ const appSchema = {
   <link rel="preload" href="/fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin />
   <script type="application/ld+json" set:html={JSON.stringify(appSchema)} />
 </head>
-<body>
+<body class:list={{ 'home-page': Astro.url.pathname === '/', 'docs-page': Astro.url.pathname === '/docs' || Astro.url.pathname.startsWith('/docs/') }}>
   <Nav />
   <main>
     <slot />

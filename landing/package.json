@@ -1,5 +1,6 @@
 {
   "name": "openfader-landing",
+  "description": "Control your mixer from any device",
   "version": "0.1.0",
   "private": true,
   "type": "module",

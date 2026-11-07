@@ -10,7 +10,7 @@ Open **Tools**, then **Scenes**. The screen has two separate libraries:
 - **The mixer's own library** at the top. These are the scenes and snapshots stored on the mixer itself, the same ones you would see on its own screen or editor.
 - **The OpenFader local library** below it. These are stored on this device, not on the mixer.
 
-![The Scenes screen](/docs/shots/scenes.png)
+![The Scenes screen](/screenshots/ipad-2026-11-07/scenes-framed.png)
 
 ## OpenFader snapshots
 

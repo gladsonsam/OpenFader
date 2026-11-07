@@ -1,5 +1,5 @@
 name: app
-description: OpenFader native app - mixer (faders + mute + meters) over the embedded engine.
+description: Control your mixer from any device
 publish_to: none
 version: 0.1.0
 

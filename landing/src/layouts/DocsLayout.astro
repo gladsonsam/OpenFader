@@ -49,14 +49,4 @@ const next = index >= 0 && index < docs.length - 1 ? docs[index + 1] : undefined
 <script>
   const nav = document.getElementById('docsNav') as HTMLDetailsElement | null;
   if (nav && matchMedia('(max-width: 900px)').matches) nav.open = false;
-  // Screenshots open full size in a new tab.
-  document.querySelectorAll<HTMLImageElement>('.prose img').forEach((img) => {
-    const link = document.createElement('a');
-    link.href = img.src;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.className = 'shot-link';
-    img.replaceWith(link);
-    link.append(img);
-  });
 </script>

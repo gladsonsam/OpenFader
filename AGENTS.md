@@ -2,6 +2,9 @@
 
 Flutter mixer app (`app`) over an embedded Rust engine (`crates/`).
 Brand is **OpenFader**, one word. License GPL-3.0-or-later.
+The product tagline is **Control your mixer from any device**. Keep it consistent
+across the README, website, package descriptions and GitHub About. Marketing
+copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 
 ## Layout
 
