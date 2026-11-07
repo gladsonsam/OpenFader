@@ -1,0 +1,24 @@
+---
+import { REPO, RELEASES } from '../links';
+---
+<section class="wrap hero">
+  <div class="hero-text">
+    <h1>Control your digital mixer from any device.</h1>
+    <div class="hero-side">
+      <p class="lede">OpenFader is a free, open source mixer control app for phones, tablets and computers.</p>
+      <div class="actions">
+        <a class="btn btn-solid btn-lg" href={RELEASES}>Download</a>
+        <a class="btn btn-quiet btn-lg" href={REPO}>View source</a>
+      </div>
+    </div>
+  </div>
+  <picture class="hero-shot">
+    <source media="(max-width: 600px)" srcset="/screenshots/mixer-iphone.gif" width="480" height="1044" />
+    <img
+      src="/screenshots/mixer-ipad.gif"
+      width="1131"
+      height="868"
+      alt="The OpenFader mixer with channel strips, faders and live meters."
+    />
+  </picture>
+</section>

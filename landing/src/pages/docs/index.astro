@@ -1,0 +1,19 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { GROUPS, docHref, sortedDocs } from '../../lib/docs';
+
+const docs = await sortedDocs();
+---
+<DocsLayout title="Docs" description="How to use OpenFader.">
+  <p>How to set up OpenFader and use it at the desk. New here? Start with <a href="/docs/getting-started">Getting started</a>.</p>
+  {GROUPS.map((group) => (
+    <section class="docs-index-group">
+      <h2>{group}</h2>
+      <ul class="docs-index">
+        {docs.filter((d) => d.data.group === group).map((d) => (
+          <li><a href={docHref(d)}>{d.data.title}</a><span>{d.data.description}</span></li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</DocsLayout>
