@@ -29,6 +29,7 @@ import '../settings/recents.dart';
 import '../state/app_store.dart';
 import '../u4law.dart' show panText;
 import 'shell.dart';
+import 'marketing_fixture.dart';
 import 'workspace_home.dart';
 import '../screens/channel.dart';
 import '../screens/output_processing.dart';
@@ -656,6 +657,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               : null,
           onWorkOffline: () {
             _conn.connectSim();
+            if (const bool.fromEnvironment('OPENFADER_MARKETING_FIXTURE')) {
+              unawaited(stageMarketingFixture(store));
+            }
             setState(() => _showStart = false);
           },
         ),
@@ -797,7 +801,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       target: 'FX', label: 'Select a control', value: '-'),
               compact: compact,
               connectionName:
-                  _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
+                  _mixer.demo ? '' : _mixer.connectionDisplayName,
               onConnection: () => _go(AppTab.connect));
         } else if (_tab == AppTab.channel &&
             store.outputProcessingTarget == null) {
@@ -810,14 +814,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               onHome: () => _go(AppTab.mixer),
               onTool: _channelTool,
               onLock: () => store.locked ? store.cmdUnlock() : store.cmdLock(),
-              trailing: TextButton(
+              trailing: _mixer.demo ? null : TextButton(
                   style: TextButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       alignment: Alignment.centerRight,
                       padding: EdgeInsets.zero),
                   onPressed: () => _go(AppTab.connect),
                   child: Text(
-                      _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
+                      _mixer.connectionDisplayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -895,7 +899,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onFx: () => _go(AppTab.fx),
           onSettings: () => _go(AppTab.settings),
           onTools: () => _go(AppTab.home),
-          mixerName: _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName),
+          mixerName: _mixer.demo ? '' : _mixer.connectionDisplayName),
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
       AppTab.channel => store.outputProcessingTarget != null
