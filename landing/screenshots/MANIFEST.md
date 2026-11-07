@@ -176,3 +176,68 @@ after a re-shoot:
 - connect-add, connect-add-2: the dialog panel only, (443, 296, 923, 728)
 - scenes: (0, 0, 1366, 480)
 - meters: (0, 0, 1366, 440)
+
+## Native iPad refresh — 2026-11-07 (current website handoff)
+
+Supersedes the old Linux feature crops above for these five features only:
+Mixing, Channel processing, Effects, Routing, Scenes. No recorder, virtual
+soundcheck or monitor-mix marketing panel is included. Website source is untouched.
+
+Captured from the actual Flutter UI on iPad Pro 13-inch (M5), iOS 27 simulator,
+in landscape. Offline embedded Rust simulation; no hardware verification.
+The redundant offline badge is removed in the app, not painted out of images.
+
+- Raw directory: `app/assets/screenshots/ipad-2026-11-07/raw/`
+- Raw names: `mixing-raw.png`, `channel-processing-raw.png`, `effects-raw.png`,
+  `routing-raw.png`, `scenes-raw.png`.
+- All raw captures: **2752 × 2064, 4:3**, native 2× density (1376 × 1032 points).
+  Zero capture padding, zero cropping. OS status/home safe areas are retained.
+  Scenes is the full screen, not the old 1366 × 480 crop.
+- Website frames: `landing/public/screenshots/ipad-2026-11-07/`, with the same
+  five names replacing `-raw` with `-framed`. All **2896 × 2208 (181:138)** RGBA.
+  Identical illustrative iPad bezel: 48 px, external transparent margin 24 px;
+  UI rectangle `(72,72,2752,2064)` in x/y/width/height notation. UI pixels are
+  copied 1:1, without stretching, rounding away content, or letterboxing.
+- Active GIF: `app/assets/screenshots/ipad-2026-11-07/mixing-active.gif` and
+  `landing/public/screenshots/ipad-2026-11-07/mixing-active.gif`, **1376 × 1032,
+  4:3**, 96 frames at 12 fps, 8 seconds. Uniform 50% scale from device pixels.
+  Both existing `app/assets/screenshots/mixer-ipad.gif` and
+  `landing/public/screenshots/mixer-ipad.gif` aliases are refreshed.
+- Original screen recording: `app/assets/screenshots/ipad-2026-11-07/mixing-active.mp4`.
+  Native recording has portrait storage plus rotation metadata; ffmpeg applies
+  that metadata before the uniform GIF reduction.
+
+### Repeat captures
+
+Use the device tools: `device_list`, then `device_open` for the intended iPad.
+Never reuse another thread's session. Install a freshly built simulator app:
+
+```sh
+export PATH="$HOME/flutter-3.47/bin:$PATH"
+cd app
+flutter build ios --simulator --debug --dart-define=OPENFADER_MARKETING_FIXTURE=true
+```
+
+Install via the bound agent-device command returned by device_open, then from
+repo root run (Python environment needs Pillow; ffmpeg must be on PATH):
+
+```sh
+python landing/screenshots/capture-ipad.py /absolute/device_open/agent-device
+```
+
+The script launches the app, explicitly chooses Work offline, stages the
+opt-in named simulation fixture, records/captures real UI, frames all five
+screens, and exports the GIF/aliases. The define defaults to false in ordinary
+builds. Stop on any command failure; inspect the Device panel before retrying.
+Routing's large AX tree triggered the runner watchdog in this capture; its
+screenshot and subsequent Tools navigation succeeded after recovery. The script
+avoids AX snapshots on the routing screen and uses the documented native iPad
+point geometry for its Tools button. Recheck that coordinate if geometry changes.
+This run completed Routing/Scenes manually after that watchdog; the revised
+whole script has not yet been rerun uninterrupted.
+
+Limitations: the EQ view's lower controls require scrolling at this native size;
+the capture preserves the actual viewport. Scene examples are local simulated
+captures, not native console archives. The simple common bezel is illustrative,
+not an Apple product render. Existing hashed media remain for dev1 to migrate
+references without disturbing uncommitted website work.
