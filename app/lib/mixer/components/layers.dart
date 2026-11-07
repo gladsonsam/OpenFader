@@ -8,7 +8,7 @@ import '../mixer_layers.dart';
 import 'banks.dart' show showCustomMixerViews;
 
 /// Channel catalog for the layer editor, from live surface strips. The
-/// master strip is never part of a layer — it stays fixed on the mixer page.
+/// master strip is never part of a layer - it stays fixed on the mixer page.
 List<LayerChannelOption> layerChannelOptionsOf(MixerController controller) =>
     [
       for (final s in controller.store.engine.strips)
@@ -112,7 +112,7 @@ Future<void> showMixerLayerImport(BuildContext context) async {
   if (decoded == null) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-          content: Text('Invalid layers JSON — nothing imported')),
+          content: Text('Invalid layers JSON - nothing imported')),
     );
     return;
   }
@@ -467,7 +467,7 @@ class _LayerEditorState extends State<_LayerEditor> {
                   textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
                     labelText: 'Device (optional)',
-                    hintText: 'e.g. X32, DL32S — blank = all mixers',
+                    hintText: 'e.g. X32, DL32S - blank = all mixers',
                   ),
                   onChanged: (value) {
                     final trimmed = value.trim();

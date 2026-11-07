@@ -225,7 +225,7 @@ impl Engine {
                         format!("patch/{target}")
                     },
                     from,
-                    json!("—"),
+                    json!("-"),
                 )
                 .await;
                 self.note_write(writer);

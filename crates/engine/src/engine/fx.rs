@@ -208,7 +208,7 @@ impl Engine {
         (1..=drv.fx_slot_count() as u8)
             .map(|slot| FxSlotRt {
                 slot,
-                fx_type: "—".to_string(),
+                fx_type: "-".to_string(),
                 on: true,
                 bypass: false,
                 params: Default::default(),
@@ -270,7 +270,7 @@ impl Engine {
         (1..=drv.fx_slot_count() as u8)
             .map(|slot| FxSlotRt {
                 slot,
-                fx_type: "—".to_string(),
+                fx_type: "-".to_string(),
                 on: true,
                 bypass: false,
                 params: Default::default(),
@@ -289,7 +289,7 @@ impl Engine {
         let index = drv.fx_type_index(slot).await;
         let name = index
             .and_then(|i| drv.fx_type_name_for_slot(slot, i))
-            .unwrap_or("—")
+            .unwrap_or("-")
             .to_string();
         let mut params = BTreeMap::new();
         if let Some(type_idx) = index {

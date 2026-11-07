@@ -491,7 +491,7 @@ class NativeLibrarySection extends StatelessWidget {
                                 'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
                           )
                       : null,
-                  child: const Text('0 · Default — recall only'),
+                  child: const Text('0 · Default - recall only'),
                 ),
               if (view.slots.isEmpty)
                 Text(

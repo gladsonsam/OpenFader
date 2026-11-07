@@ -269,7 +269,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
                               ),
                             ),
                             child: Text(
-                              'Offline — ladders are dark until a live link is up. Connect for live meters.',
+                              'Offline - ladders are dark until a live link is up. Connect for live meters.',
                               style: TextStyle(
                                 fontFamily: U4.font,
                                 fontSize: AppDesign.caption,
@@ -598,7 +598,7 @@ class _LadderState extends State<_Ladder> {
           CustomPaint(size: Size(44, widget.height), painter: _painter),
           const SizedBox(height: AppDesign.spaceMd),
           Text(
-            widget.ladder.label ?? '—',
+            widget.ladder.label ?? '-',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -804,7 +804,7 @@ class _MonitorControls extends StatelessWidget {
                           color: palette.control,
                           border: Border.all(color: palette.lineCtl),
                           borderRadius: U4.rBtn),
-                      child: Text('${row.label}: ${row.valueLabel ?? '—'}'),
+                      child: Text('${row.label}: ${row.valueLabel ?? '-'}'),
                     ),
                   )
                 else if (row.numeric)

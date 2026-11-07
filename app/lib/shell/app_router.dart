@@ -593,7 +593,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       const SizedBox(width: 12),
                       Expanded(
                           child: Text(
-                              'Recorder: ${transport ?? 'unknown'} · ${mode ?? 'unknown'} · dropouts ${state['xruns'] ?? '—'}',
+                              'Recorder: ${transport ?? 'unknown'} · ${mode ?? 'unknown'} · dropouts ${state['xruns'] ?? '-'}',
                               style: TextStyle(
                                   color: ConsolePalette.of(context).text1))),
                       if ((mode == 'soundcheck' ||
@@ -680,7 +680,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           readout = SelectedControlReadout(
               data: data ??
                   const SelectedControlReadoutData(
-                      target: 'FX', label: 'Select a control', value: '—'),
+                      target: 'FX', label: 'Select a control', value: '-'),
               compact: compact,
               connectionName:
                   _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
@@ -916,7 +916,7 @@ class _EngineTagBanner extends StatelessWidget {
           Text(
             isReal
                 ? 'ENGINE: embedded openfader-engine (real)'
-                : 'ENGINE: FAKE sim fallback — native lib missing, desk impossible',
+                : 'ENGINE: FAKE sim fallback - native lib missing, desk impossible',
             style: TextStyle(
                 color: isReal
                     ? ConsolePalette.of(context).onSuccessContainer

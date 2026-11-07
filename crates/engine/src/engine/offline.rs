@@ -151,7 +151,7 @@ impl Engine {
             let Value::String(label) = &c.to else {
                 anyhow::bail!("patch push value must be a label")
             };
-            if label == "—" {
+            if label == "-" {
                 return drv
                     .patch_target_clear(StripId(strip), target)
                     .await

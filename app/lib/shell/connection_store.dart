@@ -143,15 +143,15 @@ class ShellConnectionStore extends ShellStoreAdapter
     if (_recovery.status.isNotEmpty) return _recovery.status;
     if (!isConnected) {
       return _isSim
-          ? 'Simulator only — no desk hardware. Find a mixer or add one manually.'
-          : 'driver=${engine.driver} — scan/probe the desk Wi-Fi.';
+          ? 'Simulator only - no desk hardware. Find a mixer or add one manually.'
+          : 'driver=${engine.driver} - scan/probe the desk Wi-Fi.';
     }
     if (_isSim) {
-      return 'SIMULATOR — ${engine.strips.length} strips · no desk hardware · '
-          'link=${engine.linkState.isEmpty ? '—' : engine.linkState}';
+      return 'SIMULATOR - ${engine.strips.length} strips · no desk hardware · '
+          'link=${engine.linkState.isEmpty ? '-' : engine.linkState}';
     }
     return '${engine.strips.length} strips · '
-        'link=${engine.linkState.isEmpty ? '—' : engine.linkState} '
+        'link=${engine.linkState.isEmpty ? '-' : engine.linkState} '
         '${engine.linkName} ${engine.linkIp}';
   }
 
@@ -221,7 +221,7 @@ class ShellConnectionStore extends ShellStoreAdapter
 
   @override
   String? get emptyText =>
-      engine.devices.isEmpty ? 'No desks seen yet — Scan first.' : null;
+      engine.devices.isEmpty ? 'No desks seen yet - Scan first.' : null;
 
   @override
   String hostOf(String id) {
@@ -243,7 +243,7 @@ class ShellConnectionStore extends ShellStoreAdapter
   String get linkInfo {
     final simTag = _isSim ? 'SIM (not a desk)' : 'desk';
     return '$simTag driver=${engine.driver} '
-        'link=${engine.linkState.isEmpty ? '—' : engine.linkState} '
+        'link=${engine.linkState.isEmpty ? '-' : engine.linkState} '
         '${engine.linkName}';
   }
 

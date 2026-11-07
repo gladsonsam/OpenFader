@@ -79,7 +79,7 @@ impl XAirDriver {
         }
         let Some(strings) = verified else {
             anyhow::bail!(
-                "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
+                "no reply from {peer} - check the desk is powered, on this network, and the IP is correct"
             );
         };
         // Provider-owned identity: the 10023 fallback can reach an
@@ -88,7 +88,7 @@ impl XAirDriver {
         let model = strings.get(2).cloned().unwrap_or_default();
         anyhow::ensure!(
             Self::is_xair_model(&model),
-            "not an X-Air mixer (model {model:?} at {peer}) — refusing to apply X-Air maps"
+            "not an X-Air mixer (model {model:?} at {peer}) - refusing to apply X-Air maps"
         );
         for task in self.tasks.lock().unwrap().drain(..) {
             task.abort();

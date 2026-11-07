@@ -600,7 +600,7 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
     // Extended inputs and returns start unpatched, using the same canonical
     // label as clear_patch so routing and snapshot round trips stay exact.
     if kind == StripKind::In || kind == strip_schema::RETURN_KIND {
-        m.insert("source".into(), ParamValue::Text("—".into()));
+        m.insert("source".into(), ParamValue::Text("-".into()));
     }
     let f = ParamValue::Float;
     let b = ParamValue::Bool;
@@ -1134,7 +1134,7 @@ impl SimDriver {
             anyhow::bail!("sim: patch only supported on input strips");
         }
         self.params.write().expect("sim params poisoned")[i]
-            .insert("source".to_string(), ParamValue::Text("—".to_string()));
+            .insert("source".to_string(), ParamValue::Text("-".to_string()));
         Ok(())
     }
 
@@ -2070,7 +2070,7 @@ mod tests {
         d.clear_patch(StripId(0)).unwrap();
         assert_eq!(
             d.get_param(StripId(0), "source").await.unwrap(),
-            ParamValue::Text("—".into())
+            ParamValue::Text("-".into())
         );
         assert!(d.set_patch(StripId(32), "Lcl", 1).is_err());
         assert!(d.set_patch(StripId(0), "AES", 1).is_err());

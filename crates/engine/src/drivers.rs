@@ -920,7 +920,7 @@ pub trait DynDriver: Send + Sync {
     ) -> anyhow::Result<RoutingPatch> {
         anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
         self.patch_clear(strip).map(|()| RoutingPatch {
-            label: "—".to_string(),
+            label: "-".to_string(),
             param: None,
         })
     }
@@ -1853,7 +1853,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         for (i, result) in reads.into_iter().enumerate() {
             let Ok(route) = result else { continue };
             let guard = serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank});
-            let analog = match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "—".to_string(), _ => continue };
+            let analog = match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "-".to_string(), _ => continue };
             out.insert((i as u16, "analog".into()), (analog, guard.clone()));
             out.insert((i as u16, "usb".into()), (format!("USB {}", route.usb + 1), guard.clone()));
             out.insert((i as u16, "bank".into()), (format!("Bank {}", route.bank + 1), guard));
@@ -1878,7 +1878,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
         let route = self.input_route(strip).await?;
         match target {
-            "analog" => Ok(match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "—".to_string(), _ => anyhow::bail!("xair: invalid analog source") }),
+            "analog" => Ok(match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "-".to_string(), _ => anyhow::bail!("xair: invalid analog source") }),
             "usb" => Ok(format!("USB {}", route.usb + 1)),
             "bank" => Ok(format!("Bank {}", route.bank + 1)),
             _ => anyhow::bail!("xair: invalid input routing target"),
@@ -1892,7 +1892,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         let expected = openfader_proto_xair::input_routing::InputRoute { analog: field("analog")?, usb: field("usb")?, bank: field("bank")? };
         let mut desired = expected;
         let label = match (target, source) {
-            ("analog", None) => { desired.analog = 18; "—".to_string() },
+            ("analog", None) => { desired.analog = 18; "-".to_string() },
             ("analog", Some(("Mic", n @ 1..=16))) => { desired.analog = i32::from(n) - 1; format!("Mic {n}") },
             ("analog", Some(("Aux", n @ 1..=2))) => { desired.analog = i32::from(n) + 15; format!("Aux {n}") },
             ("usb", Some(("USB", n @ 1..=18))) => { desired.usb = i32::from(n) - 1; format!("USB {n}") },
@@ -2394,7 +2394,7 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
         let raw = self.input_source_display(strip, target).await?;
         let (group, index) = match raw {
-            0 => return Ok("—".to_string()),
+            0 => return Ok("-".to_string()),
             17000 => ("Osc", 1),
             v @ 1000..=1031 => ("Mic", v - 999),
             v @ 2000..=2031 => ("USB", v - 1999),
@@ -2416,7 +2416,7 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<RoutingPatch> {
         let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
         MixerDriver::set_param(self, strip, leaf, ParamValue::Float(0.0)).await?;
-        Ok(RoutingPatch { label: "—".to_string(), param: Some((leaf, ParamValue::Float(0.0))) })
+        Ok(RoutingPatch { label: "-".to_string(), param: Some((leaf, ParamValue::Float(0.0))) })
     }
     fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
         if matches!(kind, StripKind::In) { &["solo"] } else { &[] }

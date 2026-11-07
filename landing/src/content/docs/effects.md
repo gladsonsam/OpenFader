@@ -27,7 +27,7 @@ For delays that support it, tap **TAP** or **Tap tempo** in time with the music 
 
 ## On and bypass
 
-Some mixers have **On** and **Bypass** buttons for each slot. Where the mixer has no such switch, the buttons are hidden and the card shows `—`.
+Some mixers have **On** and **Bypass** buttons for each slot. Where the mixer has no such switch, the buttons are hidden and the card shows `-`.
 
 ## Getting signal into an effect
 

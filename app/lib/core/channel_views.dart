@@ -927,7 +927,7 @@ class ChannelSourceVm {
     this.sourceB,
     this.selected,
     this.usbReturn,
-    this.srcName = '—',
+    this.srcName = '-',
     this.srcGroup = '',
     this.levelDb = -90,
   });

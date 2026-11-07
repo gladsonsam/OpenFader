@@ -427,7 +427,7 @@ class MixerController extends ChangeNotifier {
       store.setMixerFader(channel, value);
       // Stereo-locked pair: drive the mate to the SAME engine value so both
       // optimistic notifiers move together and the pair never separates
-      // mid-drag. Fader only — pan/mute/solo stay independent. setFader
+      // mid-drag. Fader only - pan/mute/solo stay independent. setFader
       // guards per-channel editability, so a locked-out mate is a safe no-op.
       final pair = _linkedPair(channel);
       if (pair != null) {

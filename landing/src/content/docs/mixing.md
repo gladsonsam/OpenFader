@@ -20,7 +20,7 @@ Each strip has, from top to bottom:
 - **Solo**
 - the channel name, number and icon
 
-Controls stay greyed out until the mixer confirms their current value. A fader showing `—` is still waiting for the mixer.
+Controls stay greyed out until the mixer confirms their current value. A fader showing `-` is still waiting for the mixer.
 
 ### Faders
 
@@ -80,7 +80,7 @@ Pick a bus and the faders turn into sends to that bus, so you can mix someone's 
 
 ![Faders showing sends to BUS1](/docs/shots/mixer-sends.png)
 
-This only works for buses. Picking a subgroup does not turn the faders into sends. If the mixer does not report a send level for a channel, that channel's fader is locked and shows `—`.
+This only works for buses. Picking a subgroup does not turn the faders into sends. If the mixer does not report a send level for a channel, that channel's fader is locked and shows `-`.
 
 ## Mute groups and DCAs
 

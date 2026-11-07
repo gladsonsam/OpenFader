@@ -288,7 +288,7 @@ impl Engine {
                 strip: r.strip,
                 key: r.key,
                 label: if r.group.is_empty() && r.index == 0 {
-                    "—".to_string()
+                    "-".to_string()
                 } else {
                     format!("{} {:02}", r.group, r.index)
                 },
@@ -304,7 +304,7 @@ impl Engine {
             let Ok(state) = self.drv(&driver).output_route(&dest.id) else {
                 continue;
             };
-            let (group, index) = if state.source == "—" {
+            let (group, index) = if state.source == "-" {
                 (String::new(), 0)
             } else if let Some(source) = parse_source(&state.source) {
                 source
@@ -376,7 +376,7 @@ impl Engine {
                     .ok()
             };
             let Some(label) = label else { continue };
-            let route = if label == "—" {
+            let route = if label == "-" {
                 Some((String::new(), 0))
             } else {
                 parse_source(&label)
@@ -441,7 +441,7 @@ impl Engine {
             let label = label.ok_or_else(|| {
                 anyhow::anyhow!("snapshot capture incomplete: route {} unavailable", dest.id)
             })?;
-            let route = if label == "—" {
+            let route = if label == "-" {
                 Some((String::new(), 0))
             } else {
                 parse_source(&label)
@@ -489,7 +489,7 @@ impl Engine {
             if let Some(dest) = output_destination {
                 let source = if row.group.is_empty() && row.index == 0 {
                     anyhow::ensure!(dest.clearable, "snapshot output cannot be cleared");
-                    "—".to_string()
+                    "-".to_string()
                 } else {
                     anyhow::ensure!(
                         dest.source_groups.iter().any(|g| g.key == row.group

@@ -63,7 +63,7 @@ async fn routing_is_one_node_update_and_is_checked_against_desk() {
     );
     assert_eq!(
         driver.patch(StripId(0), "alt", "OFF", 0).await.unwrap(),
-        "—"
+        "-"
     );
     assert!(driver.patch(StripId(0), "main", "A", 49).await.is_err());
     assert!(driver.patch(StripId(48), "main", "LCL", 1).await.is_err());

@@ -114,7 +114,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
                   slot: s.slot,
                   name: 'FX ${s.slot}',
                   type: _typeMetadata(s.type)?['id'] as String? ??
-                      (s.type.isEmpty ? '—' : s.type),
+                      (s.type.isEmpty ? '-' : s.type),
                   on: s.on,
                   bypass: s.bypass,
                   ret: s.returnLabel,

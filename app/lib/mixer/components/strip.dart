@@ -172,7 +172,7 @@ class MixerStrip extends StatelessWidget {
                             valueListenable:
                                 controller.muteNoteOf(chIndex, isMaster),
                             builder: (context, muted, _) => MixerToggle(
-                                label: ready & 2 != 0 ? 'Mute' : 'Mute · —',
+                                label: ready & 2 != 0 ? 'Mute' : 'Mute · -',
                                 visualHeight: allocated(StripElement.mute),
                                 fontSize: g.x(compact ? 20 : 32),
                                 channelName: ch.name,
@@ -233,7 +233,7 @@ class MixerStrip extends StatelessWidget {
                                                             })))))),
                                     if (ready & 1 == 0)
                                       Center(
-                                          child: Text('—',
+                                          child: Text('-',
                                               style: AppDesign.type(14,
                                                   color:
                                                       ConsolePalette.of(context)
