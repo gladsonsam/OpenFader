@@ -1,53 +1,6 @@
-//! X-Air channel input routing (`/ch/NN/config/…`, `/ch/NN/preamp/…`).
-//!
-//! Doc sources (address shapes + wire codecs):
-//!
-//! - Behringer XR18 firmware OSC map, FW 1.14 (xr-meters `parameters.txt`,
-//!   extracted from Behringer-provided firmware):
-//!   `config/rtnsrc [0,17] // U01..U18; usb return`,
-//!   `preamp/rtntrim [0.0,1.0] lin // -18..+18; return trim`,
-//!   `preamp/rtnsw [0,1]`, `preamp/invert [0,1]`, `preamp/hpon [0,1]`,
-//!   `preamp/hpf [0.0,1.0] log // 20..400`, with
-//!   `linear: value = fmin + (fmax - fmin) * float` and
-//!   `log: value = fmin * exp(log(fmax / fmin) * float)`.
-//! - xair-api-python `shared.py` + `util.py` (MIT, onyx-and-iris, dev
-//!   branch, fetched 2026-10-18): strip `Config` at `{root}/config`
-//!   (`inputsource` ↔ `insrc`, `usbreturn` ↔ `rtnsrc`, ints), `Preamp` at
-//!   `{root}/preamp` (`usbtrim` ↔ `rtntrim` via `lin_get/lin_set(-18, 18)`,
-//!   `usbinput` ↔ `rtnsw`, `invert`, `highpasson` ↔ `hpon` as int `1`/`0`,
-//!   `highpassfilter` ↔ `hpf` via `log_get/log_set(20, 400)`); strip root
-//!   `/ch/{index+1:02d}` (`strip.py`). Hardware-exercised by its
-//!   `tests/xair/test_shared.py` (bool/int/float set+get on real hardware).
-//! - protocol reference X32 OSC protocol documentation (`/tmp/x32.pdf`): backs
-//!   only the `/ch/[01…32]/config` + `/ch/[01…32]/preamp` *node* shapes —
-//!   the X32 leaves differ (no `insrc`/`rtnsrc`/`rtntrim`/`hpon` there), so
-//!   leaf shapes come from the two X-Air sources above, not protocol reference.
-//!
-//! Owner-rig verified 2026-10-18 (XR18 FW 1.20,
-//! 3–5 s timeouts, each leaf re-read across rounds):
-//! `/ch/01+16/config/rtnsrc` (`,i` 0 / 17), `/ch/01+16/preamp/rtntrim`
-//! (`,f` 0.5 / 0.0 = 0 dB / −18 dB), `/ch/01+16/preamp/invert` + `/hpon`
-//! (`,i` 0), `/ch/01+15+16/preamp/hpf` (`,f` 0.0 = 20 Hz floor).
-//! Same-value write-backs on ch16 (read → write identical → re-read) all
-//! ACKed with zero state change, proving the SET encodings (`,i` for
-//! rtnsrc/invert/hpon, `,f` for rtntrim/hpf).
-//!
-//! Earlier probes reported the following leaves silent. On 2026-10-27,
-//! `config/insrc` and `preamp/rtnsw` answered on channels 1, 5, 9, 15 and 16.
-//! Read-only source labels now use them; source switching is not exposed.
-//!
-//! Historical observations:
-//! - `config/insrc` (input source select, firmware-doc `[0,18]`,
-//!   xair-api `inputsource`): NO reply on ch01/05/09/15/16 or `/rtn/aux`
-//!   (5 s timeout, two rounds). The per-channel source select is not
-//!   queryable on FW 1.20.
-//! - `preamp/rtnsw` on `/ch/NN` (xair-api `usbinput`): NO reply on
-//!   ch01/05/09/15/16 — but replies `,i` 1 on `/rtn/aux/preamp/rtnsw`.
-//!   Channel-strip scope only here, so no arm.
-//! - `preamp/on`: xair-api README claims it but `shared.py` defines no such
-//!   leaf, and `/ch/16/preamp/on` is silent. No arm.
-//! - `config/color` answers (`,i` 0 on `/ch/16`, 2026-10-18 driver-path
-//!   re-read; same-value write-back on ch2 ACKs with zero state change).
+//! X-Air input routing and preamp codecs.
+//! Leaf shapes follow the XR18 firmware OSC map and xair-api-python (MIT).
+//! Firmware behavior varies: source-select reads are not exposed as writes.
 
 use openfader_transport::osc;
 use rosc::{OscMessage, OscType};

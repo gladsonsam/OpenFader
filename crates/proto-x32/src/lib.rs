@@ -1,5 +1,6 @@
 //! Behringer X32 / Midas M32 family provider. OSC control on UDP 10023.
 //!
+//! Unconfirmed writes are not reported as readback.
 //!
 //! Layout mirrors `proto-wing`: this file owns the session struct,
 //! `addrs` the topology + wire roots, `codec` the engineering-unit

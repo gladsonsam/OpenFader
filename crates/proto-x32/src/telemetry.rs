@@ -1,75 +1,8 @@
-//! X32 meter streaming: `/meters` subscribe/renew, blob decode, caches.
-//!
-//! Source evidence (frozen in comments, not inferred):
-//! protocol reference "X32/M32 OSC protocol" v4.09-02
-//! (Nov 30, 2025), Meter requests pp. 16-19, cross-checked against the
-//! independent X32 emulator source (commit
-//! unrecorded: `Xprepmeter` exact float
-//! counts per id, 10 s server-side expiry, `/renew` an explicit TODO
-//! no-op, `/xremote` renewal unrelated to meter timers).
-//!
-//! Wire form (doc p. 16, emulator-evidenced): a request `/meters ,siii
-//! <id> [params]` arms a ~50 ms stream for ~10 s; each reply is addressed
-//! `/meters/N` with one blob arg. The doc's BE length word is the OSC
-//! blob framing itself (a `/meters/0` reply is 304 bytes on the wire);
-//! the delivered blob content is a LE u32 sample count followed by LE
-//! f32 samples. Levels are linear 0.0..=1.0 with desk headroom to 8.0
-//! (clipped to 1.0 in strip frames); every blob is validated for exact
-//! length, count agreement, finiteness and bounds before any sample
-//! enters a cache — a malformed blob drops the sample, never the cache.
-//!
-//! Subscribed groups (documented ids only). `/meters/0`: 70 floats —
-//! 32 ch, 8 aux, 8 fxrtn (eight floats for the eight mono fxrtn
-//! strips 40..48 — doc p. 17 lists "4x2 st fx returns"; the topology
-//! is eight separate mono faders, so each strip keeps its own float
-//! with no stereo folding), 16 bus, 6 mtx, excluding stereo/mono
-//! mains (doc p. 17). `/meters/1`: 96 floats — 32 ch levels,
-//! 32 gate gains, 32 comp gains, converted from linear gain to positive
-//! dB reduction. The worked /meters/6 packet on p.16 has unity gate and
-//! dynamics gains (approximately 1.0), confirming the linear convention.
-//! `/meters/2`: 49 floats — bus16, mtx6, main-LR2, mono1 levels, then
-//! bus16, mtx6, LR1, mono1 dynamics gains (same linear conversion as
-//! above). `/meters/4`: 82 floats — ch32, aux8, physical-out16, P16-16,
-//! aux-send6, AES2, monitor2; only the physical outputs feed
-//! `output_meter_targets`, the ch/aux duplicates never override m0/m1.
-//! `/meters/5` (params chn 0, grp 0): 27 floats — 16 ch meters (redundant
-//! with the subscribed groups), 8 group meters that are DCA 1..8 under
-//! grp 0 (doc p. 18), main-LR2, mono1. `/meters/16`: 48 words —
-//! 88 LE i16 linear gains (ch32 gate, ch32 comp, bus16, mtx6, LR, mono;
-//! value/32767) plus 8 automix shorts for ch 1..8 coded
-//! `log2(gain)*256`, served as dB via `short * 20*log10(2)/256`; the
-//! gain words duplicate m1/m2 GR coverage and are shape-validation only,
-//! automix is the unique payload behind `x32:automix_gain` (ch 1..8).
-//!
-//! Explicitly NOT subscribed (no guessing at undocumented layouts).
-//! `/meters/3` (22 aux-send/FX-return taps) and `/meters/7/8/9`
-//! (bus/matrix/FX send taps): no per-send meter surface exists on
-//! `MixerDriver`, nothing consumes them. `/meters/6`
-//! (4 selected-channel post-gain/gate/GR/post-fade): the 0..71 channel
-//! index has no documented strip map, so taps stay unavailable rather
-//! than misattributed. `/meters/10..14` (FX-internal): owned by a future
-//! FX slice. `/meters/15` (50 words = 100 packed RTA shorts): documented
-//! as "used for RTA and some Effects" with no selector/association, so
-//! the spectrum stays explicitly unavailable (empty, never synthesized)
-//! instead of misattributed FX data.
-//!
-//! **Lifecycle.** The transport level hub cannot carry these blobs (BE
-//! length, LE count, LE f32 is neither transport meter form), so the
-//! session forwards raw `/meters/N` messages to the ordered receive
-//! plane only when `enable_x32_meter_forwarding` is set (opt-in, default
-//! off), and this module's drain task decodes strictly there. Renewal
-//! re-sends the documented subscribes every 8 s: `/xremote` keepalive
-//! does NOT renew meter streams and `/renew` is a desk-side no-op (emulator
-//! TODO), so neither is used as renewal evidence. No page timers exist;
-//! renewal/drain are session-bound Rust tasks aborted with the link.
-//! Every cache is generation-gated (bumped on connect AND disconnect):
-//! a new session or a disconnect clears samples, lag-induced gaps clear
-//! samples, and stale reads (>500 ms, ~10 missed 50 ms frames) report
-//! unavailable instead of frozen data. Unavailable vs silent is
-//! preserved: empty strip frames / empty snapshot frames mean no fresh
-//! evidence, never fabricated zeroes; DCA strips without a fresh m5
-//! read 0.0 in an otherwise fresh frame (no DCA evidence, never
-//! measured).
+//! X32 meter subscriptions and decoding.
+//! Streams expire after 10 seconds and are resubscribed every 8 seconds.
+//! Decode validates blob shape and values; stale or invalid data is unavailable.
+//! Session generations prevent old meter data from leaking across connections.
+
 use crate::{addrs, X32Driver};
 use openfader_core::{
     output_meters::OutputCompressorGr, MeterFrame, OutputMeterFrame, OutputMeterSnapshot, StripId,

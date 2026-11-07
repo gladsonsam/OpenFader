@@ -1,6 +1,5 @@
 // Manual, emulator-only compatibility loop. Not part of the CI test gate.
-// Start the independent mixer-simulator emulator at commit
-// unrecorded and an isolated OpenFader host.
+// Start a compatible emulator and an isolated OpenFader host.
 // Then run with the Flutter SDK's dart executable:
 // dart scripts/verify-x32-emulator.dart --emulator 127.0.0.3 \
 //   --ws ws://127.0.0.1:18080/ws --report /tmp/x32-verification.json
@@ -16,13 +15,6 @@ import 'dart:typed_data';
 import '../app/lib/engine_protocol.dart';
 import '../app/lib/core/channel_views.dart';
 import '../app/lib/core/destination_controls.dart';
-
-const referenceCommit = 'unrecorded';
-const protocolRevision = 'protocol reference X32/M32 OSC 4.09-02 (2025-11-30)';
-const protocolSource =
-    'not recorded';
-const protocolSha256 =
-    'not recorded';
 
 void require(bool condition, String reason) {
   if (!condition) throw StateError(reason);
@@ -477,11 +469,6 @@ Future<void> main(List<String> args) async {
     await socket.close();
     final report = {
       'time_utc': DateTime.now().toUtc().toIso8601String(),
-      'protocol_reference': protocolRevision,
-      'protocol_source': protocolSource,
-      'expected_protocol_sha256': protocolSha256,
-      'expected_emulator_commit': referenceCommit,
-      'emulator_commit_checked_by_this_command': false,
       'emulator': address.address,
       'host': uri.toString(),
       'checks': results,
@@ -489,7 +476,7 @@ Future<void> main(List<String> args) async {
       'limits': [
         'Emulator and document evidence only; no hardware/audio/USB/iOS proof',
         'Run repository gates separately',
-        'Use the pinned independent emulator; this command does not patch it',
+        'The command does not modify the emulator',
       ],
     };
     final path = options['--report'] ?? '/tmp/openfader-x32-verification.json';
