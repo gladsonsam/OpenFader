@@ -62,9 +62,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
                           fontWeight: FontWeight.w700,
                           color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
+                  ConsoleActionGroup(
                     children: [
                       _Probe(label: 'hello', onTap: store.sendHello),
                       _Probe(label: 'stats', onTap: store.sendStats),

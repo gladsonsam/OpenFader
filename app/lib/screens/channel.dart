@@ -20,8 +20,7 @@ import '../settings/prefs.dart';
 import '../mixer/geometry.dart';
 import '../theme.dart';
 import '../widgets/mobile_reference_width.dart';
-import '../palette.dart';
-import '../design.dart';
+import '../ui/console.dart';
 import '../u4law.dart';
 
 import '../widgets/channel_widgets.dart';
@@ -627,8 +626,14 @@ class _SideMenu extends StatelessWidget {
       ),
       child: LayoutBuilder(builder: (context, constraints) {
         final tabs = _availableTabs(store);
-        final height =
-            (constraints.maxHeight / tabs.length).clamp(110.0, 190.0);
+        final textScaler = MediaQuery.textScalerOf(context);
+        final minimumHeight = textScaler.scale(24) * 1.2 +
+            textScaler.scale(13) * 1.2 +
+            22 +
+            8 +
+            48;
+        final height = math.max(minimumHeight,
+            (constraints.maxHeight / tabs.length).clamp(110.0, 190.0));
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -816,7 +821,8 @@ class _BottomNav extends StatelessWidget {
     return MobileReferenceWidth(
         referenceWidth: 362,
         child: Container(
-          height: 112,
+          height: math.max(112,
+              MediaQuery.textScalerOf(context).scale(15) * 1.3 + 14 + 8 + 48),
           decoration: BoxDecoration(
             color: ConsolePalette.of(context).panel,
             border:

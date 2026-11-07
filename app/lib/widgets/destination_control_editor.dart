@@ -1,3 +1,4 @@
+import '../ui/overlays/console_dialogs.dart';
 import 'package:flutter/material.dart';
 
 import '../core/destination_controls.dart';
@@ -75,7 +76,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
         final palette = ConsolePalette.of(context);
         return PopScope(
             canPop: !_sending,
-            child: AlertDialog(
+            child: ConsoleAlertDialog(
                 scrollable: true,
                 title: Text('${control.label} · ${control.destinationName}'),
                 content: SizedBox(

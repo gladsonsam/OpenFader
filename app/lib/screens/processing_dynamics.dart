@@ -91,16 +91,15 @@ class _DynTab extends StatelessWidget {
 
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1292;
-      final optionFontSize = compact ? 14.0 : 22.0;
+      const optionFontSize = AppDesign.body;
       final textScaler = MediaQuery.textScalerOf(context);
-      // The knee selector has inner padding. Both processors reserve its full
-      // height so neither Presets nor the graph shifts when it is present.
+      // Reserve the same minimum two-line selector row on both processors,
+      // while allowing larger text and wrapped actions to grow naturally.
       final optionsHeight = math.max(
-              AppDesign.controlHeight,
-              textScaler.scale(optionFontSize) * 1.15 +
-                  AppDesign.spaceLg +
-                  AppDesign.spaceXs) +
-          2 * AppDesign.spaceXs;
+          AppDesign.controlHeight + AppDesign.spaceLg,
+          textScaler.scale(compact ? 12 : 14) * 1.2 +
+              textScaler.scale(compact ? 15 : 18) * 1.2 +
+              AppDesign.spaceLg);
       final presetsWidth = compact
           ? math.min(bounds.maxWidth / 2,
               96 * textScaler.scale(optionFontSize) / optionFontSize)
@@ -112,50 +111,46 @@ class _DynTab extends StatelessWidget {
             compact: compact,
             onToggle: () => store.setDynOn(kind, !d.on)),
         const SizedBox(height: AppDesign.spaceSm),
-        SizedBox(
-          height: optionsHeight,
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(minHeight: optionsHeight),
+          child: ConsoleActionGroup(children: [
             SizedBox(
                 width: presetsWidth,
                 child: _PresetsButton(
                     store: store, compact: compact, kind: presetKind)),
-            const SizedBox(width: AppDesign.spaceSm),
-            Expanded(
-              child: kind == DynKind.comp &&
-                      store.paramMetadata('comp_knee')?['hidden'] != true
-                  ? parameterChoices(store.paramMetadata('comp_knee'))
-                          .isNotEmpty
-                      ? _ParameterChoices(
-                          store: store,
-                          leaf: 'comp_knee',
-                          label: 'Knee',
-                          fallback: 'Loading…',
-                          compact: compact,
-                          onChanged: (value) =>
-                              store.setDynParam(DynKind.comp, 'knee', value))
-                      : Container(
-                          padding: const EdgeInsets.all(AppDesign.spaceXs),
-                          decoration: BoxDecoration(
-                              color: ConsolePalette.of(context).chip,
-                              borderRadius: U4.rBtn),
-                          child: Row(children: [
-                            for (final soft in [true, false])
-                              Expanded(
-                                  child: Semantics(
-                                      toggled: d.softKnee == soft,
-                                      child: _ProcessingButton(
-                                          fontSize: optionFontSize,
-                                          label:
-                                              soft ? 'Soft Knee' : 'Hard Knee',
-                                          active: d.softKnee == soft,
-                                          onTap: store.supports('comp_knee') &&
-                                                  d.softKnee != null
-                                              ? () =>
-                                                  store.setCompSoftKnee(soft)
-                                              : null)))
-                          ]))
-                  : const SizedBox.shrink(),
-            ),
+            if (kind == DynKind.comp &&
+                store.paramMetadata('comp_knee')?['hidden'] != true)
+              if (parameterChoices(store.paramMetadata('comp_knee')).isNotEmpty)
+                SizedBox(
+                    width: math.min(
+                        bounds.maxWidth,
+                        math.max(
+                            200,
+                            bounds.maxWidth -
+                                presetsWidth -
+                                AppDesign.spaceSm)),
+                    child: _ParameterChoices(
+                        store: store,
+                        leaf: 'comp_knee',
+                        label: 'Knee',
+                        fallback: 'Loading…',
+                        compact: compact,
+                        onChanged: (value) =>
+                            store.setDynParam(DynKind.comp, 'knee', value)))
+              else
+                ConsoleActionGroup(children: [
+                  for (final soft in [true, false])
+                    Semantics(
+                        toggled: d.softKnee == soft,
+                        child: _ProcessingButton(
+                            fontSize: optionFontSize,
+                            label: soft ? 'Soft Knee' : 'Hard Knee',
+                            active: d.softKnee == soft,
+                            onTap: store.supports('comp_knee') &&
+                                    d.softKnee != null
+                                ? () => store.setCompSoftKnee(soft)
+                                : null)),
+                ]),
           ]),
         ),
         const SizedBox(height: AppDesign.spaceSm),
@@ -198,7 +193,7 @@ class _DynTab extends StatelessWidget {
         const SizedBox(height: AppDesign.spaceSm),
         if (compact && visibleKnobs.isNotEmpty) ...[
           if (knobByProp['thr'] case final threshold?) ...[
-            SizedBox(height: 80, child: control(threshold, threshold: true)),
+            control(threshold, threshold: true),
             if (visibleKnobs.length > 1) const SizedBox(height: 8),
           ],
           if (visibleKnobs.any((knob) => knob.prop != 'thr'))
@@ -208,12 +203,13 @@ class _DynTab extends StatelessWidget {
               return Wrap(spacing: gap, runSpacing: gap, children: [
                 for (final knob in visibleKnobs)
                   if (knob.prop != 'thr')
-                    SizedBox(width: width, height: 104, child: control(knob)),
+                    SizedBox(width: width, child: control(knob)),
               ]);
             }),
         ] else if (!compact && visibleKnobs.isNotEmpty) ...[
           Container(
-              height: (200 * scale).clamp(128.0, 200.0),
+              constraints:
+                  BoxConstraints(minHeight: (200 * scale).clamp(128.0, 200.0)),
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).processingPanel,
                   borderRadius: U4.rWell),
@@ -447,8 +443,6 @@ class _ParameterChoices extends StatelessWidget {
                           style: AppDesign.type(compact ? 12 : 14,
                               color: palette.text7)),
                       Text(_choiceText(store, leaf, fallback),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: AppDesign.type(compact ? 15 : 18,
                               color: palette.text1)),
                     ])),

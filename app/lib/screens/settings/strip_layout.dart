@@ -26,9 +26,7 @@ class _StripLayoutSection extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              child: ConsoleActionGroup(
                 children: [
                   for (final preset in const [
                     ('essential', 'Essential'),
@@ -184,6 +182,7 @@ class _PresetChip extends StatelessWidget {
           onTap: () => _runSettingsAction(context, onTap),
           behavior: HitTestBehavior.opaque,
           child: Container(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: selected

@@ -132,7 +132,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
       animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
+        builder: (dialogContext, setDialogState) => ConsoleAlertDialog(
           title: Text(row.label),
           content: Slider(
             value: value.clamp(row.min!, row.max!),
@@ -758,6 +758,12 @@ class _MonitorControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
+    bool isFocused(DestinationControlVm row) =>
+        focused != null &&
+        focused!.epoch == row.epoch &&
+        focused!.target == row.target &&
+        focused!.surface == row.surface &&
+        focused!.id == row.id;
     return Container(
       padding: const EdgeInsets.all(AppDesign.spaceMd),
       decoration: BoxDecoration(
@@ -777,9 +783,7 @@ class _MonitorControls extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppDesign.spaceSm),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          ConsoleActionGroup(
             children: [
               for (final row in store.monitorControls)
                 if (row.choices.isNotEmpty)
@@ -796,30 +800,32 @@ class _MonitorControls extends StatelessWidget {
                           child: Text(choice.label),
                         ),
                     ],
-                    child: Container(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
+                    child: IntrinsicWidth(
+                        child: Container(
+                      constraints: const BoxConstraints(
+                          minHeight: AppDesign.touchTarget),
+                      alignment: Alignment.center,
+                      padding: AppDesign.controlPadding,
                       decoration: BoxDecoration(
                           color: palette.control,
                           border: Border.all(color: palette.lineCtl),
                           borderRadius: U4.rBtn),
-                      child: Text('${row.label}: ${row.valueLabel ?? '-'}'),
-                    ),
+                      child: Text('${row.label}: ${row.valueLabel ?? '-'}',
+                          style: AppDesign.type(AppDesign.body,
+                              color: palette.text1, weight: FontWeight.w600)),
+                    )),
                   )
                 else if (row.numeric)
-                  FilterChip(
-                    label: Text(row.label),
-                    selected: focused != null &&
-                        focused!.epoch == row.epoch &&
-                        focused!.target == row.target &&
-                        focused!.surface == row.surface &&
-                        focused!.id == row.id,
-                    onSelected:
-                        !store.monitorControlIsCurrent(row) || !row.available
+                  Semantics(
+                      selected: isFocused(row),
+                      child: ConsoleButton(
+                        label: row.label,
+                        selected: isFocused(row),
+                        onPressed: !store.monitorControlIsCurrent(row) ||
+                                !row.available
                             ? null
-                            : (_) => onSelect(row),
-                  ),
+                            : () => onSelect(row),
+                      )),
             ],
           ),
         ],

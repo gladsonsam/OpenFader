@@ -153,7 +153,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                             fontSize: 12,
                             color: ConsolePalette.of(context).text7))
                   else ...[
-                    Wrap(spacing: 6, runSpacing: 6, children: [
+                    ConsoleActionGroup(children: [
                       for (final show in store.shows)
                         OutlinedButton(
                             onPressed: store.busy
@@ -214,6 +214,9 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                   label: 'Clear all',
                                   action: store.clearAll),
                           child: Container(
+                            constraints: const BoxConstraints(
+                                minWidth: 44, minHeight: 44),
+                            alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
@@ -317,10 +320,12 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         onSubmitted: (_) => _submitRename(),
                                       ),
                                     ),
-                                    GestureDetector(
-                                      onTap: _submitRename,
-                                      child: Icon(Icons.check,
-                                          size: 16,
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      tooltip: 'Save snapshot name',
+                                      onPressed: _submitRename,
+                                      icon: Icon(Icons.check,
+                                          size: 18,
                                           color: ConsolePalette.of(context)
                                               .meterGreen),
                                     ),
@@ -370,9 +375,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ),
                                       ),
                                     ),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 4,
+                                    ConsoleActionGroup(
                                       children: [
                                         TextButton(
                                           onPressed: store.busy
@@ -580,7 +583,7 @@ class _NameRow extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 8),
         ConsoleButton(label: actionLabel, primary: true, onPressed: onAction),
       ],
     );

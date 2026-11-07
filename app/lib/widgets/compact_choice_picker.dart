@@ -1,3 +1,4 @@
+import '../ui/overlays/console_dialogs.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -113,7 +114,7 @@ Future<T?> showCompactChoiceDialog<T>({
         listenable: changes,
         builder: (context, _) {
           final current = isCurrent();
-          return AlertDialog(
+          return ConsoleAlertDialog(
             title: Text(title),
             scrollable: true,
             content: SizedBox(

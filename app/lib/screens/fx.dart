@@ -514,7 +514,7 @@ class _NativeFxDetail extends StatelessWidget {
       if (binaryControls.isNotEmpty)
         Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Wrap(spacing: 12, runSpacing: 12, children: [
+            child: ConsoleActionGroup(spacing: 12, runSpacing: 12, children: [
               for (final control in binaryControls)
                 Tooltip(
                     message: control.description,
@@ -617,27 +617,24 @@ class _LegacyFxDetail extends StatelessWidget {
     return ConsolePanel(
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Expanded(
-            child: Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: palette.text1))),
-        if (store.stateControlsSupported) ...[
+      Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
+          style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.w600, color: palette.text1)),
+      if (store.stateControlsSupported) ...[
+        const SizedBox(height: 8),
+        ConsoleActionGroup(children: [
           _FxToggle(
               label: slot.on ? 'On' : 'Off',
               active: slot.on,
               activeColor: palette.meterGreen,
               onTap: () => store.setOn(!slot.on)),
-          const SizedBox(width: 6),
           _FxToggle(
               label: slot.bypass ? 'Bypassed' : 'Bypass',
               active: slot.bypass,
               activeColor: palette.meterAmber,
               onTap: () => store.setBypass(!slot.bypass)),
-        ],
-      ]),
+        ]),
+      ],
       const SizedBox(height: AppDesign.spaceMd),
       if (store.typeOptions.isNotEmpty)
         OutlinedButton.icon(

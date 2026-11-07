@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/native_library_store.dart';
 
-import '../palette.dart';
+import '../ui/console.dart';
 import 'recorder_arrangement.dart';
 
 /// Recorder data and commands are supplied by the shell's host adapter.
@@ -122,7 +122,7 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
-    return AlertDialog(
+    return ConsoleAlertDialog(
       backgroundColor: p.panel,
       title: Text('Go to time', style: TextStyle(color: p.text1)),
       content: TextField(
@@ -205,7 +205,7 @@ class _LoopDialogState extends State<_LoopDialog> {
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
-    return AlertDialog(
+    return ConsoleAlertDialog(
       backgroundColor: p.panel,
       title: Text('Loop range', style: TextStyle(color: p.text1)),
       content: SizedBox(
@@ -363,7 +363,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted) return false;
     return await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => ConsoleAlertDialog(
                   title: const Text('Linked snapshot unavailable'),
                   content: const Text(
                       'The linked mixer snapshot cannot be verified. Continue without recalling it, or cancel to reconnect and inspect the mixer.'),
@@ -485,7 +485,7 @@ class _RecorderPageState extends State<RecorderPage> {
     final captured = native.nativeContext;
     final recall = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
               title: const Text('Recall linked mixer snapshot?'),
               content: Text(
                   'Slot ${link['slot']} “${link['name']}” in ${link['label']}. Recall may change mixer settings. The provider name does not identify a particular physical mixer. Return to live restores routing only.'),
@@ -841,7 +841,7 @@ class _RecorderPageState extends State<RecorderPage> {
       if (choice == 'automatic') {
         final confirmed = await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => ConsoleAlertDialog(
                     title: const Text('Play virtual soundcheck?'),
                     content: const Text(
                         'Play through the mixer returns. Live input routing will be saved and restored when you return to live.'),
@@ -889,7 +889,7 @@ class _RecorderPageState extends State<RecorderPage> {
         final chosen = await showDialog<List<int?>>(
             context: context,
             builder: (context) => StatefulBuilder(
-                builder: (context, update) => AlertDialog(
+                builder: (context, update) => ConsoleAlertDialog(
                       title: const Text('Prepare manual playback'),
                       content: SizedBox(
                           width: 420,
@@ -994,7 +994,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted || store.pending) return;
     final restored = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
               title: const Text('Restore live inputs'),
               content: const Text(
                   'Playback output is stopped. Restore the mixer’s physical live input routing yourself, then confirm below. OpenFader does not change the mixer in manual mode.'),
@@ -1214,7 +1214,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                   await showDialog<bool>(
                                                 context: context,
                                                 builder: (context) =>
-                                                    AlertDialog(
+                                                    ConsoleAlertDialog(
                                                   title: const Text(
                                                       'Return to live?'),
                                                   content: const Text(
@@ -1672,7 +1672,8 @@ class _RecorderPageState extends State<RecorderPage> {
                                   ? () async {
                                       final confirmed = await showDialog<bool>(
                                           context: context,
-                                          builder: (context) => AlertDialog(
+                                          builder: (context) =>
+                                              ConsoleAlertDialog(
                                                 title: const Text(
                                                     'Rebind recovery?'),
                                                 content: const Text(
@@ -1705,7 +1706,8 @@ class _RecorderPageState extends State<RecorderPage> {
                                   ? () async {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
-                                        builder: (context) => AlertDialog(
+                                        builder: (context) =>
+                                            ConsoleAlertDialog(
                                           title: const Text(
                                               'Keep current routing?'),
                                           content: const Text(
@@ -1832,7 +1834,7 @@ class _RecorderPageState extends State<RecorderPage> {
               backgroundColor: p.panel,
               foregroundColor: p.recorderMuted,
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 40),
+              minimumSize: const Size(0, 44),
             );
             return Container(
               margin: const EdgeInsets.only(top: 10),
@@ -2029,29 +2031,27 @@ class _RecorderPageState extends State<RecorderPage> {
                                                   final confirmed =
                                                       await showDialog<bool>(
                                                           context: context,
-                                                          builder:
-                                                              (context) =>
-                                                                  AlertDialog(
-                                                                    title: const Text(
-                                                                        'Recover take?'),
-                                                                    content:
-                                                                        const Text(
-                                                                            'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop all recording and playback before continuing.'),
-                                                                    actions: [
-                                                                      TextButton(
-                                                                          onPressed: () => Navigator.pop(
-                                                                              context,
-                                                                              false),
-                                                                          child:
-                                                                              const Text('Cancel')),
-                                                                      FilledButton(
-                                                                          onPressed: () => Navigator.pop(
-                                                                              context,
-                                                                              true),
-                                                                          child:
-                                                                              const Text('Recover take')),
-                                                                    ],
-                                                                  ));
+                                                          builder: (context) =>
+                                                              ConsoleAlertDialog(
+                                                                title: const Text(
+                                                                    'Recover take?'),
+                                                                content: const Text(
+                                                                    'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop all recording and playback before continuing.'),
+                                                                actions: [
+                                                                  TextButton(
+                                                                      onPressed: () => Navigator.pop(
+                                                                          context,
+                                                                          false),
+                                                                      child: const Text(
+                                                                          'Cancel')),
+                                                                  FilledButton(
+                                                                      onPressed: () => Navigator.pop(
+                                                                          context,
+                                                                          true),
+                                                                      child: const Text(
+                                                                          'Recover take')),
+                                                                ],
+                                                              ));
                                                   if (confirmed == true &&
                                                       mounted) {
                                                     await store.command(
@@ -2247,7 +2247,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           'App and browser connections use this same optional password. Changing it disconnects existing clients.',
           style: TextStyle(color: p.mutedText)),
       const SizedBox(height: 12),
-      Wrap(spacing: 8, runSpacing: 8, children: [
+      ConsoleActionGroup(children: [
         OutlinedButton(
             onPressed: store.remotePending || password.text.isEmpty
                 ? null
@@ -2271,7 +2271,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
         Text(
             'Microphone access is managed by the operating system and audio interface driver.',
             style: TextStyle(color: p.mutedText)),
-      Wrap(spacing: 8, runSpacing: 8, children: [
+      ConsoleActionGroup(children: [
         if (!kIsWeb && Platform.isMacOS)
           OutlinedButton(
               onPressed: store.remotePending

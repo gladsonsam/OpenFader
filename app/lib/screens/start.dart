@@ -596,9 +596,9 @@ class _DeviceRow extends StatelessWidget {
                         color: ConsolePalette.of(context).mutedText)),
               ])),
           const SizedBox(width: 12),
-          SizedBox(
-            height: wide ? 56 : 44,
-            width: wide ? 124 : 92,
+          ConstrainedBox(
+            constraints: BoxConstraints(
+                minHeight: wide ? 56 : 44, minWidth: wide ? 124 : 92),
             child: ElevatedButton(
               onPressed: busy || connecting ? null : onConnect,
               style: ElevatedButton.styleFrom(
@@ -615,9 +615,7 @@ class _DeviceRow extends StatelessWidget {
                   textStyle: AppDesign.type(wide ? 24 : 18,
                       weight: FontWeight.w600,
                       color: ConsolePalette.of(context).text)),
-              child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(label, maxLines: 1, softWrap: false)),
+              child: Text(label),
             ),
           ),
         ],

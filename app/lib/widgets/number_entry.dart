@@ -1,5 +1,7 @@
 library;
 
+import '../ui/overlays/console_dialogs.dart';
+
 import 'package:flutter/material.dart';
 import '../palette.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +26,7 @@ Future<double?> showNumberEntry({
     animationStyle: AnimationStyle.noAnimation,
     context: context,
     builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
+      builder: (context, setState) => ConsoleAlertDialog(
         backgroundColor: ConsolePalette.of(context).panel,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),

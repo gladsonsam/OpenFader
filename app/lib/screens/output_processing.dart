@@ -1,12 +1,11 @@
 import '../core/control_reset.dart';
-import '../design.dart';
+import '../ui/console.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/destination_controls.dart';
 import '../core/output_processing.dart';
 import '../core/output_geq.dart';
-import '../palette.dart';
 import '../widgets/destination_control_editor.dart';
 import '../widgets/output_processor_presets.dart';
 import '../widgets/output_geq_editor.dart';
@@ -168,6 +167,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                   Padding(
                     padding: const EdgeInsets.all(AppDesign.spaceLg),
                     child: DropdownButtonFormField<String>(
+                      itemHeight: null,
                       key: ValueKey((target, targets.length)),
                       initialValue: targets.containsKey(target) ? target : null,
                       isExpanded: true,
@@ -202,32 +202,29 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
+                      child: ConsoleActionGroup(
                         children: [
                           for (final item in surfaces)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text(labels[item] ?? item),
-                                selected: item == surface,
-                                onSelected: (_) => setState(() {
-                                  _clearFocus();
-                                  _surface = item;
-                                }),
-                              ),
+                            ChoiceChip(
+                              label: Text(labels[item] ?? item),
+                              selected: item == surface,
+                              onSelected: (_) => setState(() {
+                                _clearFocus();
+                                _surface = item;
+                              }),
                             ),
                         ],
                       ),
                     ),
                   if (surface != null && surface != 'output_controls')
                     Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                         child: OutputProcessorPresetActions(
                             store: store, surface: surface)),
                   if (surface == 'output_geq' &&
                       outputGeqBands(processor).isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                       child: OutputGeqDraftActions(store: store),
                     ),
                   Expanded(
@@ -479,8 +476,7 @@ class _ControlTileState extends State<_ControlTile> {
             ),
             if (slider != null) slider,
             if (!control.numeric)
-              Wrap(
-                spacing: 8,
+              ConsoleActionGroup(
                 children: [
                   for (final choice in control.choices)
                     ChoiceChip(
