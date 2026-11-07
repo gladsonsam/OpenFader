@@ -9,7 +9,8 @@
 Currently supporting Behringer X-Air series and Mackie DL32S, with more consoles coming soon!.
 
 <p align="center">
-  <img src="app/assets/screenshots/mixer-ipad.gif" width="500" alt="Live mixer on tablet" />
+  <img src="app/assets/screenshots/mixer-ipad-6ed6ec52e958.gif" width="500" alt="OpenFader offline mixer demo on iPad" />
+  <img src="app/assets/screenshots/mixer-iphone-7a7fc6be3142.gif" width="180" alt="OpenFader offline mixer demo on iPhone" />
 </p>
 
 ## License
