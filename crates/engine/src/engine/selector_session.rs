@@ -105,6 +105,43 @@ impl SelectorSession {
         Ok(profile)
     }
 
+    pub async fn recorder_descriptor(
+        &self,
+    ) -> anyhow::Result<Option<crate::drivers::RecorderDescriptor>> {
+        self.check()?;
+        let mut descriptor = self.driver.recorder_descriptor().await?;
+        self.check()?;
+        if let Some(descriptor) = &mut descriptor {
+            if !descriptor.capture_strip_ids.is_empty() {
+                let cache = self.engine.param_cache.read().unwrap();
+                descriptor.channel_names = descriptor
+                    .capture_strip_ids
+                    .iter()
+                    .map(|ids| {
+                        let mut names = Vec::new();
+                        for id in ids {
+                            if let Some(name) = cache
+                                .get(id)
+                                .and_then(|params| params.get("name"))
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::trim)
+                                .filter(|name| !name.is_empty())
+                            {
+                                let name: String = name.chars().take(128).collect();
+                                if !names.contains(&name) {
+                                    names.push(name);
+                                }
+                            }
+                        }
+                        names.join(" / ")
+                    })
+                    .collect();
+            }
+        }
+        self.check()?;
+        Ok(descriptor)
+    }
+
     /// Read a provider-owned route while the connection remains pinned.
     pub async fn soundcheck_route_read(
         &self,

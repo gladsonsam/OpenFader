@@ -161,7 +161,7 @@ class ShellRecorderStore extends RecorderStore {
     _stateRefreshing = true;
     try {
       final result = await _request('state');
-      if (!_disposed && result['error'] == null) {
+      if (!_disposed) {
         _state = {..._state, ...result};
         _connected = true;
         _notify();
@@ -181,7 +181,11 @@ class ShellRecorderStore extends RecorderStore {
     Future<(Map<String, dynamic>?, String?)> read(String path) async {
       try {
         final result = await _request(path);
-        if (result['error'] != null) throw StateError('${result['error']}');
+        // State diagnostics describe capture/playback failures on a reachable
+        // host. Keep that state visible and Stop/Recover available.
+        if (path != 'state' && result['error'] != null) {
+          throw StateError('${result['error']}');
+        }
         return (result, null);
       } catch (e) {
         return (null, '$path: $e');
@@ -302,9 +306,10 @@ class ShellRecorderStore extends RecorderStore {
         _error =
             'Command $action response timed out: $e. Host outcome is unknown; waiting for host state.';
       } catch (e) {
-        _connected = false;
-        _error =
-            'Command $action failed: $e. Refresh to confirm the host state before retrying.';
+        // Permission and command validation failures do not disconnect a
+        // reachable host. The refresh below still detects a lost transport.
+        if (e is IOException) _connected = false;
+        _error = 'Command $action failed: $e';
       } finally {
         _notify();
         await refresh();

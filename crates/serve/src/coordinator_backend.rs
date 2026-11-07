@@ -370,11 +370,10 @@ impl CoordinatorBackend {
                     v
                 }
                 "stop" => {
-                    let v = if self.manual_transport == "playing" {
-                        c.pause(gen).await
-                    } else {
-                        Ok(Value::Null)
-                    };
+                    if self.manual_transport == "playing" {
+                        c.pause(gen).await.map_err(anyhow::Error::msg)?;
+                    }
+                    let v = c.seek(gen, 0).await;
                     if v.is_ok() {
                         self.manual_transport = "stopped".into();
                     }
@@ -470,6 +469,8 @@ impl CoordinatorBackend {
                 anyhow::anyhow!("connected driver does not provide soundcheck routing")
             })?;
             profile.validate()?;
+            let descriptor = session.recorder_descriptor().await?.ok_or_else(|| anyhow::anyhow!("The connected provider has no verified audio interface association; use manual virtual soundcheck"))?;
+            anyhow::ensure!(crate::recorder::recorder_device_matches(&descriptor, &device), "The selected audio interface does not match the connected provider; use manual virtual soundcheck");
             validate_take(&self.config.root, &take, &device, profile.capture_channels)?;
             anyhow::ensure!(
                 device.output_channels >= profile.output_channels,
@@ -545,6 +546,7 @@ impl CoordinatorBackend {
                 if result.is_ok() {
                     let status = self.telemetry.get_or_insert_with(|| serde_json::json!({}));
                     status["transport"] = serde_json::json!("stopped");
+                    status["position_frames"] = serde_json::json!(0);
                     status.as_object_mut().map(|o| o.remove("playback_error"));
                 }
                 result
@@ -758,7 +760,7 @@ impl SoundcheckBackend for CoordinatorBackend {
                     }
                 }
                 if self.probe.is_none() && self.profile_result.is_none() {
-                    if let Some((_, _, _, outputs, _)) = key {
+                    if let Some(device) = self.config.device.clone() {
                         let engine = self.engine.clone();
                         self.probe = Some(tokio::spawn(async move {
                             match tokio::time::timeout(Duration::from_secs(5), async {
@@ -770,9 +772,11 @@ impl SoundcheckBackend for CoordinatorBackend {
                                         )
                                     })?;
                                 anyhow::ensure!(
-                                    outputs >= profile.output_channels,
+                                    device.output_channels >= profile.output_channels,
                                     "insufficient playback outputs"
                                 );
+                                let descriptor = session.recorder_descriptor().await?.ok_or_else(|| anyhow::anyhow!("The connected provider has no verified audio interface association; use manual virtual soundcheck"))?;
+                                anyhow::ensure!(crate::recorder::recorder_device_matches(&descriptor, &device), "The selected audio interface does not match the connected provider; use manual virtual soundcheck");
                                 Ok::<_, anyhow::Error>(())
                             })
                             .await

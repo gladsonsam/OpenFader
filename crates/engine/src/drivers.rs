@@ -109,6 +109,16 @@ pub struct SoundcheckProfile {
     pub driver_state: serde_json::Value,
 }
 
+/// Provider-owned USB interface hints and verified physical capture labels.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct RecorderDescriptor {
+    pub interface_names: Vec<String>,
+    pub capture_channels: u16,
+    pub output_channels: u16,
+    pub channel_names: Vec<String>,
+    pub capture_strip_ids: Vec<Vec<u16>>,
+}
+
 impl SoundcheckProfile {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
@@ -794,6 +804,10 @@ pub trait DynDriver: Send + Sync {
             _ => anyhow::bail!("routing source is not a label"),
         }
     }
+    async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
+        Ok(None)
+    }
+
     /// Build a fresh provider-owned soundcheck profile, or None when unsupported.
     async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
         Ok(None)
@@ -1542,6 +1556,28 @@ impl_dyn_driver!(openfader_sim::SimDriver {
         Ok(soundcheck_update(state, channel, next))
     }
 
+    async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
+        let profile = self.soundcheck_profile().await?.ok_or_else(|| anyhow::anyhow!("simulation profile unavailable"))?;
+        let mut names = vec![String::new(); usize::from(profile.capture_channels)];
+        for strip in MixerDriver::snapshot(self).await?.strips {
+            if strip.id.0 < profile.capture_channels {
+                let [analog, _, bank] = self.selector_read(strip.id.0)?;
+                if bank == 0 {
+                    if let Some(name) = names.get_mut(analog as usize) { *name = strip.name; }
+                }
+            }
+        }
+        Ok(Some(RecorderDescriptor {
+            // Explicit simulation-only interface labels, including the existing
+            // generic multichannel backend fixture; never a hardware fallback.
+            interface_names: vec!["OpenFader simulation fixture".into(), "generic".into()],
+            capture_channels: profile.capture_channels,
+            output_channels: profile.output_channels,
+            channel_names: names,
+            capture_strip_ids: Vec::new(),
+        }))
+    }
+
     async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
         let count = openfader_sim::SIM_TOPOLOGY.iter().find(|f| f.kind == StripKind::In)
             .ok_or_else(|| anyhow::anyhow!("missing simulator input topology"))?.count;
@@ -1829,6 +1865,28 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         let actual = self.input_route(member).await?; check(&[member])?;
         anyhow::ensure!(actual == next, "selector readback mismatch");
         Ok(soundcheck_update(state, channel, [next.analog,next.usb,next.bank]))
+    }
+
+    async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
+        let readback = openfader_proto_xair::XAirDriver::soundcheck_readback(self).await?;
+        let preflight = openfader_proto_xair::soundcheck_profile::preflight(&readback)?;
+        let mut tracks: Vec<Vec<u16>> = vec![Vec::new(); 18];
+        for (&strip, route) in &preflight.expected {
+            if route.bank == 0 {
+                if let Some(ids) = tracks.get_mut(route.analog as usize) {
+                    ids.push(strip);
+                }
+            }
+        }
+        for ids in &mut tracks { ids.sort_unstable(); }
+        Ok(Some(RecorderDescriptor {
+            // Preflight accepts only the adapter's verified model and firmware.
+            interface_names: vec!["XR18".into()],
+            capture_channels: 18,
+            output_channels: 18,
+            channel_names: vec![String::new(); tracks.len()],
+            capture_strip_ids: tracks,
+        }))
     }
 
     async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {

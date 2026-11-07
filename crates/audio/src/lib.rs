@@ -252,6 +252,14 @@ impl TakeWriter {
             file: None,
         })
     }
+    pub fn set_channel_names(&mut self, names: Vec<String>) -> io::Result<()> {
+        if !names.is_empty() && names.len() != usize::from(self.manifest.channels) {
+            return Err(invalid("channel name count differs from capture layout"));
+        }
+        self.manifest.channel_names = names;
+        publish(&self.dir, &self.manifest)
+    }
+
     pub fn append_interleaved(&mut self, samples: &[i32]) -> io::Result<()> {
         let channels = self.manifest.channels as usize;
         if !samples.len().is_multiple_of(channels)

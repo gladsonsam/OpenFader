@@ -258,6 +258,7 @@ class _RecorderPageState extends State<RecorderPage> {
   int? _loopStart, _loopEnd, _loopTotal;
   Object? _loopTake;
   String? _previewTakeId;
+  String? _capturePreviewId;
   String? _importedTakeId;
   final _importedTakeKey = GlobalKey();
   bool _startingPlay = false;
@@ -1036,19 +1037,7 @@ class _RecorderPageState extends State<RecorderPage> {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        if (box.maxWidth < 800 || !box.hasBoundedHeight) {
-          return _workspace(context);
-        }
-        final scale = box.maxWidth / 2000;
-        return SizedBox.expand(
-            child: FittedBox(
-                fit: BoxFit.fill,
-                child: SizedBox(
-                    width: 2000,
-                    height: box.maxHeight / scale,
-                    child: _workspace(context))));
-      });
+  Widget build(BuildContext context) => _workspace(context);
 
   Widget _workspace(BuildContext context) => ListenableBuilder(
         listenable: store,
@@ -1065,16 +1054,49 @@ class _RecorderPageState extends State<RecorderPage> {
           final selectedTake = s['selected_take_id'];
           final completed =
               store.takes.where((t) => t['complete'] == true).toList();
-          if (!completed.any((t) => t['id'] == _previewTakeId)) {
-            _previewTakeId =
-                (completed.where((t) => t['id'] == selectedTake).firstOrNull ??
-                    completed.firstOrNull)?['id'] as String?;
+          if (recording && selectedTake is String) {
+            // Follow the host's actual take ID through finalization or failure.
+            _capturePreviewId = selectedTake;
+            _previewTakeId = selectedTake;
+          } else if (_capturePreviewId != null) {
+            _previewTakeId = _capturePreviewId;
+            if (store.takes.any((take) => take['id'] == _capturePreviewId)) {
+              _capturePreviewId = null;
+            }
+          }
+          if (_capturePreviewId == null &&
+              !store.takes.any((take) => take['id'] == _previewTakeId)) {
+            _previewTakeId = (store.takes
+                    .where((take) => take['id'] == selectedTake)
+                    .firstOrNull ??
+                completed.firstOrNull ??
+                store.takes.firstOrNull)?['id'] as String?;
           }
           final previewId = (recording || soundcheck)
               ? selectedTake as String?
               : _previewTakeId;
           final prepared = soundcheck && previewId == selectedTake;
           final selectedDevice = s['selected_device_id'];
+          final selectedInterface = store.devices
+              .where((device) => device['id'] == selectedDevice)
+              .firstOrNull;
+          final interfaceName = selectedInterface?['name'];
+          final sampleRate = s['sample_rate'];
+          final inputCount = selectedInterface?['input_channels'];
+          final freeBytes = s['disk_free_bytes'];
+          final diskSpaceError = s['disk_space_error'];
+          final interfaceSummary = <String>[
+            interfaceName is String && interfaceName.trim().isNotEmpty
+                ? interfaceName
+                : selectedDevice == null
+                    ? 'No audio interface selected'
+                    : 'Selected interface unavailable',
+            if (sampleRate is num && sampleRate > 0) '${sampleRate / 1000} kHz',
+            if (inputCount is num && inputCount > 0) '$inputCount inputs',
+            if (freeBytes is num && freeBytes >= 0)
+              '${(freeBytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB free',
+          ].join(' · ');
+          final deviceMatchReason = s['device_match_reason'];
           final capabilities =
               s['capabilities'] is Map ? s['capabilities'] as Map : const {};
           final enabled =
@@ -1089,18 +1111,14 @@ class _RecorderPageState extends State<RecorderPage> {
               );
           return Column(children: [
             LayoutBuilder(builder: (context, constraints) {
-              final scale = (constraints.maxWidth / 2000).clamp(0.45, 1.0);
-              Widget fixed(Widget child, double height) =>
-                  SingleChildScrollView(
+              Widget fixed(Widget child, double height) => SizedBox(
+                  height: height == 104 ? 64 : 80,
+                  child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: SizedBox(
-                          width: 2000 * scale,
-                          height: height * scale,
-                          child: FittedBox(
-                              alignment: Alignment.centerLeft,
-                              fit: BoxFit.fill,
-                              child: SizedBox(
-                                  width: 2000, height: height, child: child))));
+                      child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(minWidth: constraints.maxWidth),
+                          child: IntrinsicWidth(child: child))));
               Widget headerButton(Widget child, VoidCallback action) =>
                   SizedBox(
                       width: 44,
@@ -1117,7 +1135,7 @@ class _RecorderPageState extends State<RecorderPage> {
                 fixed(
                     Container(
                         color: p.recorderSurface,
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(children: [
                           headerButton(
                               const Icon(Icons.home_outlined), widget.onMixer),
@@ -1125,18 +1143,18 @@ class _RecorderPageState extends State<RecorderPage> {
                           Text('Recorder',
                               style: TextStyle(
                                   fontFamily: 'Barlow',
-                                  fontSize: 34,
+                                  fontSize: 24,
                                   fontWeight: FontWeight.w600,
                                   color: p.text)),
                           const Spacer(),
                           Text(widget.mixerName,
                               style: TextStyle(
-                                  fontSize: 23, color: p.recorderMuted)),
+                                  fontSize: 16, color: p.recorderMuted)),
                           const SizedBox(width: 20),
                           headerButton(
                               const Text('FX',
                                   style: TextStyle(
-                                      fontSize: 20,
+                                      fontSize: 14,
                                       fontWeight: FontWeight.w600)),
                               widget.onFx),
                           const SizedBox(width: 8),
@@ -1148,14 +1166,14 @@ class _RecorderPageState extends State<RecorderPage> {
                               child: Text('Tools',
                                   style: TextStyle(
                                       color: p.lime,
-                                      fontSize: 22,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w600)))
                         ])),
                     104),
                 fixed(
                     Container(
                         color: p.recorderBar,
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Theme(
                             data: Theme.of(context).copyWith(
                                 iconButtonTheme: IconButtonThemeData(
@@ -1172,7 +1190,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                         foregroundColor: p.recorderMuted,
                                         backgroundColor: p.recorderControl,
                                         textStyle: const TextStyle(
-                                            fontFamily: 'Barlow', fontSize: 21),
+                                            fontFamily: 'Barlow', fontSize: 15),
                                         shape: RoundedRectangleBorder(
                                             borderRadius:
                                                 BorderRadius.circular(9),
@@ -1180,8 +1198,8 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 color: p.recorderBorder))))),
                             child: Row(children: [
                               SizedBox(
-                                  width: 60,
-                                  height: 56,
+                                  width: 52,
+                                  height: 52,
                                   child: IconButton(
                                       onPressed: enabled && needsLive
                                           ? () async {
@@ -1223,8 +1241,8 @@ class _RecorderPageState extends State<RecorderPage> {
                                       icon: const Icon(Icons.input))),
                               const SizedBox(width: 6),
                               SizedBox(
-                                  width: 60,
-                                  height: 56,
+                                  width: 52,
+                                  height: 52,
                                   child: IconButton(
                                       tooltip: transport == 'playing'
                                           ? 'Pause'
@@ -1236,13 +1254,25 @@ class _RecorderPageState extends State<RecorderPage> {
                                               !recovery
                                           ? () => _playSelected(previewId)
                                           : null,
-                                      icon: Icon(transport == 'playing'
-                                          ? Icons.pause
-                                          : Icons.play_arrow))),
+                                      icon: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                                transport == 'playing'
+                                                    ? Icons.pause
+                                                    : Icons.play_arrow,
+                                                size: 20),
+                                            Text(
+                                                transport == 'playing'
+                                                    ? 'Pause'
+                                                    : 'Play',
+                                                style: const TextStyle(
+                                                    fontSize: 10))
+                                          ]))),
                               const SizedBox(width: 6),
                               SizedBox(
-                                  width: 60,
-                                  height: 56,
+                                  width: 52,
+                                  height: 52,
                                   child: IconButton(
                                       tooltip: 'Stop',
                                       onPressed: (store.pending ||
@@ -1250,11 +1280,17 @@ class _RecorderPageState extends State<RecorderPage> {
                                                   (recording || soundcheck)))
                                           ? () => store.command('stop')
                                           : null,
-                                      icon: const Icon(Icons.stop))),
+                                      icon: const Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.stop, size: 20),
+                                            Text('Stop',
+                                                style: TextStyle(fontSize: 10))
+                                          ]))),
                               const SizedBox(width: 6),
                               SizedBox(
-                                  width: 60,
-                                  height: 56,
+                                  width: 52,
+                                  height: 52,
                                   child: IconButton(
                                       tooltip: 'Record',
                                       onPressed: enabled &&
@@ -1268,13 +1304,19 @@ class _RecorderPageState extends State<RecorderPage> {
                                                     'take-${DateTime.now().toUtc().microsecondsSinceEpoch}'
                                               })
                                           : null,
-                                      icon: const Icon(
-                                          Icons.fiber_manual_record))),
-                              const SizedBox(width: 26),
+                                      icon: const Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.fiber_manual_record,
+                                                size: 20),
+                                            Text('Record',
+                                                style: TextStyle(fontSize: 10))
+                                          ]))),
+                              const SizedBox(width: 16),
                               Container(
-                                  height: 68,
+                                  height: 56,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 24),
+                                      horizontal: 12),
                                   decoration: BoxDecoration(
                                       color: p.recorderClock,
                                       borderRadius: BorderRadius.circular(10)),
@@ -1287,7 +1329,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 .shrinkWrap,
                                             alignment: Alignment.center,
                                             fixedSize:
-                                                const Size.fromHeight(68),
+                                                const Size.fromHeight(56),
                                             backgroundColor: Colors.transparent,
                                             side: BorderSide.none),
                                         onPressed: enabled &&
@@ -1343,7 +1385,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 s['sample_rate']),
                                             style: TextStyle(
                                                 color: p.lime,
-                                                fontSize: 50,
+                                                fontSize: 36,
                                                 fontFamily: 'Barlow Condensed',
                                                 height: 1,
                                                 fontWeight: FontWeight.w600,
@@ -1356,10 +1398,10 @@ class _RecorderPageState extends State<RecorderPage> {
                                                         false,
                                                     applyHeightToLastDescent:
                                                         false))),
-                                    const SizedBox(width: 22),
+                                    const SizedBox(width: 12),
                                     Container(
                                         padding:
-                                            const EdgeInsets.only(left: 20),
+                                            const EdgeInsets.only(left: 12),
                                         decoration: BoxDecoration(
                                             border: Border(
                                                 left: BorderSide(
@@ -1375,32 +1417,32 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 Text(
                                                     'Position ${(s['position_frames'] is num && s['sample_rate'] is num && (s['sample_rate'] as num) > 0) ? ((s['position_frames'] as num) / (s['sample_rate'] as num)).toStringAsFixed(1) : '0.0'} s',
                                                     style: TextStyle(
-                                                        fontSize: 20,
+                                                        fontSize: 14,
                                                         height: 1.3,
                                                         color:
                                                             p.recorderMuted)),
                                               Text(
-                                                  '${recording ? 'Captured' : 'Take length'} ${_time(recording ? s['recorded_frames'] : (completed.where((t) => t['id'] == previewId).firstOrNull)?['duration_frames'], recording ? s['sample_rate'] : (completed.where((t) => t['id'] == previewId).firstOrNull)?['sample_rate'] ?? s['sample_rate'])}',
+                                                  '${recording ? 'Captured' : 'Take length'} ${_time(recording ? s['recorded_frames'] : (store.takes.where((t) => t['id'] == previewId).firstOrNull)?['duration_frames'], recording ? s['sample_rate'] : (store.takes.where((t) => t['id'] == previewId).firstOrNull)?['sample_rate'] ?? s['sample_rate'])}',
                                                   style: TextStyle(
-                                                      fontSize: 20,
+                                                      fontSize: 14,
                                                       height: 1.3,
                                                       color: p.recorderMuted))
                                             ]))
                                   ])),
-                              const SizedBox(width: 26),
+                              const SizedBox(width: 16),
                               Icon(Icons.circle,
                                   size: 10,
                                   color: needsLive ? p.amber : p.lime),
                               const SizedBox(width: 10),
                               Text(
                                   store.pending
-                                      ? 'Preparing Soundcheck'
+                                      ? 'Working…'
                                       : '${recovery ? 'Recovery required' : soundcheck ? 'Soundcheck' : 'Live'} · ${transport.isEmpty ? 'Stopped' : transport[0].toUpperCase() + transport.substring(1)}',
                                   style: TextStyle(
                                       color: needsLive ? p.amber : p.lime,
-                                      fontSize: 23,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w600)),
-                              const SizedBox(width: 26),
+                              const SizedBox(width: 16),
                               Tooltip(
                                   message: prepared
                                       ? (capabilities['loop'] == true
@@ -1523,6 +1565,53 @@ class _RecorderPageState extends State<RecorderPage> {
                     96),
               ]);
             }),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                  color: p.panel,
+                  border: Border(bottom: BorderSide(color: p.linePanel))),
+              child: Row(children: [
+                Expanded(
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(interfaceSummary,
+                          style: TextStyle(
+                              color: p.text1,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 3),
+                      Text(
+                          recording
+                              ? 'Recording · stop to save this take.'
+                              : recovery
+                                  ? 'Restore live inputs before recording or playback.'
+                                  : soundcheck
+                                      ? 'Virtual playback ready · Play, then Return to live when finished.'
+                                      : selectedDevice == null
+                                          ? 'Choose an audio interface to record.'
+                                          : 'Ready to record · select a saved take to prepare virtual playback.',
+                          style: TextStyle(
+                              color: needsLive ? p.amber : p.mutedText,
+                              fontSize: 13)),
+                      if (deviceMatchReason is String &&
+                          deviceMatchReason.isNotEmpty)
+                        Text(deviceMatchReason,
+                            style: TextStyle(color: p.mutedText, fontSize: 12)),
+                      if (diskSpaceError is String && diskSpaceError.isNotEmpty)
+                        Text('Storage unavailable: $diskSpaceError',
+                            style: TextStyle(color: p.amber, fontSize: 12)),
+                    ])),
+                const SizedBox(width: 12),
+                TextButton.icon(
+                    onPressed: () => _showSetup(context, store),
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: Text(selectedDevice == null
+                        ? 'Choose interface'
+                        : 'Audio setup')),
+              ]),
+            ),
             if (!store.connected || store.error != null || s['error'] != null)
               Padding(
                   padding: const EdgeInsets.all(8),
@@ -1649,7 +1738,7 @@ class _RecorderPageState extends State<RecorderPage> {
               return Stack(children: [
                 Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   if (desktop && _showTakes)
-                    SizedBox(width: 270, child: _takesBrowser(context, store)),
+                    SizedBox(width: 280, child: _takesBrowser(context, store)),
                   Expanded(
                       child: RecorderArrangement(
                           store: store,
@@ -1663,7 +1752,7 @@ class _RecorderPageState extends State<RecorderPage> {
                 ]),
                 if (desktop)
                   Positioned(
-                      left: _showTakes ? 246 : 0,
+                      left: _showTakes ? 256 : 0,
                       top: (constraints.maxHeight - 76) / 2,
                       child: SizedBox(
                           width: 24,
@@ -1722,7 +1811,7 @@ class _RecorderPageState extends State<RecorderPage> {
           }
 
           Widget panel({required Widget child}) => Container(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
               color: p.recorderSurface,
               child: child);
           return SingleChildScrollView(
@@ -1733,7 +1822,7 @@ class _RecorderPageState extends State<RecorderPage> {
                 Text('Takes',
                     style: TextStyle(
                         color: p.recorderMuted,
-                        fontSize: 24,
+                        fontSize: 20,
                         fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
                 TextButton.icon(
@@ -1760,9 +1849,7 @@ class _RecorderPageState extends State<RecorderPage> {
                             key: take['id'] == _importedTakeId
                                 ? _importedTakeKey
                                 : null,
-                            onTap: !recording &&
-                                    !soundcheck &&
-                                    take['complete'] == true
+                            onTap: !recording && !soundcheck
                                 ? () => setState(() {
                                       _previewTakeId = take['id'] as String;
                                       _loopStart = null;
@@ -1809,7 +1896,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                         TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                         color: p.text1,
-                                                        fontSize: 25,
+                                                        fontSize: 18,
                                                         fontWeight:
                                                             FontWeight.w600))))
                                       ]),
@@ -1817,7 +1904,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                           '${takeSummary(take)}\n${_takeDate(take['id']).replaceFirst(' · ', '')}',
                                           style: TextStyle(
                                               color: p.mutedText,
-                                              fontSize: 19)),
+                                              fontSize: 13)),
                                     ]))),
                         if (take['complete'] != true && take['id'] is String)
                           store.canAdminRemote
@@ -1860,6 +1947,19 @@ class _RecorderPageState extends State<RecorderPage> {
                                               'take_id': take['id'],
                                               'confirm': true
                                             });
+                                            if (!mounted) return;
+                                            if (store.takes.any((candidate) =>
+                                                candidate['id'] == take['id'] &&
+                                                candidate['complete'] ==
+                                                    true)) {
+                                              setState(() {
+                                                _capturePreviewId = null;
+                                                _previewTakeId =
+                                                    take['id'] as String;
+                                                _loopStart = null;
+                                                _loopEnd = null;
+                                              });
+                                            }
                                           }
                                         }
                                       : null,
@@ -1894,17 +1994,20 @@ class _RecorderPageState extends State<RecorderPage> {
                               child: const Text('Link native snapshot')),
                         ],
                         const SizedBox(height: 8),
-                        SizedBox(
-                            height: 48,
-                            child: OutlinedButton(
-                                onPressed: enabled &&
-                                        !recording &&
-                                        !soundcheck &&
-                                        take['complete'] == true &&
-                                        take['id'] == selectedTake
-                                    ? () => _playSelected(take['id'] as String)
-                                    : null,
-                                child: const Text('Soundcheck'))),
+                        if (take['id'] == selectedTake)
+                          SizedBox(
+                              height: 44,
+                              child: OutlinedButton(
+                                  onPressed: enabled &&
+                                          !recording &&
+                                          !soundcheck &&
+                                          take['complete'] == true &&
+                                          take['id'] == selectedTake
+                                      ? () =>
+                                          _playSelected(take['id'] as String)
+                                      : null,
+                                  child:
+                                      const Text('Prepare virtual playback'))),
                       ]),
               ])));
         });
@@ -1940,8 +2043,6 @@ class _RecorderPageState extends State<RecorderPage> {
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (store.canAdminRemote)
-                              panel(child: _RemoteAdminPanel(store: store)),
                             panel(
                                 child: Column(
                                     crossAxisAlignment:
@@ -1957,6 +2058,11 @@ class _RecorderPageState extends State<RecorderPage> {
                                             : store.refreshDevices,
                                         child: const Text('Refresh devices')),
                                   ]),
+                                  if (s['device_match_reason'] is String &&
+                                      (s['device_match_reason'] as String)
+                                          .isNotEmpty)
+                                    Text(s['device_match_reason'] as String,
+                                        style: TextStyle(color: p.mutedText)),
                                   const SizedBox(height: 10),
                                   if (store.devices.isEmpty)
                                     Text(
@@ -1991,6 +2097,17 @@ class _RecorderPageState extends State<RecorderPage> {
                                                   }
                                                 : null),
                                 ])),
+                            if (store.canAdminRemote) ...[
+                              const SizedBox(height: 12),
+                              panel(
+                                  child: ExpansionTile(
+                                tilePadding: EdgeInsets.zero,
+                                title: const Text('Remote server'),
+                                subtitle: const Text(
+                                    'Connect other devices to this recorder'),
+                                children: [_RemoteAdminPanel(store: store)],
+                              )),
+                            ],
                           ])));
             }));
   }
