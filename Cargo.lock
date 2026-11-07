@@ -1512,6 +1512,7 @@ dependencies = [
  "openfader-audio",
  "openfader-engine",
  "openfader-sim",
+ "openfader-transport",
  "rcgen",
  "ring",
  "serde_json",

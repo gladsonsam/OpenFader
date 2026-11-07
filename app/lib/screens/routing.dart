@@ -366,7 +366,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('1:1 from selected point'),
                 subtitle:
-                    Text('${_pickedSource!.label} → ${_pickedStrip!.name}'))),
+                    Text('${_pickedSource!.label} to ${_pickedStrip!.name}'))),
     ]);
     if (store.target != target) return;
     if (!mounted || mode == null) return;
@@ -440,7 +440,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                               title:
                                                   Text(change.destination.name),
                                               subtitle: Text(
-                                                  '${change.destination.src} → ${change.source.label}'));
+                                                  '${change.destination.src} to ${change.source.label}'));
                                         })),
                                 if (!valid)
                                   const Text(
@@ -744,7 +744,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             child: Text(
                                 preview == null
                                     ? 'Choose a source to preview the change'
-                                    : '${preview!.label} → ${strip.name}',
+                                    : '${preview!.label} to ${strip.name}',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                     color:
@@ -818,10 +818,18 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                               width: _labelWidth,
                                               height: 64,
                                               child: Center(
-                                                  child: Text('DESTINATION ↓',
-                                                      style: TextStyle(
-                                                          color: p.text7,
-                                                          fontSize: 11)))),
+                                                  child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                    Text('DESTINATION',
+                                                        style: TextStyle(
+                                                            color: p.text7,
+                                                            fontSize: 11)),
+                                                    Icon(Icons.arrow_downward,
+                                                        color: p.text7,
+                                                        size: 12),
+                                                  ]))),
                                           for (final source in sources)
                                             Tooltip(
                                                 message: source.label,

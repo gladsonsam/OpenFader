@@ -36,10 +36,19 @@ class MixValidation {
 }
 
 class LocalMixStore extends ChangeNotifier {
+  String? get unavailableReason => kIsWeb
+      ? 'Local mix files and backups are available in the desktop and mobile apps. Browser controls use the connected server.'
+      : null;
+
+  void _requireLocalFiles() {
+    if (kIsWeb) throw UnsupportedError(unavailableReason!);
+  }
+
   List<LocalMix> _mixes = [];
   List<LocalMix> get mixes => List.unmodifiable(_mixes);
 
   Future<Directory> _dir() async {
+    _requireLocalFiles();
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory('${docs.path}/openfader_mixes');
     if (!await dir.exists()) await dir.create(recursive: true);
@@ -47,6 +56,7 @@ class LocalMixStore extends ChangeNotifier {
   }
 
   Future<File> _backupFile() async {
+    _requireLocalFiles();
     final docs = await getApplicationDocumentsDirectory();
     return File('${docs.path}/openfader_backup.json');
   }
@@ -75,6 +85,7 @@ class LocalMixStore extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    if (kIsWeb) return;
     final dir = await _dir();
     final out = <LocalMix>[];
     await for (final e in dir.list()) {
@@ -101,6 +112,7 @@ class LocalMixStore extends ChangeNotifier {
   }
 
   Future<String?> importMix() async {
+    _requireLocalFiles();
     final picked = await FilePicker.pickFiles(
         type: FileType.custom, allowedExtensions: ['json']);
     final file = picked.firstOrNull;
@@ -222,6 +234,7 @@ class LocalMixStore extends ChangeNotifier {
 
   /// Returns the imported count as a string, or an error string.
   Future<String> importBackup() async {
+    _requireLocalFiles();
     final picked = await FilePicker.pickFiles(
         type: FileType.custom, allowedExtensions: ['json']);
     final file = picked.firstOrNull;
@@ -279,6 +292,7 @@ class LocalMixStore extends ChangeNotifier {
 
   /// Clears temporary and cache files only; mixes, recents, and prefs stay.
   Future<int> clearCache() async {
+    _requireLocalFiles();
     var removed = 0;
     final tmp = await getTemporaryDirectory();
     await for (final entry in tmp.list()) {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -584,7 +586,8 @@ class _RecorderPageState extends State<RecorderPage> {
           'Stop playback and return to live before transferring a take.');
       return;
     }
-    if (!store.canAdminRemote ||
+    if (kIsWeb ||
+        !store.canAdminRemote ||
         !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       _snapshotMessage(
           'Take transfer is available only on a local desktop recorder host.');
@@ -1927,7 +1930,8 @@ class _RecorderPageState extends State<RecorderPage> {
                     label:
                         Text(_transferBusy ? 'Transferring…' : 'Import take')),
                 const SizedBox(height: 16),
-                if (!store.canAdminRemote ||
+                if (kIsWeb ||
+                    !store.canAdminRemote ||
                     !(Platform.isMacOS ||
                         Platform.isWindows ||
                         Platform.isLinux))
@@ -2212,20 +2216,22 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
     final p = ConsolePalette.of(context);
     final enabled = store.remoteStatus['enabled'] == true;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Remote server',
-          style: TextStyle(
-              color: p.text1, fontSize: 18, fontWeight: FontWeight.bold)),
       Text(
-          enabled ? 'Enabled · port ${store.remoteStatus['port']}' : 'Disabled',
+          enabled
+              ? 'App connections enabled · port ${store.remoteStatus['port']}'
+              : 'App connections disabled',
           style: TextStyle(color: p.mutedText)),
+      const SizedBox(height: 8),
       Text(
-          'Connect from another device using this computer’s LAN IP address or hostname and port ${store.remoteStatus['port'] ?? 8845}.',
+          'Connect from another OpenFader app using this computer’s LAN IP address or hostname and port ${store.remoteStatus['port'] ?? 8845}.',
           style: TextStyle(color: p.mutedText)),
+      const SizedBox(height: 8),
       Text(
           store.remoteStatus['password_required'] == true
               ? 'Password required'
               : 'No password required',
           style: TextStyle(color: p.text1)),
+      const SizedBox(height: 12),
       TextField(
           controller: password,
           obscureText: true,
@@ -2236,10 +2242,12 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           decoration:
               const InputDecoration(labelText: 'Optional server password'),
           onChanged: (_) => setState(() {})),
+      const SizedBox(height: 8),
       Text(
-          'Password is saved on this computer. Changing it disconnects existing clients.',
+          'App and browser connections use this same optional password. Changing it disconnects existing clients.',
           style: TextStyle(color: p.mutedText)),
-      Wrap(spacing: 8, children: [
+      const SizedBox(height: 12),
+      Wrap(spacing: 8, runSpacing: 8, children: [
         OutlinedButton(
             onPressed: store.remotePending || password.text.isEmpty
                 ? null
@@ -2258,12 +2266,13 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
                 : () => store.remoteAction('password', ''),
             child: const Text('Remove password')),
       ]),
-      if (!Platform.isMacOS)
+      const SizedBox(height: 12),
+      if (kIsWeb || !Platform.isMacOS)
         Text(
             'Microphone access is managed by the operating system and audio interface driver.',
             style: TextStyle(color: p.mutedText)),
-      Wrap(spacing: 8, children: [
-        if (Platform.isMacOS)
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        if (!kIsWeb && Platform.isMacOS)
           OutlinedButton(
               onPressed: store.remotePending
                   ? null
@@ -2280,6 +2289,11 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
                 : () => store.remoteAction('disable'),
             child: const Text('Disable')),
       ]),
+      const SizedBox(height: 16),
+      Divider(color: p.linePanel),
+      const SizedBox(height: 8),
+      _WebHostingSettings(store: store),
+      const SizedBox(height: 16),
       if (store.remoteError != null)
         Text(store.remoteError!, style: TextStyle(color: p.amber)),
       Text('Authorized clients',
@@ -2296,6 +2310,122 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
                   : () => store.remoteAction('revoke', client),
               child: const Text('Revoke'))
         ]),
+    ]);
+  }
+}
+
+class _WebHostingSettings extends StatefulWidget {
+  final RecorderStore store;
+  const _WebHostingSettings({required this.store});
+  @override
+  State<_WebHostingSettings> createState() => _WebHostingSettingsState();
+}
+
+class _WebHostingSettingsState extends State<_WebHostingSettings> {
+  final _port = TextEditingController(text: '8846');
+  bool _portDirty = false;
+
+  @override
+  void dispose() {
+    _port.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    final status = store.remoteStatus;
+    final palette = ConsolePalette.of(context);
+    final enabled = status['web_enabled'] == true;
+    final available = status['web_assets_available'] == true;
+    final serverPort = status['web_port'];
+    if (!_portDirty &&
+        serverPort is num &&
+        _port.text != serverPort.toString()) {
+      _port.text = serverPort.toString();
+    }
+    final port = int.tryParse(_port.text);
+    final validPort = port != null && port >= 1 && port <= 65535;
+    final reason = status['web_reason'];
+    final urls = status['web_urls'] is List
+        ? (status['web_urls'] as List)
+            .whereType<String>()
+            .where((url) => url.isNotEmpty)
+            .toList()
+        : const <String>[];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Host browser app'),
+        subtitle: Text(enabled
+            ? 'Browser access is enabled'
+            : 'Open OpenFader in a browser on another device'),
+        value: enabled,
+        onChanged: store.remotePending || !enabled && (!available || !validPort)
+            ? null
+            : (value) async {
+                await store.remoteAction(value ? 'web_enable' : 'web_disable',
+                    value ? _port.text : null);
+                if (mounted && store.remoteError == null) {
+                  setState(() => _portDirty = false);
+                }
+              },
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _port,
+        enabled: !enabled && !store.remotePending,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: 'Browser port',
+          helperText: enabled
+              ? 'Turn off browser hosting to change its port.'
+              : 'Default 8846 · separate from app connections',
+          errorText: validPort ? null : 'Enter a port from 1 to 65535.',
+        ),
+        onChanged: (_) => setState(() => _portDirty = true),
+      ),
+      const SizedBox(height: 12),
+      Text('Uses the optional server password above.',
+          style: TextStyle(color: palette.mutedText)),
+      if (reason is String && reason.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(reason,
+            style: TextStyle(
+                color: available ? palette.mutedText : palette.amber)),
+      ] else if (!available) ...[
+        const SizedBox(height: 8),
+        Text(
+            'The browser app is not available on this host. Install a desktop build that includes the web app.',
+            style: TextStyle(color: palette.amber)),
+      ],
+      if (enabled) ...[
+        const SizedBox(height: 12),
+        Text('Open in a browser',
+            style:
+                TextStyle(color: palette.text1, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        if (urls.isEmpty)
+          Text(
+              'Use http://<this computer’s LAN IP or hostname>:${status['web_port'] ?? _port.text}',
+              style: TextStyle(color: palette.mutedText)),
+        for (final url in urls)
+          Row(children: [
+            Expanded(
+                child: SelectableText(url,
+                    style: TextStyle(color: palette.text1))),
+            IconButton(
+                tooltip: 'Copy browser address',
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: url));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Browser address copied')));
+                  }
+                },
+                icon: const Icon(Icons.copy, size: 18)),
+          ]),
+      ],
     ]);
   }
 }

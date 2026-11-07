@@ -52,6 +52,19 @@ If your mixer does not show up, add it by address. The mixer shows its IP addres
 
 The **Mixer type** list includes Behringer X32 and WING. Support for those is still being tested. See [Supported mixers](/docs/mixers).
 
+## Connect through a server
+
+A computer running OpenFader can host the mixer connection for other devices.
+In **Tools**, **Recorder & takes**, open **Audio setup** and expand **Remote server**.
+Set an optional server password, then enable access for app clients or browser clients.
+
+- In another OpenFader app, add a server using the computer's IP address or hostname and its app port.
+- In a browser, open the browser address shown on the computer, such as `http://192.168.1.20:8846`.
+
+The browser loads the same OpenFader app and connects to the server's current mixer session.
+If the server has a password, enter it before connecting. With no password set, it connects directly.
+Keep the hosting computer running and both devices on the same network.
+
 ## Next time
 
 Mixers you connect to are saved and listed on the Connections screen. With **Reconnect to the last mixer** turned on, which is the default, the app reconnects at launch.

@@ -192,18 +192,29 @@ class _ScalePainter extends CustomPainter {
     for (final mark in MixerFaderScale.marks) {
       final y = g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
       final x = s.width * (g.compact ? 66 / 96.2 : 127 / 178.2);
-      // Design prefixes: • labeled (/ – on phones), ○ unity, · minor.
       final label = mark.$2;
-      final prefix = label == 'U'
-          ? '○'
-          : label.isEmpty
-              ? '·'
-              : s.width < 140
-                  ? '–'
-                  : '•';
-      mixerText(c, '$prefix$label', Offset(x, y - 6),
-          s.width * (g.compact ? 11 / 96.2 : 14 / 178.2),
-          color: palette.scaleTick);
+      final fontSize = s.width * (g.compact ? 11 / 96.2 : 14 / 178.2);
+      if (label == 'U') {
+        // Barlow has no hollow-circle glyph. Paint the unity ring so a web
+        // mixer never needs to fetch a fallback symbol font from the internet.
+        c.drawCircle(
+            Offset(x + fontSize * .25, y - 6 + fontSize * .6),
+            fontSize * .2,
+            Paint()
+              ..color = palette.scaleTick
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = math.max(.7, fontSize * .08));
+        mixerText(c, label, Offset(x + fontSize * .6, y - 6), fontSize,
+            color: palette.scaleTick);
+      } else {
+        final prefix = label.isEmpty
+            ? '·'
+            : s.width < 140
+                ? '–'
+                : '•';
+        mixerText(c, '$prefix$label', Offset(x, y - 6), fontSize,
+            color: palette.scaleTick);
+      }
     }
   }
 

@@ -22,6 +22,12 @@ class _MixesDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final wide =
         MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
+    final unavailable = store.mixes.unavailableReason;
+    if (unavailable != null) {
+      return _Section(first: true, title: 'Local mixes', children: [
+        Padding(padding: const EdgeInsets.all(16), child: Text(unavailable)),
+      ]);
+    }
     final mixes = store.mixes.mixes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

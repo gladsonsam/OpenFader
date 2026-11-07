@@ -319,11 +319,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     ),
                                     GestureDetector(
                                       onTap: _submitRename,
-                                      child: Text('✓',
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              color: ConsolePalette.of(context)
-                                                  .meterGreen)),
+                                      child: Icon(Icons.check,
+                                          size: 16,
+                                          color: ConsolePalette.of(context)
+                                              .meterGreen),
                                     ),
                                   ],
                                 )

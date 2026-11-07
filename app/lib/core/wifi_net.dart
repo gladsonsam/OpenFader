@@ -22,7 +22,7 @@ class WifiNet {
   /// Choose the route for a resolved numeric host before opening sockets.
   /// Unicast identification needs INTERNET, not location/nearby scan grants.
   static Future<bool> prepareConnection(String host) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
     try {
       return await _ch
               .invokeMethod<bool>('prepareConnection', {'host': host}) ??
@@ -52,7 +52,7 @@ class WifiNet {
   }
 
   static Future<bool> scanStart() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
     try {
       final v = await _ch.invokeMethod<bool>('scanStart');
       return v ?? false;
@@ -62,6 +62,7 @@ class WifiNet {
   }
 
   static Future<bool> scanStop() async {
+    if (kIsWeb) return true;
     try {
       final v = await _ch.invokeMethod<bool>('scanStop');
       return v ?? false;
@@ -85,7 +86,7 @@ class WifiNet {
   /// Request only the runtime grant appropriate to this Android version.
   /// Never throws; other platforms have their own network permission flow.
   static Future<bool> ensureScanPermissions() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
     try {
       final permission = await _scanPermission();
       return permission != null && _granted(await permission.request());

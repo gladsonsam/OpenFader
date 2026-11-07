@@ -1,0 +1,8 @@
+{
+  "name": "OpenFader",
+  "short_name": "OpenFader",
+  "start_url": ".",
+  "display": "standalone",
+  "description": "Control your mixer from any device",
+  "icons": [{"src": "favicon.png", "sizes": "32x32", "type": "image/png"}]
+}

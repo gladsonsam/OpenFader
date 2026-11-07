@@ -6,6 +6,7 @@
 library;
 
 import '../boot/host_transport.dart';
+import '../boot/browser_session.dart';
 import '../boot/remote_host.dart';
 import '../desktop/desktop_integration.dart';
 import '../ui/overlays/console_dialogs.dart';
@@ -13,6 +14,7 @@ import '../ui/overlays/console_dialogs.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../palette.dart';
 import '../mixer/geometry.dart';
@@ -687,9 +689,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                                 child: Text(
                                     'Server ${remote.endpoint.host}:${remote.endpoint.port} · ${store.transportError.isEmpty ? 'Connected' : 'Connection lost'}',
                                     overflow: TextOverflow.ellipsis))),
+                        if (kIsWeb && store.transportError.isNotEmpty)
+                          TextButton(
+                              onPressed: reloadBrowserSession,
+                              child: const Text('Reload / sign in')),
                         TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Disconnect')),
+                            onPressed: () async {
+                              if (kIsWeb) {
+                                try {
+                                  await remote.disconnect();
+                                } catch (_) {
+                                  // Reload still provides a way back to sign-in if the server is unreachable.
+                                }
+                                reloadBrowserSession();
+                              } else if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                            child: Text(kIsWeb ? 'Sign out' : 'Disconnect')),
                       ]))),
             if (_tab != AppTab.recorder) _workspaceToolbar(),
             if (widget.api is HostTransport && _tab != AppTab.recorder)
@@ -800,8 +817,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   const SelectedControlReadoutData(
                       target: 'FX', label: 'Select a control', value: '-'),
               compact: compact,
-              connectionName:
-                  _mixer.demo ? '' : _mixer.connectionDisplayName,
+              connectionName: _mixer.demo ? '' : _mixer.connectionDisplayName,
               onConnection: () => _go(AppTab.connect));
         } else if (_tab == AppTab.channel &&
             store.outputProcessingTarget == null) {
@@ -814,19 +830,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               onHome: () => _go(AppTab.mixer),
               onTool: _channelTool,
               onLock: () => store.locked ? store.cmdUnlock() : store.cmdLock(),
-              trailing: _mixer.demo ? null : TextButton(
-                  style: TextButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      alignment: Alignment.centerRight,
-                      padding: EdgeInsets.zero),
-                  onPressed: () => _go(AppTab.connect),
-                  child: Text(
-                      _mixer.connectionDisplayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: compact ? 11 : 13,
-                          color: ConsolePalette.of(context).mutedText))));
+              trailing: _mixer.demo
+                  ? null
+                  : TextButton(
+                      style: TextButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          alignment: Alignment.centerRight,
+                          padding: EdgeInsets.zero),
+                      onPressed: () => _go(AppTab.connect),
+                      child: Text(_mixer.connectionDisplayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: compact ? 11 : 13,
+                              color: ConsolePalette.of(context).mutedText))));
         }
         return MixerToolbar(
             controller: _mixer,

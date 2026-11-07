@@ -100,6 +100,11 @@ def main():
     outputs = []
     signing = None
 
+    # Desktop hosts serve the same Flutter application to browser clients.
+    # Keep CanvasKit and other web runtime resources local for offline LAN use.
+    if platform in ('macos', 'linux', 'windows'):
+        run(flutter, 'build', 'web', '--release', '--no-pub', '--no-web-resources-cdn')
+
     def output(name):
         path = OUT / name
         outputs.append(path)
@@ -121,6 +126,8 @@ def main():
     elif platform == 'macos':
         run(flutter, 'build', 'macos', '--release', *flags)
         app = APP / 'build/macos/Build/Products/Release/OpenFader.app'
+        if not (app / 'Contents/Resources/web/flutter_bootstrap.js').is_file():
+            raise RuntimeError('Mac bundle is missing the browser app.')
         # Ad-hoc sealing only. No distribution certificate or notarization.
         run('codesign', '--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', app)
         run('codesign', '--verify', '--deep', '--strict', app)
@@ -137,11 +144,15 @@ def main():
         run(flutter, 'build', platform, '--release', *flags)
         if platform == 'linux':
             bundle = APP / 'build/linux/x64/release/bundle'
+            if not (bundle / 'web/flutter_bootstrap.js').is_file():
+                raise RuntimeError('Linux bundle is missing the browser app.')
             shutil.copy2(ROOT / 'target/release/libopenfader_flutter_bridge.so', bundle / 'lib')
             with tarfile.open(output('openfader-linux-x64.tar.gz'), 'w:gz') as archive:
                 archive.add(bundle, arcname='openfader')
         else:
             bundle = APP / 'build/windows/x64/runner/Release'
+            if not (bundle / 'web/flutter_bootstrap.js').is_file():
+                raise RuntimeError('Windows bundle is missing the browser app.')
             shutil.copy2(ROOT / 'target/release/openfader_flutter_bridge.dll', bundle)
             shutil.copy2(ROOT / 'scripts/check-windows-audio.ps1', bundle / 'check-audio.ps1')
             # Portable builds need the MSVC runtime on clean Windows machines.

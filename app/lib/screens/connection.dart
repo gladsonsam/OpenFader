@@ -578,7 +578,7 @@ class _InfoCard extends StatelessWidget {
             const SizedBox(height: AppDesign.spaceXs),
             GestureDetector(
               onTap: onOpenDebug,
-              child: Text('OPEN DEBUG LOG →',
+              child: Text('OPEN DEBUG LOG',
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,

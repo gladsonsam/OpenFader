@@ -41,3 +41,17 @@ xcrun lipo -create "${helpers[@]}" -output "$helper"
 if [ "$CODE_SIGNING_ALLOWED" = YES ]; then
   /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" --options runtime --entitlements "$PROJECT_DIR/Runner/Host.entitlements" "$helper"
 fi
+
+# Build web before invoking the native Flutter build: nesting Flutter here
+# would deadlock on its startup lock. CI prepares this bundle automatically.
+web_source="$repo_root/app/build/web"
+web_destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/web"
+if [[ -f "$web_source/index.html" && -f "$web_source/flutter_bootstrap.js" ]]; then
+  mkdir -p "$(dirname "$web_destination")"
+  rm -rf "$web_destination"
+  ditto "$web_source" "$web_destination"
+else
+  rm -rf "$web_destination"
+  mkdir -p "$web_destination"
+  echo "Browser hosting unavailable: run flutter build web --release --no-web-resources-cdn before building macOS."
+fi

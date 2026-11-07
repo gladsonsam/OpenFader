@@ -11,6 +11,8 @@ $env:CARGO_PROFILE_DEV_DEBUG = '0'
 $env:CARGO_PROFILE_TEST_DEBUG = '0'
 Push-Location (Join-Path $PSScriptRoot '../app')
 try {
+  flutter build web --release --no-web-resources-cdn
+  if ($LASTEXITCODE -ne 0) { throw 'Flutter browser app build failed.' }
   flutter build windows --release
   if ($LASTEXITCODE -ne 0) { throw 'Flutter Windows build failed.' }
 } finally { Pop-Location }

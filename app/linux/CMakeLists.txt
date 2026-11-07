@@ -141,3 +141,9 @@ endif()
 install(PROGRAMS "${OPENFADER_CARGO_TARGET}/${OPENFADER_RUST_PROFILE}/openfader-serve"
   "${OPENFADER_CARGO_TARGET}/${OPENFADER_RUST_PROFILE}/openfader-capture-helper"
   DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+
+# Prepared before the desktop build by scripts/ci-build-app.py.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../build/web/flutter_bootstrap.js")
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../build/web/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/web" COMPONENT Runtime)
+endif()
