@@ -110,7 +110,7 @@ fn raw_source(plane: &str, source: &str) -> anyhow::Result<u32> {
 fn label(plane: &str, raw: u32) -> Option<String> {
     // Display NONE if independently observed, without licensing a clear write.
     if raw == 0 {
-        return Some("—".into());
+        return Some("-".into());
     }
     groups(plane).into_iter().find_map(|(group, _, count)| {
         let base = source_base(group)?;

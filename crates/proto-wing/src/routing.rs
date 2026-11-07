@@ -44,7 +44,7 @@ fn route_prefix(strip: StripId, target: &str) -> anyhow::Result<String> {
 impl WingDriver {
     pub(crate) async fn source_id(&self, strip: StripId, target: &str) -> anyhow::Result<f32> {
         let label = self.routing_source(strip, target).await?;
-        if label == "—" {
+        if label == "-" {
             return Ok(0.);
         }
         let (group, index) = label.split_once(' ').context("invalid WING source")?;
@@ -108,7 +108,7 @@ impl WingDriver {
             unreachable!()
         };
         if group == "OFF" {
-            return Ok("—".into());
+            return Ok("-".into());
         }
         let ParamValue::Float(index) = self
             .read(&Mapping {
@@ -158,7 +158,7 @@ impl WingDriver {
             .await?;
         let actual = self.routing_source(strip, target).await?;
         let expected = if group == "OFF" {
-            "—".into()
+            "-".into()
         } else {
             format!("{group} {index}")
         };

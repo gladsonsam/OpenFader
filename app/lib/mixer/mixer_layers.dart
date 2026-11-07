@@ -4,7 +4,7 @@ import 'dart:convert';
 ///
 /// The built-in [MixerLayer.all] layer follows bank paging exactly as before;
 /// user layers carry an explicit [channelKeys] order and their own
-/// [stripsPerPage]. The master strip is never part of a layer — it stays
+/// [stripsPerPage]. The master strip is never part of a layer - it stays
 /// fixed on the mixer page regardless of the active layer.
 typedef LayerChannelOption = ({String key, String name});
 

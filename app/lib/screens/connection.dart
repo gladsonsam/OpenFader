@@ -596,7 +596,7 @@ class _InfoCard extends StatelessWidget {
                     fontSize: 11, color: ConsolePalette.of(context).text7)),
           ),
           Expanded(
-            child: Text(v.isEmpty ? '—' : v,
+            child: Text(v.isEmpty ? '-' : v,
                 style: TextStyle(
                     fontSize: 11, color: ConsolePalette.of(context).text4)),
           ),

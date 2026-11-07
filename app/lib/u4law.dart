@@ -42,7 +42,7 @@ double dbToPos(double db) {
 
 /// dB readout with one decimal, e.g. `-4.3`, `+2.0`; `-∞` below -89.
 String fmtDb(double p) {
-  if (!p.isFinite) return '—';
+  if (!p.isFinite) return '-';
   final d = posToDb(p);
   if (!d.isFinite || d < -89) return '-∞';
   return (d > 0.04 ? '+' : '') + d.toStringAsFixed(1);

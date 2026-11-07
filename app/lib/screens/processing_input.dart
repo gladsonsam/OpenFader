@@ -249,7 +249,7 @@ class _InputTab extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     final src = store.source;
     String sourceName(String leaf, int? value) => value == null
-        ? '—'
+        ? '-'
         : parameterValueLabel(store.paramMetadata(leaf), value.toDouble()) ??
             'Source $value';
     final sources = <ProcessingSource>[
@@ -321,7 +321,7 @@ class _InputTab extends StatelessWidget {
                       .join(' · ')
                       .trim()
                       .isEmpty
-                  ? '—'
+                  ? '-'
                   : [store.source.srcName, store.source.srcGroup]
                       .where((s) => s.isNotEmpty)
                       .join(' · '))

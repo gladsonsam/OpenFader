@@ -104,7 +104,7 @@ class X32ProviderPolicy extends MixerProviderPolicy {
         _ => leaf,
       };
   // Documented native EQ enum (implementation Xeqty1): 0 LCut, 1 LShv, 2 PEQ, 3 VEQ,
-  // 4 HShv, 5 HCut — identical to the canonical presentation values.
+  // 4 HShv, 5 HCut - identical to the canonical presentation values.
   // Out-of-range natives stay unrepresented; no X-Air DSP response model is
   // assumed, so cuts/VEQ render as unavailable until a verified model lands.
   @override

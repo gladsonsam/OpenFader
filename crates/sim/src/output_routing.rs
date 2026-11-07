@@ -35,7 +35,7 @@ fn validate(id: &str, source: Option<&str>) -> anyhow::Result<()> {
         slot > 0 && slot <= plane.count && id == format!("{key}/{slot:02}"),
         "Unknown output slot"
     );
-    if let Some(source) = source.filter(|s| *s != "—") {
+    if let Some(source) = source.filter(|s| *s != "-") {
         let (group, index) = source
             .split_once(' ')
             .ok_or_else(|| anyhow::anyhow!("Unknown output source"))?;
@@ -55,7 +55,7 @@ impl SimDriver {
         validate(id, None)?;
         let rows = self.output_routes.read().unwrap();
         let generation = self.processor_generation.load(Ordering::Acquire);
-        let (source, revision) = rows.get(id).cloned().unwrap_or(("—".into(), 0));
+        let (source, revision) = rows.get(id).cloned().unwrap_or(("-".into(), 0));
         Ok(RouteState {
             source,
             revision,
@@ -84,7 +84,7 @@ impl SimDriver {
         // acquiring the mutation lock, just like the native provider lane.
         anyhow::ensure!(context(), "Output engine session or policy changed");
         let generation = self.processor_generation.load(Ordering::Acquire);
-        let (current, revision) = rows.get(id).cloned().unwrap_or(("—".into(), 0));
+        let (current, revision) = rows.get(id).cloned().unwrap_or(("-".into(), 0));
         anyhow::ensure!(
             expected.generation == generation
                 && expected.revision == revision

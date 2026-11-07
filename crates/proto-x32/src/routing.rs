@@ -221,7 +221,7 @@ pub const INPUT_SOURCE_GROUPS: &[(&str, &str, usize)] = &[
 /// Canonical label for an input-source wire int (`0` = cleared).
 pub fn input_source_label(index: i32) -> anyhow::Result<String> {
     if index == 0 {
-        return Ok("—".to_string());
+        return Ok("-".to_string());
     }
     let mut raw = index;
     for (key, _, count) in INPUT_SOURCE_GROUPS {

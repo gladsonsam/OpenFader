@@ -281,7 +281,7 @@ class _AdvancedDynamics extends StatelessWidget {
             store: store,
             leaf: leaf,
             label: label,
-            fallback: '—',
+            fallback: '-',
             compact: compact,
             onChanged: (value) => store.cmdParam(leaf, value)));
       }
@@ -768,7 +768,7 @@ class _DynamicsPainter extends CustomPainter {
       text(['IN', 'GR', 'OUT'][i], Offset(x + w / 2, size.height * .89));
       text(
           value == null || !value.isFinite
-              ? '—'
+              ? '-'
               : value.toStringAsFixed(compact ? 0 : 1),
           Offset(x + w / 2, size.height * .95),
           color: palette.text1);

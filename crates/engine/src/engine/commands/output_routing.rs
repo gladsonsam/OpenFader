@@ -53,7 +53,7 @@ impl Engine {
             format!("{} {}", source.group, source.index)
         } else {
             anyhow::ensure!(dest.clearable, "Output cannot be cleared");
-            "—".into()
+            "-".into()
         };
         // The provider repeats the exact guard while holding its write lane,
         // preserving revisions against ABA edits and queued local writers.

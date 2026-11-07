@@ -437,11 +437,11 @@ class _RtaSettings extends StatelessWidget {
               for (final choice in row.choices)
                 PopupMenuItem(value: choice.value, child: Text(choice.label)),
             ],
-            child: Chip(label: Text('${row.label}: ${row.valueLabel ?? '—'}')),
+            child: Chip(label: Text('${row.label}: ${row.valueLabel ?? '-'}')),
           )
         else if (row.numeric)
           ActionChip(
-            label: Text('${row.label}: ${row.valueLabel ?? '—'}'),
+            label: Text('${row.label}: ${row.valueLabel ?? '-'}'),
             onPressed: !store.destinationControlIsCurrent(row)
                 ? null
                 : () async {

@@ -248,7 +248,7 @@ class _U4FxPageState extends State<U4FxPage> {
               target.controls.first.targetLabel
           : '${target.slot!.name} · ${store.typeLabel(target.slot!.type)}',
       label: native?.label ?? knob?.label ?? 'Select a control',
-      value: native?.valueLabel ?? knob?.text ?? '—',
+      value: native?.valueLabel ?? knob?.text ?? '-',
       unconfirmed:
           native?.valueLabel != null && native?.authority == 'accepted',
       onEdit: native != null
@@ -336,7 +336,7 @@ class _FxCard extends StatelessWidget {
         : store.typeLabel(slot.type);
     final status = slot != null
         ? !store.stateControlsSupported
-            ? '—'
+            ? '-'
             : slot.bypass
                 ? 'Bypassed'
                 : slot.on

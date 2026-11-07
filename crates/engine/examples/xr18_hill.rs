@@ -181,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
 
 fn fmt(d: Option<Duration>) -> String {
     d.map(|d| format!("{:.2?}", d))
-        .unwrap_or_else(|| "—".to_string())
+        .unwrap_or_else(|| "-".to_string())
 }
 
 /// Placeholder topology names look like CH1/CH09/FX Return 1; treat anything

@@ -116,13 +116,13 @@ impl X32Driver {
         }
         let Some(strings) = verified else {
             anyhow::bail!(
-                "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
+                "no reply from {peer} - check the desk is powered, on this network, and the IP is correct"
             );
         };
         let (model, firmware) = addrs::info_model_firmware(&strings);
         anyhow::ensure!(
             addrs::is_x32_model(&model),
-            "not an X32/M32 mixer (model {model:?} at {peer}) — refusing to apply X32 maps"
+            "not an X32/M32 mixer (model {model:?} at {peer}) - refusing to apply X32 maps"
         );
         let info = MixerInfo {
             name: strings.get(1).cloned().unwrap_or_default(),

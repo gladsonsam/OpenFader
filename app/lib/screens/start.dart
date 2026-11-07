@@ -501,7 +501,7 @@ class _Box extends StatelessWidget {
                           ? 'Scanning for mixers…'
                           : scanned
                               ? 'No mixers found. Check Wi-Fi or Add manually.'
-                              : 'No mixers yet — Discover or Add manually.',
+                              : 'No mixers yet - Discover or Add manually.',
                       style: AppDesign.type(wide ? 23 : 17,
                           color: ConsolePalette.of(context).mutedText)),
                 )
@@ -589,7 +589,7 @@ class _DeviceRow extends StatelessWidget {
                     row.mixerType == MixerType.dl32s
                         ? 'Mackie DL32S · ${row.addr}'
                         : row.discovered
-                            ? 'Discovered — ${row.addr}'
+                            ? 'Discovered - ${row.addr}'
                             : row.addr,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

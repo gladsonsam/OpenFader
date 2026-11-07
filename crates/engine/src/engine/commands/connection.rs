@@ -342,7 +342,7 @@ impl Engine {
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("unknown device {id:?} (scan first)"))?;
                 if entry.kind == "io" {
-                    anyhow::bail!("{:?} is I/O (in use) — connect a console", entry.name);
+                    anyhow::bail!("{:?} is I/O (in use) - connect a console", entry.name);
                 }
                 // Discovered devices dial their claiming driver
                 // (UNVERIFIED-ON-RIG for dl32s); anything else re-links
@@ -373,7 +373,7 @@ impl Engine {
                     .identify_registered(&addr, DIRECT_IDENTIFY_TIMEOUT)
                     .await
                 else {
-                    anyhow::bail!("no reply from {addr} — no supported mixer identified; check the IP and local network access");
+                    anyhow::bail!("no reply from {addr} - no supported mixer identified; check the IP and local network access");
                 };
                 // The verified row is visible even if the connect fails.
                 {

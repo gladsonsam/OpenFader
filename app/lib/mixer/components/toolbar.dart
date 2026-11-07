@@ -282,10 +282,10 @@ class _SelectedLevel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ch = channel;
-    if (ch == null) return _value(context, '—');
+    if (ch == null) return _value(context, '-');
     if (control == MixerReadoutControl.gain) {
       if (controller.gainRangeOf(ch) == null) {
-        return _value(context, '—', enabled: false);
+        return _value(context, '-', enabled: false);
       }
       final gain = (ch.params['gain'] as num?)?.toDouble() ?? 0;
       return _value(context, '${gain.toStringAsFixed(1)} dB');
@@ -294,7 +294,7 @@ class _SelectedLevel extends StatelessWidget {
       return ValueListenableBuilder<int>(
           valueListenable: controller.store.controlReadyNote(-1),
           builder: (context, ready, _) => ready & 1 == 0
-              ? _value(context, '—', enabled: false)
+              ? _value(context, '-', enabled: false)
               : _liveValue(context, ch));
     }
     return _liveValue(context, ch);
@@ -424,7 +424,7 @@ class _BrandButton extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Semantics(
           button: true,
-          label: 'OpenFader — Mixer',
+          label: 'OpenFader - Mixer',
           onTap: onHome,
           child: Tooltip(
               message: 'Mixer',

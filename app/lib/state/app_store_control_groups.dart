@@ -51,10 +51,10 @@ extension _ControlGroupInfluence on _AppStoreContext {
     }
     if (labels.isEmpty) return '';
     final gain = !known
-        ? '—'
+        ? '-'
         : off
             ? '−∞'
             : effective.toStringAsFixed(1);
-    return '${labels.join(' + ')} · effective $gain dB${muted ? ' · muted' : !muteKnown ? ' · mute —' : ''}';
+    return '${labels.join(' + ')} · effective $gain dB${muted ? ' · muted' : !muteKnown ? ' · mute -' : ''}';
   }
 }

@@ -122,7 +122,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
     }
     final group = route['group'] as String;
     final index = route['index'] as int;
-    if (group.isEmpty && index == 0 && route['label'] == '—') return route;
+    if (group.isEmpty && index == 0 && route['label'] == '-') return route;
     final allowed = _list(d['source_groups']).whereType<Map>().any((g) =>
         g['key'] == group &&
         g['count'] is int &&
@@ -226,7 +226,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
     if (route == null) return 'Unknown';
     final group = route['group'] as String;
     final index = (route['index'] as num).toInt();
-    if (group.isEmpty && index == 0) return '—';
+    if (group.isEmpty && index == 0) return '-';
     final descriptor = _groups.where((g) => g['key'] == group).firstOrNull;
     final options = _list(descriptor?['options']);
     if (index > 0 && index <= options.length && options[index - 1] is String) {
