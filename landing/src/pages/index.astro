@@ -3,14 +3,56 @@ import Base from '../layouts/Base.astro';
 import Hero from '../components/Hero.astro';
 import Features from '../components/Features.astro';
 import Mixers from '../components/Mixers.astro';
+import Faq from '../components/Faq.astro';
 import Download from '../components/Download.astro';
+
+const title = 'OpenFader — Free Open-Source Digital Mixer Control App';
+const description =
+  'OpenFader is a free, open-source app to control Behringer X Air and Mackie DL32S mixers from iPhone, iPad, Android, Mac, Windows and Linux.';
+const faqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'What mixers does OpenFader support?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Behringer X Air series and Mackie DL32S are supported today. Behringer X32 / Midas M32 and Behringer WING are in testing.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Which devices can run OpenFader?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'iPhone, iPad, Android, Mac, Windows and Linux. It connects to your mixer over the network.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Is OpenFader free?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. OpenFader is free and open source under the GPL-3.0 license.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Can I try OpenFader without a mixer?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Choose Work offline on the start screen to explore the full mixer with a simulated desk.',
+      },
+    },
+  ],
+};
 ---
-<Base
-  title="OpenFader"
-  description="A free, open source app for controlling digital mixers from your phone, tablet or computer."
->
+<Base title={title} description={description}>
+  <script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
   <Hero />
   <Features />
   <Mixers />
+  <Faq />
   <Download />
 </Base>
