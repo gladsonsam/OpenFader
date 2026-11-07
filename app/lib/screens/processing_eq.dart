@@ -44,6 +44,13 @@ class _EqTabState extends State<_EqTab> {
       'f' => band.fRange,
       _ => band.qRange,
     };
+    final nativeDefault =
+        widget.store.paramMetadata('eq${band.band}_$prop')?['default'];
+    final reset = prop == 'g'
+        ? 0.0
+        : nativeDefault is num && nativeDefault.isFinite
+            ? nativeDefault.toDouble()
+            : null;
     final value = switch (prop) { 'g' => band.g, 'f' => band.f, _ => band.q };
     final min = range?.first ?? 0;
     final max = range?.last ?? 1;
@@ -56,6 +63,7 @@ class _EqTabState extends State<_EqTab> {
         padding: const EdgeInsets.only(top: 6),
         child: _ProcessingSlider(
             label: label,
+            resetValue: reset,
             text: focus().text(),
             value: value,
             min: min,
@@ -145,26 +153,48 @@ class _EqTabState extends State<_EqTab> {
     ]);
   }
 
+  Widget _bandHeader(EqBandVm band) {
+    final leaf = 'eq${band.band}_on';
+    final known = widget.store.paramBool(leaf) != null;
+    final editable = known && widget.store.supports(leaf);
+    if (editable) {
+      return _ProcessingButton(
+        label: 'Band ${band.band}',
+        active: band.on,
+        semanticsLabel:
+            'Band ${band.band} ${band.on ? 'on, bypass' : 'bypassed, enable'}',
+        onTap: () => widget.store.setEqBandOn(band.band, !band.on),
+      );
+    }
+    // Unsupported native bypass is not an action on this provider.
+    return SizedBox(
+      height: AppDesign.touchTarget,
+      child: Center(
+          child: Text('Band ${band.band}',
+              style: AppDesign.type(16,
+                  color: ConsolePalette.of(context).text7,
+                  weight: FontWeight.w600))),
+    );
+  }
+
   Widget _panel(EqBandVm band, double height) => Container(
-      height: height,
+      constraints: BoxConstraints(minHeight: height),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
           color: ConsolePalette.of(context).tileBg,
           borderRadius: U4.rWell,
           border: Border.all(color: ConsolePalette.of(context).linePanel)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _ProcessingButton(
-            label: 'Band ${band.band}',
-            active: band.on,
-            onTap: widget.store.supports('eq${band.band}_on')
-                ? () => widget.store.setEqBandOn(band.band, !band.on)
-                : null),
-        const Spacer(),
-        if (band.typeChoices.isNotEmpty) _shapeChoices(band),
-        _slider(band, 'g', 'G'),
-        _slider(band, 'f', 'F'),
-        _slider(band, 'q', 'Q'),
-      ]));
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _bandHeader(band),
+            const SizedBox(height: 8),
+            if (band.typeChoices.isNotEmpty) _shapeChoices(band),
+            _slider(band, 'g', 'G'),
+            _slider(band, 'f', 'F'),
+            _slider(band, 'q', 'Q'),
+          ]));
 
   @override
   Widget build(BuildContext context) {
@@ -254,6 +284,10 @@ class _EqTabState extends State<_EqTab> {
                       audioSpectrumPeaks: store.audioSpectrumPeaks.value,
                       rtaActive: _showRta && (frame != null || bins.isNotEmpty),
                       onSelectBand: _pick,
+                      onResetGain: (band) {
+                        store.setEqParam(band, 'g', 0);
+                        widget.onFocus(_eqGainFocus(store, band));
+                      },
                       onNode: (band, f, g) {
                         if (band == 0) {
                           store.setEqParam(0, 'f', f);

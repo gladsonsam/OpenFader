@@ -9,39 +9,16 @@ import 'package:crypto/crypto.dart';
 import '../engine_protocol.dart';
 import 'host_transport.dart';
 
-/// The JSON supplied by the local administrator. Never persist [secret].
-class PairingLink {
-  PairingLink._(this.endpoint, this.fingerprint, this.secret);
+/// TLS endpoint and challenge learned before sending any credentials.
+class RemoteServer {
+  const RemoteServer(this.endpoint, this.fingerprint, this.previousFingerprint,
+      this.passwordRequired);
   final Uri endpoint;
   final String fingerprint;
-  final String secret;
-
-  factory PairingLink.parse(String json) {
-    final value = jsonDecode(json);
-    if (value is! Map ||
-        value['endpoint'] is! String ||
-        value['fingerprint'] is! String ||
-        value['secret'] is! String ||
-        (value['secret'] as String).isEmpty) {
-      throw const FormatException('Invalid pairing link');
-    }
-    final uri = Uri.parse(value['endpoint'] as String);
-    final fingerprint = value['fingerprint'] as String;
-    if (uri.scheme != 'https' ||
-        InternetAddress.tryParse(uri.host) == null ||
-        !uri.hasPort ||
-        uri.port < 1 ||
-        uri.port > 65535 ||
-        uri.userInfo.isNotEmpty ||
-        uri.path.isNotEmpty ||
-        uri.hasQuery ||
-        uri.hasFragment ||
-        !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(fingerprint)) {
-      throw const FormatException('Invalid pairing endpoint or fingerprint');
-    }
-    return PairingLink._(
-        uri, fingerprint.toLowerCase(), value['secret'] as String);
-  }
+  final String? previousFingerprint;
+  final bool passwordRequired;
+  bool get identityChanged =>
+      previousFingerprint != null && previousFingerprint != fingerprint;
 }
 
 /// TLS is established and the actual peer certificate checked before the
@@ -95,16 +72,70 @@ class RemoteHost implements HostTransport {
     return client;
   }
 
-  static Future<RemoteHost> pair(PairingLink link) async {
-    final result = await _request(link.endpoint, link.fingerprint, '/pair',
-        body: {'secret': link.secret});
+  static Uri parseAddress(String address) {
+    var input = address.trim();
+    if (input.isEmpty || RegExp(r'\s').hasMatch(input)) {
+      throw const FormatException('Enter a server IP address or hostname.');
+    }
+    final numeric = InternetAddress.tryParse(input);
+    if (numeric?.type == InternetAddressType.IPv6) input = '[$input]';
+    final uri = Uri.tryParse(input.contains('://') ? input : 'https://$input');
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        (uri.path.isNotEmpty && uri.path != '/') ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.port < 1 ||
+        uri.port > 65535) {
+      throw const FormatException(
+          'Enter an IP address or hostname, optionally with a port. HTTPS is required.');
+    }
+    return uri.replace(port: uri.hasPort ? uri.port : 8845, path: '');
+  }
+
+  static String pinKey(Uri endpoint) =>
+      'remote_server_pin_${sha256.convert(utf8.encode(endpoint.toString()))}';
+
+  static Future<RemoteServer> inspect(String address,
+      {String? trustedFingerprint}) async {
+    final endpoint = parseAddress(address);
+    // This socket only learns the server identity; it sends no application data.
+    final socket = await SecureSocket.connect(endpoint.host, endpoint.port,
+        context: SecurityContext(withTrustedRoots: false),
+        onBadCertificate: (_) => true,
+        timeout: const Duration(seconds: 4));
+    final cert = socket.peerCertificate;
+    socket.destroy();
+    if (cert == null) {
+      throw const HandshakeException('Server has no TLS certificate');
+    }
+    final fingerprint = sha256.convert(cert.der).toString();
+    final challenge = await _request(endpoint, fingerprint, '/connect');
+    if (challenge['password_required'] is! bool ||
+        challenge['fingerprint'] != fingerprint) {
+      throw const FormatException('Invalid server connection response');
+    }
+    return RemoteServer(endpoint, fingerprint, trustedFingerprint,
+        challenge['password_required'] as bool);
+  }
+
+  static Future<RemoteHost> connect(RemoteServer server,
+      {String? password, bool trustIdentityChange = false}) async {
+    if (server.identityChanged && !trustIdentityChange) {
+      throw const HandshakeException('Server identity changed');
+    }
+    final result = await _request(
+        server.endpoint, server.fingerprint, '/connect',
+        body: {if (password != null) 'password': password});
     if (result['client_id'] is! String ||
         (result['client_id'] as String).isEmpty ||
         result['token'] is! String ||
         (result['token'] as String).isEmpty) {
-      throw const FormatException('Invalid pairing response');
+      throw const FormatException('Invalid server authentication response');
     }
-    return RemoteHost._(link.endpoint, link.fingerprint,
+    return RemoteHost._(server.endpoint, server.fingerprint,
         result['client_id'] as String, result['token'] as String);
   }
 
@@ -132,7 +163,11 @@ class RemoteHost implements HostTransport {
       final text = await utf8.decoder.bind(response).join().timeout(timeout);
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw StateError(
-            'Remote access denied or revoked (HTTP ${response.statusCode})');
+            'Server password incorrect, or access denied (HTTP ${response.statusCode})');
+      }
+      if (response.statusCode == 429) {
+        throw StateError(
+            'Too many attempts. Wait a moment before trying again.');
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(

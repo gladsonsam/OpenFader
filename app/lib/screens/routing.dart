@@ -1,7 +1,6 @@
 // Patch matrix: previews stay local; confirmed edits use the injected store.
 // The store retains provider identity, access and stale-operation guards.
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 
 import '../theme.dart';
 import '../ui/console.dart';
@@ -28,7 +27,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   String? _pickedTarget;
   (int, int)? _dragStart;
   List<(int, RouteSrcTile)> _dragPending = [];
-  PointerDeviceKind _pointer = PointerDeviceKind.touch;
   bool _confirming = false;
   bool _pickingSource = false;
   RoutingStore get store => widget.store;
@@ -80,8 +78,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     _preview(strips[row], sources[column]);
   }
 
-  Future<void> _choose(RouteStrip strip, RouteSrcTile source,
-      {bool direct = false}) async {
+  Future<void> _choose(RouteStrip strip, RouteSrcTile source) async {
     if (_confirming) return;
     setState(() {
       _pickedStrip = strip;
@@ -101,10 +98,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     }
     _preview(strip, tile);
     if (tile.current) return;
-    if (direct) {
-      store.patch(tile);
-      return;
-    }
     _confirming = true;
     final target = store.target;
     final epoch = store.controlAccessEpoch;
@@ -937,43 +930,42 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                 });
                                                               }
                                                             },
-                                                            child: Listener(
-                                                                onPointerDown:
-                                                                    (event) =>
-                                                                        _pointer =
-                                                                            event.kind,
-                                                                child: Semantics(
-                                                                    label: '${source.label} to ${strip.name}',
-                                                                    button: true,
-                                                                    selected: connected,
-                                                                    child: SizedBox(
-                                                                        width: _cell,
-                                                                        height: _row,
-                                                                        child: Padding(
-                                                                            padding: const EdgeInsets.all(3),
-                                                                            child: Material(
-                                                                                color: connected
-                                                                                    ? p.cyan
-                                                                                    : highlighted || rowActive || columnActive
-                                                                                        ? p.selected
-                                                                                        : p.well,
-                                                                                shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
-                                                                                child: InkWell(
-                                                                                    borderRadius: U4.rBtn,
-                                                                                    onTap: () => _choose(strip, source, direct: _pointer == PointerDeviceKind.mouse),
-                                                                                    child: Center(
-                                                                                        child: Icon(
-                                                                                            connected
-                                                                                                ? Icons.check_rounded
-                                                                                                : highlighted
-                                                                                                    ? Icons.add
-                                                                                                    : Icons.circle_outlined,
-                                                                                            size: connected || highlighted ? 22 : 10,
-                                                                                            color: connected
-                                                                                                ? p.onAccent
-                                                                                                : highlighted
-                                                                                                    ? p.cyan
-                                                                                                    : p.text7)))))))));
+                                                            child: Semantics(
+                                                                label:
+                                                                    '${source.label} to ${strip.name}',
+                                                                button: true,
+                                                                selected:
+                                                                    connected,
+                                                                child: SizedBox(
+                                                                    width:
+                                                                        _cell,
+                                                                    height:
+                                                                        _row,
+                                                                    child: Padding(
+                                                                        padding: const EdgeInsets.all(3),
+                                                                        child: Material(
+                                                                            color: connected
+                                                                                ? p.cyan
+                                                                                : highlighted || rowActive || columnActive
+                                                                                    ? p.selected
+                                                                                    : p.well,
+                                                                            shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
+                                                                            child: InkWell(
+                                                                                borderRadius: U4.rBtn,
+                                                                                onTap: () => _choose(strip, source),
+                                                                                child: Center(
+                                                                                    child: Icon(
+                                                                                        connected
+                                                                                            ? Icons.check_rounded
+                                                                                            : highlighted
+                                                                                                ? Icons.add
+                                                                                                : Icons.circle_outlined,
+                                                                                        size: connected || highlighted ? 22 : 10,
+                                                                                        color: connected
+                                                                                            ? p.onAccent
+                                                                                            : highlighted
+                                                                                                ? p.cyan
+                                                                                                : p.text7))))))));
                                                       }),
                                                   ]),
                                               ]),

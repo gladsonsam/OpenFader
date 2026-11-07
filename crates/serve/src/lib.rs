@@ -653,12 +653,14 @@ async fn recorder_request(
         && request["op"] == "command"
         && matches!(
             request["command"]["action"].as_str(),
-            Some("import_take" | "export_take")
+            Some("import_take" | "export_take" | "recover_take")
         )
     {
         return (
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"ok":false,"error":"transfer requires local administrator"})),
+            Json(
+                serde_json::json!({"ok":false,"error":"take transfer and recovery require local administrator"}),
+            ),
         );
     }
     if app.remote_audience
@@ -978,7 +980,7 @@ struct AppState {
     remote_audience: bool,
 }
 
-// Identity and client credentials live only for this host process. Restart requires re-pairing.
+// In-memory identity is used by tests and platforms without server storage.
 #[derive(Default)]
 struct MemoryIdentity(std::sync::Mutex<Option<remote_access::TlsIdentity>>);
 impl remote_access::IdentityStorage for MemoryIdentity {
@@ -1019,7 +1021,32 @@ async fn remote_admin(
     let mut listener = app.remote.listener.lock().await;
     let result = match (method.as_str(), uri.path()) {
         ("GET", "/api/remote/v1/status") => {
-            serde_json::json!({"enabled":app.remote.access.is_enabled(),"port":listener.as_ref().map(|v| v.0.port()),"fingerprint":app.remote.access.fingerprint()})
+            serde_json::json!({"enabled":app.remote.access.is_enabled(),"port":listener.as_ref().map(|v| v.0.port()),"fingerprint":app.remote.access.fingerprint(),"password_required":app.remote.access.password_required()})
+        }
+        ("POST", "/api/remote/v1/password") => {
+            let Some(password) = body
+                .as_ref()
+                .and_then(|v| v.0.get("password"))
+                .and_then(|v| v.as_str())
+            else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error":"password must be a string"})),
+                );
+            };
+            let password = password.to_owned();
+            let remote = app.remote.clone();
+            match tokio::task::spawn_blocking(move || remote.access.set_password(&password)).await {
+                Ok(Ok(())) => {
+                    serde_json::json!({"password_required":app.remote.access.password_required()})
+                }
+                _ => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error":"Could not save server password"})),
+                    )
+                }
+            }
         }
         ("POST", "/api/remote/v1/microphone") => {
             let authorized = body
@@ -1045,7 +1072,18 @@ async fn remote_admin(
                         Json(serde_json::json!({"error":"invalid ip"})),
                     );
                 };
-                let bound = match tokio::net::TcpListener::bind((ip, 0)).await {
+                let port = body
+                    .as_ref()
+                    .and_then(|v| v.0.get("port"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(8845);
+                let Ok(port) = u16::try_from(port) else {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({"error":"invalid port"})),
+                    );
+                };
+                let bound = match tokio::net::TcpListener::bind((ip, port)).await {
                     Ok(v) => v,
                     Err(_) => {
                         return (
@@ -1113,6 +1151,43 @@ async fn remote_admin(
     };
     (StatusCode::OK, Json(result))
 }
+async fn remote_connect_info(
+    AxumState(app): AxumState<AppState>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !app.remote.access.is_enabled() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"remote access disabled"})),
+        );
+    }
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::json!({"password_required":app.remote.access.password_required(),"fingerprint":app.remote.access.fingerprint()}),
+        ),
+    )
+}
+async fn remote_connect(
+    AxumState(app): AxumState<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let password = body["password"].as_str().unwrap_or("").to_owned();
+    let result = tokio::task::spawn_blocking(move || app.remote.access.connect(&password)).await;
+    match result {
+        Ok(Ok(c)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"client_id":c.client_id,"token":c.bearer_token})),
+        ),
+        Ok(Err(e)) if e.to_string() == "retry later" => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error":"Please wait before trying again"})),
+        ),
+        _ => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"Invalid server password or server disabled"})),
+        ),
+    }
+}
 async fn remote_pair(
     AxumState(app): AxumState<AppState>,
     Json(body): Json<serde_json::Value>,
@@ -1134,6 +1209,7 @@ async fn remote_pair(
 }
 fn remote_router(app: AppState) -> Router {
     Router::new()
+        .route("/connect", get(remote_connect_info).post(remote_connect))
         .route("/pair", axum::routing::post(remote_pair))
         .route("/ws", get(ws_handler))
         .route("/api/recorder/v1/state", get(recorder_state))
@@ -1275,6 +1351,10 @@ pub async fn run_with_full(
             anyhow::anyhow!("unknown --preset {name:?} (want generic|xr18|dl32s|studio)")
         })?),
     };
+    let remote_settings_dir = data_dir
+        .clone()
+        .or_else(|| opts.data_dir.clone())
+        .or_else(recorder::data_dir);
     let engine = Engine::new(EngineConfig {
         lock_ttl,
         poll_interval,
@@ -1318,7 +1398,16 @@ pub async fn run_with_full(
         .map(Arc::new);
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let remote = Arc::new(RemoteHost {
-        access: remote_access::RemoteAccess::new(&MemoryIdentity::default())?,
+        access: {
+            if let Some(root) = remote_settings_dir {
+                remote_access::RemoteAccess::new(&remote_access::FileIdentity(
+                    root.join("remote-identity.json"),
+                ))?
+                .with_password_file(root.join("remote-password.json"))?
+            } else {
+                remote_access::RemoteAccess::new(&MemoryIdentity::default())?
+            }
+        },
         listener: tokio::sync::Mutex::new(None),
         // Only macOS requires authorization relayed from the desktop UI. ASIO
         // reports its own device access failures when the stream is opened.

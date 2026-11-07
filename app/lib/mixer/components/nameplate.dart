@@ -115,13 +115,16 @@ class MixerNameplate extends StatelessWidget {
                   height: nameHeight,
                   child: ColoredBox(
                       color: tape,
-                      child: Center(
-                          child: Text(channel.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: mixerType(context, fontSize,
-                                  color: ConsolePalette.of(context).inkOn(tape),
-                                  weight: FontWeight.w600))))),
+                      child: Padding(
+                          padding: EdgeInsets.only(bottom: bottomInset),
+                          child: Center(
+                              child: Text(channel.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: mixerType(context, fontSize,
+                                      color: ConsolePalette.of(context)
+                                          .inkOn(tape),
+                                      weight: FontWeight.w600)))))),
               if (channel.master)
                 Positioned(
                     right: 0,

@@ -475,7 +475,44 @@ impl RecorderService {
             return Err(error("transport active"));
         }
         valid_id(id)?;
+        if id.starts_with('.')
+            || id.eq_ignore_ascii_case("transfers")
+            || id.len() > 128
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        {
+            return Err(error("invalid take id"));
+        }
+        // Refuse active or orphaned playback before changing any take files.
+        let _playback_guard = crate::playback_guard(&self.root)?;
         let dir = self.root.join(id);
+        crate::transfer::reject_link(&dir)?;
+        crate::transfer::reject_link(&dir.join("manifest.json"))?;
+        let checkpoint = read_manifest(&dir)?;
+        if checkpoint.complete {
+            return Err(error("take is already complete"));
+        }
+        let temporary_manifest = dir.join("manifest.tmp");
+        if temporary_manifest.symlink_metadata().is_ok() {
+            crate::transfer::reject_link(&temporary_manifest)?;
+        }
+        // Preflight every segment before truncating any file.
+        for segment in &checkpoint.segments {
+            let path = dir.join(&segment.file);
+            crate::transfer::reject_link(&path)?;
+            let mut file = fs::File::open(&path)?;
+            let expected =
+                crate::HEADER_BYTES + segment.frames * u64::from(checkpoint.channels) * 3;
+            let mut magic = [0_u8; 4];
+            if !file.metadata()?.is_file() || file.metadata()?.len() < expected {
+                return Err(error("segment shorter than checkpoint"));
+            }
+            file.read_exact(&mut magic)?;
+            if &magic != b"RIFF" {
+                return Err(error("invalid WAV segment"));
+            }
+        }
         let mut manifest = recover(&dir)?;
         manifest.complete = true;
         crate::publish(&dir, &manifest)?;
@@ -1146,6 +1183,36 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
     }
+    #[test]
+    fn take_recovery_requires_idle_playback_and_preserves_checkpoint() {
+        let root = root();
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = root.join("take-1");
+        let mut writer =
+            TakeWriter::create_with_layout(&dir, 48_000, 20, ChannelLayout::new(2).unwrap())
+                .unwrap();
+        writer.append_interleaved(&[0; 8]).unwrap();
+        writer.checkpoint().unwrap();
+        writer.append_interleaved(&[0; 4]).unwrap();
+        drop(writer);
+        let mut service = RecorderService::new(&root).unwrap();
+        let guard = crate::playback_guard(&root).unwrap();
+        assert!(service.recover_take("take-1").is_err());
+        assert!(!read_manifest(&dir).unwrap().complete);
+        drop(guard);
+        let recovered = service.recover_take("take-1").unwrap();
+        assert!(recovered.complete);
+        assert_eq!(recovered.frames, 4);
+        assert_eq!(
+            std::fs::metadata(dir.join("segment-000000.wav"))
+                .unwrap()
+                .len(),
+            crate::HEADER_BYTES + 4 * 2 * 3
+        );
+        assert!(service.recover_take("take-1").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn output(consumer: rtrb::Consumer<PlaybackFrame>) -> PlaybackOutput {
         PlaybackOutput {
             consumer,

@@ -9,15 +9,25 @@ import '../../core/audio_spectrum_peaks.dart';
 import '../../engine.dart' show AudioSpectrumFrame;
 import 'graph_touch_surface.dart';
 
-// Handles retain the actual parameter coordinates. Overlapping bands can be
-// selected through the band tabs; the selected band's handle wins hit testing.
-Map<int, Offset> _eqNodePositions(ChannelEqVm eq, Size size) {
-  Offset point(double frequency, double gain) => Offset(
-      EqGraphGeom.xOf(frequency.clamp(20, 20000)) / EqGraphGeom.w * size.width,
-      EqGraphGeom.yOf(gain.clamp(-15, 15)) / EqGraphGeom.h * size.height);
+// The rendered summed response determines both paint and hit-test positions.
+Map<int, Offset> _eqNodePositions(
+    ChannelEqVm eq, Size size, List<double> response) {
+  Offset point(double frequency) {
+    final x = EqGraphGeom.xOf(frequency.clamp(20, 20000)) / EqGraphGeom.w;
+    final index = x * (response.length - 1);
+    final low =
+        index.floor().clamp(0, math.max(0, response.length - 1)).toInt();
+    final high = math.min(low + 1, response.length - 1);
+    final gain = response.isEmpty
+        ? 0.0
+        : response[low] + (response[high] - response[low]) * (index - low);
+    return Offset(
+        x * size.width, EqGraphGeom.yOf(gain) / EqGraphGeom.h * size.height);
+  }
+
   final anchors = <int, Offset>{
-    for (final band in eq.bands) band.band: point(band.f, band.graphGain),
-    if (eq.hpfRange != null || eq.hpfOn) 0: point(eq.hpfF, 0),
+    for (final band in eq.bands) band.band: point(band.f),
+    if (eq.hpfRange != null || eq.hpfOn) 0: point(eq.hpfF),
   };
   final order = [
     if (anchors.containsKey(eq.selectedBand)) eq.selectedBand,
@@ -253,19 +263,11 @@ class EqCurvePainter extends CustomPainter {
       );
     }
     canvas.restore();
-    final positions = _eqNodePositions(eq, size);
+    final positions = _eqNodePositions(eq, size, responseDb);
     void node(Offset anchor, int band, bool on) {
       final point = positions[band] ?? anchor;
       final color = palette.bandColor(band);
       final radius = size.width < 500 ? 15.0 : 22.0;
-      if ((point - anchor).distance > 1) {
-        canvas.drawLine(
-            anchor,
-            point,
-            Paint()
-              ..color = color
-              ..strokeWidth = 1);
-      }
       canvas.drawCircle(point, radius, Paint()..color = palette.chip);
       canvas.drawCircle(
           point,
@@ -323,6 +325,7 @@ class U4EqGraph extends StatelessWidget {
   final double rtaCeilingDb;
   final double height;
   final ValueChanged<int> onSelectBand;
+  final ValueChanged<int>? onResetGain;
   final void Function(int band, double f, double g) onNode;
   final void Function(int band, double q) onQ;
 
@@ -338,6 +341,7 @@ class U4EqGraph extends StatelessWidget {
     this.rtaCeilingDb = 0,
     this.height = 344,
     required this.onSelectBand,
+    this.onResetGain,
     required this.onNode,
     required this.onQ,
   });
@@ -367,6 +371,8 @@ class U4EqGraph extends StatelessWidget {
                   width: w,
                   height: h,
                   eq: eq,
+                  responseDb: responseDb,
+                  onResetGain: onResetGain,
                   onSelectBand: onSelectBand,
                   onNode: onNode,
                   onQ: onQ,
@@ -391,19 +397,23 @@ class U4EqGraph extends StatelessWidget {
 }
 
 class _EqGraphGesture extends StatefulWidget {
+  final List<double> responseDb;
   final double width;
   final double height;
   final ChannelEqVm eq;
   final ValueChanged<int> onSelectBand;
+  final ValueChanged<int>? onResetGain;
   final void Function(int band, double f, double g) onNode;
   final void Function(int band, double q) onQ;
   final Widget child;
 
   const _EqGraphGesture({
+    required this.responseDb,
     required this.width,
     required this.height,
     required this.eq,
     required this.onSelectBand,
+    this.onResetGain,
     required this.onNode,
     required this.onQ,
     required this.child,
@@ -420,6 +430,11 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
   double _g = 0;
   double _q = 1;
   double? _span;
+  Duration? _lastTapTime;
+  int? _lastTapBand;
+  Offset? _tapStart;
+  bool _tapCandidate = false;
+  Duration? _tapDownTime;
 
   EqBandVm? get _band {
     for (final band in widget.eq.bands) {
@@ -431,8 +446,8 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
   int? _hitBand(Offset local) {
     int? best;
     var bestD = 30.0;
-    final positions =
-        _eqNodePositions(widget.eq, Size(widget.width, widget.height));
+    final positions = _eqNodePositions(
+        widget.eq, Size(widget.width, widget.height), widget.responseDb);
     for (final entry in positions.entries) {
       final d = (entry.value - local).distance;
       if (d < bestD && !(best == widget.eq.selectedBand && d < 30)) {
@@ -462,7 +477,15 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
   }
 
   void _down(PointerDownEvent event) {
-    if (_pointers.isEmpty) _focus(_hitBand(event.localPosition));
+    if (_pointers.isEmpty) {
+      _focus(_hitBand(event.localPosition));
+      _tapStart = event.localPosition;
+      _tapCandidate = true;
+      _tapDownTime = event.timeStamp;
+    } else {
+      _tapCandidate = false;
+      _lastTapTime = null;
+    }
     _pointers[event.pointer] = event.localPosition;
     if (_pointers.length == 2 && _dragBand == null) {
       _focus(widget.eq.selectedBand);
@@ -474,6 +497,10 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
     final previous = _pointers[event.pointer];
     if (previous == null) return;
     _pointers[event.pointer] = event.localPosition;
+    if (_tapStart != null && (event.localPosition - _tapStart!).distance > 12) {
+      _tapCandidate = false;
+    }
+    if (_tapCandidate && _pointers.length == 1) return;
     final band = _dragBand;
     if (band == null) return;
     if (_pointers.length == 2) {
@@ -505,12 +532,36 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
   }
 
   void _up(PointerUpEvent event) {
+    final band = _dragBand;
+    final now = event.timeStamp;
+    final quickTap = _tapDownTime != null &&
+        now - _tapDownTime! < const Duration(milliseconds: 300);
+    if (_tapCandidate && quickTap && band != null && band != 0) {
+      final range = _band?.gRange;
+      if (_lastTapBand == band &&
+          _lastTapTime != null &&
+          now - _lastTapTime! < const Duration(milliseconds: 350) &&
+          range != null &&
+          range.first <= 0 &&
+          range.last >= 0) {
+        widget.onResetGain?.call(band);
+        _lastTapTime = null;
+      } else {
+        _lastTapBand = band;
+        _lastTapTime = now;
+      }
+    } else {
+      _lastTapTime = null;
+    }
+    _tapCandidate = false;
     _pointers.remove(event.pointer);
     _span = _pointerSpan;
     if (_pointers.isEmpty) _dragBand = null;
   }
 
   void _cancel(PointerCancelEvent event) {
+    _lastTapTime = null;
+    _tapCandidate = false;
     _pointers.clear();
     _dragBand = null;
     _span = null;

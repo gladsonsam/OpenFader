@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/destination_controls.dart';
 import '../palette.dart';
+import 'compact_choice_picker.dart';
 
 class DestinationControlEditor extends StatefulWidget {
   final Listenable changes;
@@ -108,23 +109,15 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
                                       _selected =
                                           double.tryParse(text) ?? double.nan;
                                     })),
-                          for (final choice in control.choices)
-                            Semantics(
-                                selected: choice.value == _selected,
-                                child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: Icon(
-                                        choice.value == _selected
-                                            ? Icons.radio_button_checked
-                                            : Icons.radio_button_unchecked,
-                                        color: current
-                                            ? palette.cyan
-                                            : palette.text7),
-                                    title: Text(choice.label),
-                                    onTap: current && !_sending
-                                        ? () => setState(
-                                            () => _selected = choice.value)
-                                        : null)),
+                          if (control.choices.isNotEmpty)
+                            CompactChoicePicker<DestinationChoiceVm>(
+                                choices: control.choices,
+                                label: (choice) => choice.label,
+                                selected: (choice) => choice.value == _selected,
+                                onSelected: current && !_sending
+                                    ? (choice) =>
+                                        setState(() => _selected = choice.value)
+                                    : null),
                           if (!current && !_sending) ...[
                             const SizedBox(height: 8),
                             const Text(

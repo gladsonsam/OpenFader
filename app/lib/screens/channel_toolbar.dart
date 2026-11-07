@@ -8,7 +8,6 @@ import '../ui/console.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../u4law.dart';
-import '../widgets/number_entry.dart';
 import '../widgets/channel_name_editor.dart';
 import 'channel.dart';
 
@@ -89,55 +88,66 @@ class ChannelToolbar extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
                       widthFactor: compact ? .45 : .30,
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Tooltip(
-                                message: 'Rename $identity',
-                                child: Semantics(
-                                    button: true,
-                                    label: 'Rename $identity',
-                                    child: InkWell(
-                                        onTap: store.captureNameTarget() == null
-                                            ? null
-                                            : () {
-                                                final target =
-                                                    store.captureNameTarget();
-                                                if (target != null) {
-                                                  showChannelNameEditor(
-                                                      context, store, target);
-                                                }
-                                              },
-                                        child: Text(
-                                            store.stripKey == 'main'
-                                                ? 'Main LR'
-                                                : store.stripKey
-                                                        .startsWith('bus/')
-                                                    ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber} · ${store.displayName}'
-                                                    : 'Ch ${store.channelNumber} · ${store.displayName}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: AppDesign.type(
-                                                compact ? 12 : 14,
-                                                color:
-                                                    ConsolePalette.of(context)
-                                                        .text7))))),
-                            Text(
-                                focus == null
-                                    ? 'Fader'
-                                    : '${focus.title} · ${focus.label}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppDesign.type(compact ? 12 : 14,
-                                    color: ConsolePalette.of(context).text7)),
-                          ]))),
+                      child: Tooltip(
+                          message: 'Rename $identity',
+                          child: Semantics(
+                              button: true,
+                              label: 'Rename $identity',
+                              child: InkWell(
+                                  onTap: store.captureNameTarget() == null
+                                      ? null
+                                      : () {
+                                          final target =
+                                              store.captureNameTarget();
+                                          if (target != null) {
+                                            showChannelNameEditor(
+                                                context, store, target);
+                                          }
+                                        },
+                                  child: SizedBox(
+                                      height: AppDesign.touchTarget,
+                                      child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                                store.stripKey == 'main'
+                                                    ? 'Main LR'
+                                                    : store.stripKey
+                                                            .startsWith('bus/')
+                                                        ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber} · ${store.displayName}'
+                                                        : 'Ch ${store.channelNumber} · ${store.displayName}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppDesign.type(
+                                                    compact ? 12 : 14,
+                                                    color: ConsolePalette.of(
+                                                            context)
+                                                        .text7)),
+                                            Text(
+                                                focus == null
+                                                    ? 'Fader'
+                                                    : '${focus.title} · ${focus.label}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppDesign.type(
+                                                    compact ? 12 : 14,
+                                                    color: ConsolePalette.of(
+                                                            context)
+                                                        .text7)),
+                                          ]))))))),
               Align(
                   alignment: compact ? Alignment.centerRight : Alignment.center,
                   child: FractionallySizedBox(
                       widthFactor: compact ? .50 : .40,
                       child: focus == null
-                          ? _FaderValue(store: store, compact: compact)
+                          ? _FaderValue(
+                              key: ValueKey(
+                                  (store.stripKey, store.connectionEpoch)),
+                              store: store,
+                              compact: compact)
                           : _FocusedValue(
                               focus: focus,
                               compact: compact,
@@ -211,50 +221,146 @@ class ChannelToolbar extends StatelessWidget {
       }));
 }
 
-class _FocusedValue extends StatelessWidget {
+class _FocusedValue extends StatefulWidget {
   final ChannelFocus focus;
   final bool compact;
   final bool Function() isCurrent;
+  final bool allowNegativeInfinity;
   const _FocusedValue(
-      {required this.focus, required this.compact, required this.isCurrent});
+      {required this.focus,
+      required this.compact,
+      required this.isCurrent,
+      this.allowNegativeInfinity = false});
+
+  @override
+  State<_FocusedValue> createState() => _FocusedValueState();
+}
+
+class _FocusedValueState extends State<_FocusedValue> {
+  final _controller = TextEditingController();
+  final _inputFocus = FocusNode();
+  bool _editing = false;
+  String? _error;
+
+  @override
+  void didUpdateWidget(covariant _FocusedValue oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.focus, widget.focus)) {
+      _editing = false;
+      _error = null;
+      _inputFocus.unfocus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _inputFocus.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    if (!widget.focus.enabled || !widget.isCurrent()) return;
+    _controller.text = widget.focus.entryText?.call() ?? widget.focus.text();
+    _controller.selection =
+        TextSelection(baseOffset: 0, extentOffset: _controller.text.length);
+    setState(() {
+      _editing = true;
+      _error = null;
+    });
+    _inputFocus.requestFocus();
+  }
+
+  void _submit() {
+    final focus = widget.focus;
+    if (!focus.enabled || !widget.isCurrent()) {
+      setState(() => _editing = false);
+      return;
+    }
+    var input = _controller.text.trim().toLowerCase().replaceAll(',', '.');
+    final frequency = focus.label == 'Frequency';
+    final kilo = frequency && (input.endsWith('k') || input.endsWith('khz'));
+    if (frequency) input = input.replaceFirst(RegExp(r'\s*(khz|hz|k)$'), '');
+    final negativeInfinity = widget.allowNegativeInfinity &&
+        const ['-inf', '-infinity', '-∞'].contains(input.trim());
+    final parsed = negativeInfinity
+        ? double.negativeInfinity
+        : double.tryParse(input.trim());
+    final value = parsed == null ? null : parsed * (kilo ? 1000 : 1);
+    if (value == null ||
+        (!negativeInfinity &&
+            (!value.isFinite || value < focus.min || value > focus.max))) {
+      setState(() => _error =
+          'Range ${focus.min.toStringAsFixed(1)}–${focus.max.toStringAsFixed(1)}');
+      return;
+    }
+    focus.apply(value);
+    if (mounted) {
+      setState(() {
+        _editing = false;
+        _error = null;
+      });
+    }
+    _inputFocus.unfocus();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final live = focus.valueListenable;
+    final live = widget.focus.valueListenable;
     if (live == null) return _value(context);
     return ListenableBuilder(
         listenable: live, builder: (context, child) => _value(context));
   }
 
-  Widget _value(BuildContext context) => InkWell(
-      onTap: !focus.enabled
-          ? null
-          : () async {
-              final v = await showNumberEntry(
-                  context: context,
-                  title: '${focus.title} · ${focus.label}',
-                  initial: focus.entryText?.call() ?? focus.text(),
-                  min: focus.min,
-                  max: focus.max);
-              if (v != null &&
-                  context.mounted &&
-                  isCurrent() &&
-                  focus.enabled) {
-                focus.apply(v);
-              }
-            },
-      child: SizedBox(
-          height: 44,
-          child: Center(
-              widthFactor: 1,
-              child: Text(focus.text(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppDesign.type(
-                      compact
-                          ? AppDesign.compactParameterValue
-                          : AppDesign.parameterValue,
-                      color: ConsolePalette.of(context).cyan,
-                      weight: FontWeight.w700)))));
+  Widget _value(BuildContext context) {
+    final focus = widget.focus;
+    final style = AppDesign.type(
+        widget.compact
+            ? AppDesign.compactParameterValue
+            : AppDesign.parameterValue,
+        color: ConsolePalette.of(context).cyan,
+        weight: FontWeight.w700);
+    if (_editing && focus.enabled) {
+      return TextField(
+        controller: _controller,
+        focusNode: _inputFocus,
+        keyboardType:
+            const TextInputType.numberWithOptions(signed: true, decimal: true),
+        textInputAction: TextInputAction.done,
+        textAlign: TextAlign.center,
+        style: style,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          suffixText: focus.label == 'Frequency' ? 'Hz' : null,
+          errorText: _error,
+        ),
+        onSubmitted: (_) => _submit(),
+        onTapOutside: (_) {
+          setState(() {
+            _editing = false;
+            _error = null;
+          });
+          _inputFocus.unfocus();
+        },
+      );
+    }
+    return Semantics(
+      button: focus.enabled,
+      label: '${focus.title} ${focus.label}, ${focus.text()}, edit value',
+      child: InkWell(
+        onTap: focus.enabled ? _start : null,
+        child: SizedBox(
+            height: AppDesign.touchTarget,
+            child: Center(
+                child: Text(focus.text(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: style))),
+      ),
+    );
+  }
 }
 
 class _ChannelMenuButton extends StatelessWidget {
@@ -375,57 +481,40 @@ class _ToolButton extends StatelessWidget {
                       child: child)))));
 }
 
-class _FaderValue extends StatelessWidget {
+class _FaderValue extends StatefulWidget {
   final ChannelStore store;
   final bool compact;
-  const _FaderValue({required this.store, required this.compact});
+  const _FaderValue({super.key, required this.store, required this.compact});
 
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-        valueListenable: store.faderNote(),
-        builder: (context, fader, _) {
-          final text = fmtDb(fader);
-          return Semantics(
-              button: fader.isFinite,
-              label: fader.isFinite
-                  ? 'Channel fader, $text dB, activate to type a value'
-                  : 'Channel fader unavailable',
-              onTap: fader.isFinite ? () => _type(context) : null,
-              child: GestureDetector(
-                  onTap: fader.isFinite ? () => _type(context) : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                      height: 44,
-                      child: Center(
-                          widthFactor: 1,
-                          child: Text('$text dB',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontFamily: U4.font,
-                                  fontSize: compact
-                                      ? AppDesign.compactParameterValue
-                                      : AppDesign.parameterValue,
-                                  fontWeight: FontWeight.w700,
-                                  color: ConsolePalette.of(context).cyan,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures()
-                                  ]))))));
-        });
-  }
+  State<_FaderValue> createState() => _FaderValueState();
+}
 
-  Future<void> _type(BuildContext context) async {
-    final target = store.stripKey;
-    final v = await showNumberEntry(
-        context: context,
-        title: 'Ch ${store.channelNumber} fader',
-        initial: fmtDb(store.faderNote().value),
-        min: -60,
-        max: 10,
-        allowNegInf: true,
-        negInfValue: double.negativeInfinity);
-    if (v == null || !context.mounted || store.stripKey != target) return;
-    store.setFaderDb(v.isFinite ? v : -90);
-  }
+class _FaderValueState extends State<_FaderValue> {
+  late final _target = widget.store.stripKey;
+  late final _epoch = widget.store.connectionEpoch;
+  bool _current() =>
+      widget.store.stripKey == _target &&
+      widget.store.connectionEpoch == _epoch;
+  late final _focus = ChannelFocus(
+      title: 'Channel fader',
+      label: 'Level',
+      text: () => '${fmtDb(widget.store.faderNote().value)} dB',
+      entryText: () => fmtDb(widget.store.faderNote().value),
+      valueListenable: widget.store.faderNote(),
+      min: 0,
+      max: 1,
+      resolveRange: () => _current() && widget.store.faderNote().value.isFinite
+          ? widget.store.faderEntryRange
+          : null,
+      apply: (value) {
+        if (_current()) widget.store.setFaderDb(value.isFinite ? value : -90);
+      });
+
+  @override
+  Widget build(BuildContext context) => _FocusedValue(
+      focus: _focus,
+      compact: widget.compact,
+      isCurrent: _current,
+      allowNegativeInfinity: true);
 }

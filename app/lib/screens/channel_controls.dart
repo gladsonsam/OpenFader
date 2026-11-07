@@ -38,7 +38,8 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
       label: label,
       valueListenable: store,
       text: () => current() ? text() : 'Reopen control',
-      entryText: () => current() ? store.paramNum(leaf)?.toString() ?? '' : '',
+      entryText: () =>
+          current() ? store.paramNum(leaf)?.toStringAsFixed(1) ?? '' : '',
       min: 0,
       max: 1,
       resolveRange: range,
@@ -76,7 +77,7 @@ ChannelFocus _eqQFocus(ChannelStore store, int band) => _parameterFocus(
             .where((b) => b.band == band)
             .firstOrNull
             ?.q
-            .toStringAsFixed(2) ??
+            .toStringAsFixed(1) ??
         'Loading…',
     (v) => store.setEqParam(band, 'q', v));
 

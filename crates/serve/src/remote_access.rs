@@ -1,9 +1,9 @@
-//! Remote pairing and TLS identity. This module does not authenticate local
+//! Remote authentication and TLS identity. This module does not authenticate local
 //! administrators or accept the desktop master credential.
 //!
 //! Storage must protect the private key from other users and atomically
 //! initialize an identity across processes. Client credentials are memory-only:
-//! restarting the service requires clients to pair again. A listener must use
+//! restarting the service requires clients to authenticate again. A listener must use
 //! TLS, authenticate every remote request, and close active connections when a
 //! client is revoked or remote access is disabled.
 
@@ -31,6 +31,71 @@ pub trait IdentityStorage {
     ) -> anyhow::Result<TlsIdentity>;
 }
 
+/// Private on-disk TLS identity, atomically initialized across processes.
+pub struct FileIdentity(pub std::path::PathBuf);
+impl IdentityStorage for FileIdentity {
+    fn load_or_create(
+        &self,
+        create: &mut dyn FnMut() -> anyhow::Result<TlsIdentity>,
+    ) -> anyhow::Result<TlsIdentity> {
+        let read = || -> anyhow::Result<TlsIdentity> {
+            let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&self.0)?)?;
+            let bytes = |key: &str| -> anyhow::Result<Vec<u8>> {
+                value[key]
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid server identity"))?
+                    .iter()
+                    .map(|v| {
+                        v.as_u64()
+                            .filter(|n| *n <= 255)
+                            .map(|n| n as u8)
+                            .ok_or_else(|| anyhow::anyhow!("Invalid server identity"))
+                    })
+                    .collect()
+            };
+            Ok(TlsIdentity {
+                certificate_der: bytes("certificate")?,
+                private_key_der: bytes("private_key")?,
+            })
+        };
+        match std::fs::metadata(&self.0) {
+            Ok(_) => return read(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        let parent = self
+            .0
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid identity path"))?;
+        std::fs::create_dir_all(parent)?;
+        let identity = create()?;
+        let temporary = parent.join(format!(".remote-identity-{}", random_hex(12)?));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let result = (|| -> anyhow::Result<()> {
+            use std::io::Write;
+            let mut file = options.open(&temporary)?;
+            file.write_all(&serde_json::to_vec(&serde_json::json!({"certificate":identity.certificate_der,"private_key":identity.private_key_der}))?)?;
+            file.sync_all()?;
+            match std::fs::hard_link(&temporary, &self.0) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                Err(e) => Err(e.into()),
+            }
+        })();
+        let _ = std::fs::remove_file(&temporary);
+        result?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)?.sync_all()?;
+        read()
+    }
+}
+
 /// A bearer credential returned exactly once to a newly paired client.
 pub struct ClientCredential {
     pub client_id: String,
@@ -46,6 +111,38 @@ struct State {
     enabled: bool,
     pending: Option<Pending>,
     clients: HashMap<String, Client>,
+    password: Option<Password>,
+    next_login: Option<Instant>,
+}
+
+struct Password {
+    salt: [u8; 32],
+    hash: [u8; 32],
+}
+impl Password {
+    fn new(value: &str) -> anyhow::Result<Self> {
+        let mut salt = [0; 32];
+        getrandom::fill(&mut salt).map_err(|_| anyhow::anyhow!("OS randomness unavailable"))?;
+        let mut hash = [0; 32];
+        ring::pbkdf2::derive(
+            ring::pbkdf2::PBKDF2_HMAC_SHA256,
+            std::num::NonZeroU32::new(600_000).unwrap(),
+            &salt,
+            value.as_bytes(),
+            &mut hash,
+        );
+        Ok(Self { salt, hash })
+    }
+    fn verify(&self, value: &str) -> bool {
+        ring::pbkdf2::verify(
+            ring::pbkdf2::PBKDF2_HMAC_SHA256,
+            std::num::NonZeroU32::new(600_000).unwrap(),
+            &self.salt,
+            value.as_bytes(),
+            &self.hash,
+        )
+        .is_ok()
+    }
 }
 
 struct Client {
@@ -56,12 +153,12 @@ struct Client {
 pub struct RemoteAccess {
     identity: TlsIdentity,
     state: Mutex<State>,
+    password_file: Option<std::path::PathBuf>,
 }
 
 fn random_hex(bytes: usize) -> anyhow::Result<String> {
     let mut data = vec![0; bytes];
-    getrandom::fill(&mut data)
-        .map_err(|e| anyhow::anyhow!("OS randomness unavailable: {e}"))?;
+    getrandom::fill(&mut data).map_err(|e| anyhow::anyhow!("OS randomness unavailable: {e}"))?;
     Ok(hex(&data))
 }
 fn hex(data: &[u8]) -> String {
@@ -87,6 +184,127 @@ impl RemoteAccess {
         Ok(Self {
             identity,
             state: Mutex::new(State::default()),
+            password_file: None,
+        })
+    }
+    pub fn with_password_file(mut self, path: std::path::PathBuf) -> anyhow::Result<Self> {
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+                let password = if value["password_required"] == false {
+                    None
+                } else {
+                    let read_bytes = |key: &str| -> anyhow::Result<Vec<u8>> {
+                        let rows = value[key].as_array().ok_or_else(|| {
+                            anyhow::anyhow!("Invalid server password configuration")
+                        })?;
+                        rows.iter()
+                            .map(|v| {
+                                v.as_u64()
+                                    .filter(|n| *n <= 255)
+                                    .map(|n| n as u8)
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("Invalid server password configuration")
+                                    })
+                            })
+                            .collect()
+                    };
+                    let salt: [u8; 32] = read_bytes("salt")?
+                        .try_into()
+                        .map_err(|_| anyhow::anyhow!("Invalid password salt"))?;
+                    let hash: [u8; 32] = read_bytes("hash")?
+                        .try_into()
+                        .map_err(|_| anyhow::anyhow!("Invalid password hash"))?;
+                    Some(Password { salt, hash })
+                };
+                self.state.get_mut().unwrap().password = password;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        self.password_file = Some(path);
+        Ok(self)
+    }
+    pub fn password_required(&self) -> bool {
+        self.state.lock().unwrap().password.is_some()
+    }
+    pub fn set_password(&self, value: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(value.len() <= 1024, "Password is too long");
+        let password = if value.is_empty() {
+            None
+        } else {
+            Some(Password::new(value)?)
+        };
+        let path = self
+            .password_file
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Persistent server settings are unavailable"))?;
+        let mut state = self.state.lock().unwrap();
+        let document = match &password {
+            Some(p) => {
+                serde_json::json!({"password_required":true,"salt":p.salt.to_vec(),"hash":p.hash.to_vec()})
+            }
+            None => serde_json::json!({"password_required":false}),
+        };
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Invalid settings path"))?;
+        std::fs::create_dir_all(parent)?;
+        let temporary = parent.join(format!(".remote-password-{}", random_hex(12)?));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let result = (|| -> anyhow::Result<()> {
+            use std::io::Write;
+            let mut file = options.open(&temporary)?;
+            file.write_all(&serde_json::to_vec(&document)?)?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, path)?;
+            #[cfg(unix)]
+            std::fs::File::open(parent)?.sync_all()?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result?;
+        state.password = password;
+        state.pending = None;
+        state.next_login = None;
+        for client in state.clients.values() {
+            client.active.send_replace(false);
+        }
+        state.clients.clear();
+        Ok(())
+    }
+    pub fn connect(&self, password: &str) -> anyhow::Result<ClientCredential> {
+        let mut state = self.state.lock().unwrap();
+        anyhow::ensure!(state.enabled, "remote access disabled");
+        anyhow::ensure!(
+            !state.next_login.is_some_and(|next| Instant::now() < next),
+            "retry later"
+        );
+        if password.len() > 1024 || state.password.as_ref().is_some_and(|p| !p.verify(password)) {
+            state.next_login = Some(Instant::now() + Duration::from_secs(1));
+            anyhow::bail!("invalid password");
+        }
+        let client_id = random_hex(16)?;
+        let bearer_token = random_hex(32)?;
+        let (active, _) = tokio::sync::watch::channel(true);
+        state.clients.insert(
+            client_id.clone(),
+            Client {
+                token: bearer_token.clone(),
+                active,
+            },
+        );
+        Ok(ClientCredential {
+            client_id,
+            bearer_token,
         })
     }
     pub fn tls_identity(&self) -> &TlsIdentity {

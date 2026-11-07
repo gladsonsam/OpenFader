@@ -1,4 +1,6 @@
+import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
+import '../palette.dart';
 import '../engine.dart';
 import '../core/channel_name.dart';
 import '../core/mixer_provider_policy.dart';
@@ -8,6 +10,8 @@ import '../core/channel_views.dart' show parameterRange;
 import '../settings/prefs.dart';
 import '../state/app_store.dart';
 import '../u4law.dart';
+import '../core/fader_law.dart' show lawForDriver, designLaw;
+import '../core/control_reset.dart';
 import 'design.dart';
 import 'mixer_layers.dart';
 
@@ -195,7 +199,7 @@ class MixerController extends ChangeNotifier {
 
   /// Empty-state copy for a custom layer with no resolvable channels.
   String get layerEmptyMessage =>
-      '“${activeLayer.name}” has no channels to show.\nLong-press the bank rail to edit layers.';
+      '“${activeLayer.name}” has no channels to show.';
   String _stripNumber(Strip strip) {
     final family = store.engine.topology.where((row) {
       final first = (row['first'] as num).toInt();
@@ -255,6 +259,14 @@ class MixerController extends ChangeNotifier {
 
   int? get masterIdentityChannel => _masterStrip?.ch;
 
+  /// Resolve the selected destination's native colour with the same fallback
+  /// used by its nameplate, including providers' explicit uncoloured choice.
+  Color masterColor(ConsolePalette palette) {
+    final choice = master.colorChoice;
+    if (choice == null) return palette.bus;
+    return choice.rgb == null ? palette.panel : Color(0xff000000 | choice.rgb!);
+  }
+
   MixerChannel get master {
     final target = store.masterProcessingTarget;
     final strip = _masterStrip;
@@ -270,8 +282,7 @@ class MixerController extends ChangeNotifier {
         icon: strip == null
             ? const ResolvedChannelIcon(ChannelIconSelection.followProvider())
             : _icon(strip.ch),
-        colorChoice:
-            bus && strip != null ? store.channelColorChoice(strip.ch) : null,
+        colorChoice: strip != null ? store.channelColorChoice(strip.ch) : null,
         fader: store.masterFader,
         pan: 0,
         muted: store.masterMuted,
@@ -437,7 +448,31 @@ class MixerController extends ChangeNotifier {
     }
   }
 
-  void unity(MixerChannel ch) => setPosition(ch, .758);
+  bool canUnity(MixerChannel ch) {
+    final law = store.engine.driver == 'sim'
+        ? designLaw
+        : lawForDriver(store.engine.driver);
+    if (law == null) return false;
+    final live = ch.master
+        ? store.masterFaderNote.value
+        : ch.channel != null
+            ? store.mixerFaderOf(ch.channel!).value
+            : double.nan;
+    final muted = ch.master
+        ? store.masterMutedNote.value
+        : ch.channel != null
+            ? store.muteOf(ch.channel!).value
+            : true;
+    if (!live.isFinite) return false;
+    return canResetLevelToUnity(posToDb(live),
+        muted: muted, min: law.floorDb, max: law.topDb);
+  }
+
+  void unity(MixerChannel ch) {
+    if (!canUnity(ch)) return;
+    setPosition(ch, MixerFaderScale.positionForDb(0));
+  }
+
   void toggleMute(MixerChannel ch) {
     if (ch.master) {
       store.setMasterMuted(!store.masterMutedNote.value);

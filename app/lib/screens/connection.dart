@@ -11,7 +11,8 @@ enum MixerType {
   xair('Behringer X-Air', 'xair'),
   x32('Behringer X32', 'x32'),
   dl32s('Mackie DL32S', 'dl32s'),
-  wing('Behringer WING', 'wing');
+  wing('Behringer WING', 'wing'),
+  server('OpenFader server', 'openfader-server');
 
   const MixerType(this.label, this.driver);
   final String label;
@@ -24,7 +25,12 @@ enum MixerType {
 class MixerTypeField extends StatelessWidget {
   final MixerType value;
   final ValueChanged<MixerType>? onChanged;
-  const MixerTypeField({super.key, required this.value, this.onChanged});
+  final bool includeServer;
+  const MixerTypeField(
+      {super.key,
+      required this.value,
+      this.onChanged,
+      this.includeServer = false});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +57,8 @@ class MixerTypeField extends StatelessWidget {
             const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
       items: [
-        for (final type in MixerType.values)
+        for (final type in MixerType.values
+            .where((type) => includeServer || type != MixerType.server))
           DropdownMenuItem(
               value: type,
               child: Padding(

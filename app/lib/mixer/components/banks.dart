@@ -202,7 +202,8 @@ class MixerBanks extends StatelessWidget {
                                       alignment: Alignment.centerLeft,
                                       child: fittedLabel(
                                           controller.master.number, 16,
-                                          color: ConsolePalette.of(context).bus,
+                                          color: controller.masterColor(
+                                              ConsolePalette.of(context)),
                                           weight: FontWeight.w700))),
                               Positioned(
                                   top: 59 * sy,

@@ -70,6 +70,7 @@ async fn boot_inner(data_dir: String) -> anyhow::Result<String> {
         None => {
             let e = Engine::new(EngineConfig {
                 data_dir: Some(directory.clone()),
+                preset: Some(openfader_sim::SimPreset::Demo),
                 ..EngineConfig::default()
             });
             // The strict library loader retains an actionable error rather

@@ -105,10 +105,11 @@ class _ConnectionsDetail extends StatelessWidget {
         ),
         const _Note('Your device and mixer must be on the same network.'),
         _Section(
-          title: 'Supported mixers',
-          children: const [
-            _PrefRow(label: 'XR18', trailing: _ValueText('Behringer')),
-            _PrefRow(label: 'DL32S', trailing: _ValueText('Mackie')),
+          title: 'Available mixer types',
+          children: [
+            for (final type in MixerType.values)
+              if (type != MixerType.automatic)
+                _PrefRow(label: type.label, trailing: const SizedBox.shrink()),
           ],
         ),
       ],

@@ -21,8 +21,6 @@ abstract class DebugStore extends ChangeNotifier {
   Future<void> refresh();
   void sendHello();
   void sendStats();
-  void nudgeFader();
-  void toggleMute();
   void scan();
   void requestInfo();
 }
@@ -68,8 +66,6 @@ class _U4DebugPageState extends State<U4DebugPage> {
                     spacing: 6,
                     runSpacing: 6,
                     children: [
-                      _Probe(label: 'ch0 fader +', onTap: store.nudgeFader),
-                      _Probe(label: 'ch0 mute', onTap: store.toggleMute),
                       _Probe(label: 'hello', onTap: store.sendHello),
                       _Probe(label: 'stats', onTap: store.sendStats),
                       _Probe(label: 'scan', onTap: store.scan),

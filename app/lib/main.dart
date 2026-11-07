@@ -20,6 +20,11 @@ Future<void> main() async {
   }
   final desktop = await DesktopIntegration.initialize();
   runApp(OpenfaderApp(desktop: desktop));
+  if (desktop != null) {
+    // Restore visibility after native window restoration and the first Flutter
+    // frame, so a previously hidden or minimized window cannot strand startup.
+    WidgetsBinding.instance.addPostFrameCallback((_) => desktop.show());
+  }
 }
 
 class OpenfaderApp extends StatelessWidget {

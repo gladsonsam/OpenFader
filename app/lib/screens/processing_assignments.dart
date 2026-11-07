@@ -362,6 +362,11 @@ class _ProcessingSend extends StatelessWidget {
                 compact: !wide,
                 showValue: true,
                 value: level,
+                resetEnabled: db != null &&
+                    range != null &&
+                    canResetLevelToUnity(db,
+                        muted: send.muted, min: minDb, max: maxDb),
+                resetValue: dbToPos(0),
                 min: dbToPos(minDb.toDouble()),
                 max: dbToPos(maxDb.toDouble()),
                 onFocus: focusSend,

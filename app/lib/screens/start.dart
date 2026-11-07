@@ -23,7 +23,10 @@ class ConnectionsStartScreen extends StatefulWidget {
 
   /// Work offline chosen: the owner connects the demo desk, then enters.
   final VoidCallback onWorkOffline;
-  final VoidCallback? onConnectComputer;
+  final ValueChanged<String>? onConnectServer;
+
+  /// Returns to the existing workspace when opened from the mixer.
+  final VoidCallback? onBackToMixer;
 
   const ConnectionsStartScreen(
       {super.key,
@@ -32,7 +35,8 @@ class ConnectionsStartScreen extends StatefulWidget {
       required this.onHelp,
       required this.onEnterMixer,
       required this.onWorkOffline,
-      this.onConnectComputer});
+      this.onConnectServer,
+      this.onBackToMixer});
 
   @override
   State<ConnectionsStartScreen> createState() => _ConnectionsStartState();
@@ -113,7 +117,8 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     final rows = <_Row>[];
     for (final r in _recentsBox.items) {
       seen.add(_store.canonicalHost(r.addr));
-      final d = byHost[_store.canonicalHost(r.addr)];
+      final isServer = r.driver == MixerType.server.driver;
+      final d = isServer ? null : byHost[_store.canonicalHost(r.addr)];
       rows.add(_Row(
           key: 'recent:${r.addr}',
           name: r.name.isEmpty ? r.addr : r.name,
@@ -122,9 +127,10 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
               ? d.mixerType
               : MixerType.fromDriver(r.driver),
           discovered: false,
-          connected: d?.connected ??
-              (_store.isConnected &&
-                  _store.connectedHost == _store.canonicalHost(r.addr)),
+          connected: !isServer &&
+              (d?.connected ??
+                  (_store.isConnected &&
+                      _store.connectedHost == _store.canonicalHost(r.addr))),
           reachable: _store.checkStatusOf(r.addr) == 'available' ||
               (_store.checkStatusOf(r.addr) == null && d != null)));
     }
@@ -212,6 +218,10 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
 
   void _connectRow(_Row row) {
     if (_store.probing) return;
+    if (row.mixerType == MixerType.server) {
+      widget.onConnectServer?.call(row.addr);
+      return;
+    }
     _pendingType = row.mixerType;
     if (row.connected) {
       widget.onEnterMixer();
@@ -269,11 +279,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                               ? 'Mixers'
                               : 'Recent mixers',
                           scanned: _store.lastScan != 'never',
-                          onRefresh: _store.scanning || _store.probing
-                              ? null
-                              : () => _store.refreshKnown(_recentsBox.items
-                                  .map((r) => r.addr)
-                                  .toList()),
                           refreshing: _store.scanning,
                           error: (_store.scanError?.isEmpty ?? true)
                               ? null
@@ -286,26 +291,28 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                               ? _retryConnection
                               : null,
                           onConnect: _connectRow,
-                          onDiscover:
-                              _store.scanning ? null : () => _store.scan(),
+                          onDiscover: _store.scanning || _store.probing
+                              ? null
+                              : () => _store.scan(),
                           onAdd: _showManualAdd,
                         ),
                       ])),
                 ))),
                 SizedBox(
-                    height: widget.onConnectComputer == null
-                        ? (wide ? 112 : 100)
-                        : 150,
+                    height: wide ? 112 : 100,
                     child: Center(
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                      if (widget.onConnectComputer != null)
-                        TextButton(
-                            onPressed: widget.onConnectComputer,
-                            child: const Text('Connect to computer')),
-                      _WorkOffline(onTap: widget.onWorkOffline),
-                    ]))),
+                        child: _WorkOffline(onTap: widget.onWorkOffline))),
               ]),
+              if (widget.onBackToMixer != null)
+                Positioned(
+                  top: wide ? 32 : 18,
+                  left: wide ? 40 : 18,
+                  child: TextButton.icon(
+                    onPressed: widget.onBackToMixer,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Mixer'),
+                  ),
+                ),
               Positioned(
                 top: wide ? 32 : 18,
                 right: wide ? 40 : 18,
@@ -345,6 +352,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => _ManualAddDialog(
+        onConnectServer: widget.onConnectServer,
         onSubmit: (addr, name, mixerType) {
           if (_store.probing) return;
           _pendingType = mixerType;
@@ -383,7 +391,6 @@ class _Box extends StatelessWidget {
   final bool wide;
   final String title;
   final bool scanned;
-  final VoidCallback? onRefresh;
   final bool refreshing;
   final String? error;
   final List<_Row> rows;
@@ -398,7 +405,6 @@ class _Box extends StatelessWidget {
       {required this.wide,
       required this.title,
       required this.scanned,
-      required this.onRefresh,
       required this.refreshing,
       required this.error,
       required this.rows,
@@ -429,17 +435,10 @@ class _Box extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                        child: Text(
-                            rows.isEmpty ? title : '$title (${rows.length})',
+                        child: Text(title,
                             style: AppDesign.type(wide ? 27 : 21,
                                 weight: FontWeight.w500,
                                 color: ConsolePalette.of(context).text))),
-                    _IconButton(
-                        tooltip: refreshing
-                            ? 'Scanning for mixers…'
-                            : 'Refresh recent mixers',
-                        onTap: onRefresh,
-                        child: _RefreshGlyph(spinning: refreshing)),
                   ],
                 ),
               ),
@@ -751,50 +750,6 @@ class _GearGlyph extends StatelessWidget {
       const DesignIcon(DesignSymbol.settings, size: 28);
 }
 
-class _RefreshGlyph extends StatefulWidget {
-  final bool spinning;
-  const _RefreshGlyph({required this.spinning});
-  @override
-  State<_RefreshGlyph> createState() => _RefreshGlyphState();
-}
-
-class _RefreshGlyphState extends State<_RefreshGlyph>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _spin = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 900));
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.spinning) _spin.repeat();
-  }
-
-  @override
-  void didUpdateWidget(_RefreshGlyph old) {
-    super.didUpdateWidget(old);
-    if (widget.spinning && !_spin.isAnimating) {
-      _spin.repeat();
-    } else if (!widget.spinning && _spin.isAnimating) {
-      _spin.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _spin.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => RotationTransition(
-      turns: _spin,
-      child: Icon(Icons.refresh,
-          size: 26,
-          color: widget.spinning
-              ? ConsolePalette.of(context).lime
-              : ConsolePalette.of(context).text7));
-}
-
 class _ScanGlyph extends StatelessWidget {
   const _ScanGlyph();
   @override
@@ -923,7 +878,8 @@ bool _validHost(String v) {
 
 class _ManualAddDialog extends StatefulWidget {
   final void Function(String addr, String name, MixerType mixerType) onSubmit;
-  const _ManualAddDialog({required this.onSubmit});
+  final ValueChanged<String>? onConnectServer;
+  const _ManualAddDialog({required this.onSubmit, this.onConnectServer});
 
   @override
   State<_ManualAddDialog> createState() => _ManualAddDialogState();
@@ -944,6 +900,15 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
 
   void _submit() {
     final addr = _addr.text.trim();
+    if (_mixerType == MixerType.server) {
+      if (addr.isEmpty) {
+        setState(() => _error = 'Enter the server IP address or hostname.');
+        return;
+      }
+      Navigator.pop(context);
+      widget.onConnectServer?.call(addr);
+      return;
+    }
     if (!_validHost(addr)) {
       setState(() => _error = 'Enter a valid IP address or hostname.');
       return;
@@ -961,13 +926,16 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
           children: [
             MixerTypeField(
               value: _mixerType,
+              includeServer: widget.onConnectServer != null,
               onChanged: (type) => setState(() => _mixerType = type),
             ),
             const SizedBox(height: 8),
             Text(
-              _mixerType == MixerType.dl32s
-                  ? 'Connects directly. Loading mixer state can take up to 90 seconds.'
-                  : 'Automatically identifies supported mixers at this address.',
+              _mixerType == MixerType.server
+                  ? 'Controls the mixer and recorder through an OpenFader server. Enter its IP address or hostname. You will be asked for a password if the server requires one.'
+                  : _mixerType == MixerType.dl32s
+                      ? 'Connects directly. Loading mixer state can take up to 90 seconds.'
+                      : 'Automatically identifies supported mixers at this address.',
               style: AppDesign.type(14,
                   color: ConsolePalette.of(context).mutedText),
             ),
@@ -978,6 +946,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             const SizedBox(height: 6),
             TextField(
               controller: _addr,
+              maxLines: 1,
               keyboardType: TextInputType.url,
               autocorrect: false,
               style: AppDesign.type(19, color: ConsolePalette.of(context).text),
@@ -1002,33 +971,36 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
               onSubmitted: (_) => _submit(),
             ),
             const SizedBox(height: 14),
-            Text('Name (optional)',
-                style: AppDesign.type(18,
-                    color: ConsolePalette.of(context).mutedText)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _name,
-              style: AppDesign.type(19, color: ConsolePalette.of(context).text),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: ConsolePalette.of(context).well,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        BorderSide(color: ConsolePalette.of(context).lime)),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            if (_mixerType != MixerType.server) ...[
+              Text('Name (optional)',
+                  style: AppDesign.type(18,
+                      color: ConsolePalette.of(context).mutedText)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _name,
+                style:
+                    AppDesign.type(19, color: ConsolePalette.of(context).text),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: ConsolePalette.of(context).well,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(
+                          color: ConsolePalette.of(context).lineCtl)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(
+                          color: ConsolePalette.of(context).lineCtl)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide:
+                          BorderSide(color: ConsolePalette.of(context).lime)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                ),
+                onSubmitted: (_) => _submit(),
               ),
-              onSubmitted: (_) => _submit(),
-            ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!,

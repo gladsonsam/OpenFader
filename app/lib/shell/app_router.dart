@@ -11,9 +11,9 @@ import '../desktop/desktop_integration.dart';
 import '../ui/overlays/console_dialogs.dart';
 
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../palette.dart';
 import '../mixer/geometry.dart';
 
@@ -122,6 +122,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // Start screen is the front door; the shell stays alive underneath so returning keeps state.
 
   late bool _showStart;
+  bool _canReturnFromStart = false;
 
   late final MixerController _mixer;
   late final ShellConnectionStore _conn;
@@ -170,7 +171,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // Auto-reconnect stays off unless the preference enables it.
 
     final prefs = PrefsService.instance;
-    if (prefs.reconnectLast &&
+    if (widget.api is! RemoteHost &&
+        prefs.reconnectLast &&
         prefs.reconnectArmed &&
         prefs.lastMixerAddr.isNotEmpty) {
       // A settled cold-start handshake skips the front door: the user asked
@@ -329,7 +331,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final run = _conn.connectionRun;
     final driver = await RecentMixers.savedDriverFor(addr);
     if (mounted && run == _conn.connectionRun) {
-      _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
+      if (driver == MixerType.server.driver) {
+        _coldReconnectAddr = null;
+        widget.store.removeListener(_watchColdReconnect);
+        await _connectServer(addr);
+      } else {
+        _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
+      }
     }
   }
 
@@ -342,7 +350,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // under a second, and the traffic check below still guards healthy ones.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (widget.desktop != null) return;
+    if (widget.desktop != null || widget.api is RemoteHost) return;
     if (state == AppLifecycleState.paused) {
       _resumeVerdict?.cancel();
       final engine = widget.store.engine;
@@ -443,37 +451,43 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<void> _pairComputer() async {
-    final controller = TextEditingController();
-    var json = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-              title: const Text('Connect to computer'),
-              content: TextField(
-                  controller: controller,
-                  autofocus: true,
-                  minLines: 3,
-                  maxLines: 6,
-                  decoration:
-                      const InputDecoration(labelText: 'Paste pairing JSON')),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Cancel')),
-                TextButton(
-                    onPressed: () =>
-                        Navigator.pop(dialogContext, controller.text),
-                    child: const Text('Connect'))
-              ],
-            ));
-    controller.dispose();
-    if (json == null || !mounted) return;
+  bool _serverConnecting = false;
+
+  Future<void> _connectServer(String address) async {
+    if (_serverConnecting) return;
+    _serverConnecting = true;
     RemoteHost? host;
     AppStore? remoteStore;
     try {
-      final link = PairingLink.parse(json);
-      json = null;
-      host = await RemoteHost.pair(link);
+      final endpoint = RemoteHost.parseAddress(address);
+      final prefs = await SharedPreferences.getInstance();
+      final server = await RemoteHost.inspect(address,
+          trustedFingerprint: prefs.getString(RemoteHost.pinKey(endpoint)));
+      if (!mounted) return;
+      if (server.identityChanged) {
+        final trust = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                  title: const Text('Server identity changed'),
+                  content: SelectableText(
+                      'The server at ${server.endpoint.host} has a different TLS identity. Verify that you are connecting to the intended server before continuing.\n\nPrevious: ${server.previousFingerprint}\n\nCurrent: ${server.fingerprint}'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Trust this server')),
+                  ],
+                ));
+        if (trust != true || !mounted) return;
+      }
+      host = await _authenticateServer(server);
+      if (host == null) return;
+      if (!await prefs.setString(
+          RemoteHost.pinKey(endpoint), server.fingerprint)) {
+        throw StateError('Could not save server identity');
+      }
       final id = await host.boot();
       remoteStore = AppStore(host, id);
       await remoteStore.attach(id);
@@ -486,6 +500,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         throw StateError(remoteStore.transportError);
       }
       if (!mounted) return;
+      final prefsService = PrefsService.instance;
+      if (prefsService.rememberRecents) {
+        await RecentMixers.instance.remember(
+            'OpenFader server', endpoint.toString(),
+            driver: MixerType.server.driver);
+      }
+      await RecentMixers.rememberLastConnection(
+          endpoint.toString(), MixerType.server.driver);
+      await prefsService.setLastMixerAddr(endpoint.toString());
+      await prefsService.setReconnectArmed(true);
+      if (!mounted) return;
       _shellLoop?.cancel();
       await Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) =>
@@ -493,12 +518,88 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not connect to computer: $error')));
+            SnackBar(content: Text('Could not connect to server: $error')));
       }
     } finally {
       remoteStore?.dispose();
       await host?.disconnect();
+      _serverConnecting = false;
       if (mounted) _restartLoop();
+    }
+  }
+
+  Future<RemoteHost?> _authenticateServer(RemoteServer server) async {
+    if (!server.passwordRequired) {
+      return RemoteHost.connect(server,
+          trustIdentityChange: server.identityChanged);
+    }
+    final password = TextEditingController();
+    var pending = false;
+    String? error;
+    try {
+      return await showDialog<RemoteHost>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) =>
+              StatefulBuilder(builder: (context, update) {
+                Future<void> connect() async {
+                  if (pending) return;
+                  update(() {
+                    pending = true;
+                    error = null;
+                  });
+                  try {
+                    final host = await RemoteHost.connect(server,
+                        password: password.text,
+                        trustIdentityChange: server.identityChanged);
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext, host);
+                    } else {
+                      await host.disconnect();
+                    }
+                  } catch (failure) {
+                    if (dialogContext.mounted) {
+                      update(() {
+                        error = failure.toString();
+                        pending = false;
+                      });
+                    }
+                  }
+                }
+
+                return PopScope(
+                    canPop: !pending,
+                    child: AlertDialog(
+                      title: const Text('Server password'),
+                      content:
+                          Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text('Enter the password for ${server.endpoint.host}.'),
+                        TextField(
+                            controller: password,
+                            autofocus: true,
+                            obscureText: true,
+                            enabled: !pending,
+                            enableSuggestions: false,
+                            autocorrect: false,
+                            textInputAction: TextInputAction.go,
+                            decoration: InputDecoration(
+                                labelText: 'Password', errorText: error),
+                            onSubmitted: (_) => connect()),
+                      ]),
+                      actions: [
+                        TextButton(
+                            onPressed: pending
+                                ? null
+                                : () => Navigator.pop(dialogContext),
+                            child: const Text('Cancel')),
+                        TextButton(
+                            onPressed: pending ? null : connect,
+                            child: Text(pending ? 'Connecting…' : 'Connect')),
+                      ],
+                    ));
+              }));
+    } finally {
+      password.dispose();
     }
   }
 
@@ -515,6 +616,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       }
       _tab = t;
       if (t != AppTab.settings) _showStart = false;
+    });
+  }
+
+  void _openConnectionsHome({bool canReturn = true}) {
+    _channelFocus.value = null;
+    _fxReadout.value = null;
+    _fxReadoutSession = null;
+    setState(() {
+      _tab = AppTab.mixer;
+      _canReturnFromStart = canReturn;
+      _showStart = true;
     });
   }
 
@@ -535,11 +647,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         listenable: store,
         builder: (context, _) => ConnectionsStartScreen(
           store: _conn,
-          onConnectComputer:
-              (Platform.isIOS || Platform.isAndroid) ? _pairComputer : null,
+          onConnectServer: widget.api is RemoteHost ? null : _connectServer,
           onSettings: () => _openSettings(null),
           onHelp: () => _openSettings(SettingsSection.about),
           onEnterMixer: () => setState(() => _showStart = false),
+          onBackToMixer: _canReturnFromStart
+              ? () => setState(() => _showStart = false)
+              : null,
           onWorkOffline: () {
             _conn.connectSim();
             setState(() => _showStart = false);
@@ -567,7 +681,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                             child: Padding(
                                 padding: const EdgeInsets.only(left: 12),
                                 child: Text(
-                                    'Computer ${remote.endpoint.host}:${remote.endpoint.port} · ${store.transportError.isEmpty ? 'Connected' : 'Connection lost'}',
+                                    'Server ${remote.endpoint.host}:${remote.endpoint.port} · ${store.transportError.isEmpty ? 'Connected' : 'Connection lost'}',
                                     overflow: TextOverflow.ellipsis))),
                         TextButton(
                             onPressed: () => Navigator.of(context).pop(),
@@ -614,10 +728,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             if (_tab != AppTab.recorder)
               Container(
                   height: narrow ? 6 : 8,
-                  color: ConsolePalette.of(context).bus),
+                  color: _mixer.masterColor(ConsolePalette.of(context))),
           ]),
           bottomSafeArea:
-              !(narrow && (_tab == AppTab.mixer || _tab == AppTab.channel)),
+              _tab != AppTab.mixer && !(narrow && _tab == AppTab.channel),
           child: ConsolePageReveal(token: _tab, child: _pageFor(_tab, store)),
         );
       },
@@ -697,8 +811,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               onTool: _channelTool,
               onLock: () => store.locked ? store.cmdUnlock() : store.cmdLock(),
               trailing: TextButton(
-                  style:
-                      TextButton.styleFrom(backgroundColor: Colors.transparent),
+                  style: TextButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      alignment: Alignment.centerRight,
+                      padding: EdgeInsets.zero),
                   onPressed: () => _go(AppTab.connect),
                   child: Text(
                       _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
@@ -717,7 +833,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     ? 'Output processing'
                     : _tab.label,
             onNavigate: _navigateMixer,
-            onHome: () => _go(AppTab.mixer),
+            onHome: () =>
+                _go(_tab == AppTab.mixer ? AppTab.home : AppTab.mixer),
+            homeLabel: _tab == AppTab.mixer ? 'Home' : 'Mixer',
             onOpenTools: () => _go(AppTab.home),
             readoutContent: readout);
       });
@@ -760,6 +878,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       AppTab.home => WorkspaceHome(
           onQuit: widget.desktop?.requestQuit,
           onMixer: () => _go(AppTab.mixer),
+          onConnections: () => _openConnectionsHome(),
           onRecorder:
               (widget.api is HostTransport) ? () => _go(AppTab.recorder) : null,
           onNavigate: _navigateMixer,
@@ -818,8 +937,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           },
           onHome: () {
             _settingsSection = null;
-            _showStart = true;
-            _go(AppTab.mixer);
+            _openConnectionsHome(canReturn: !_showStart);
           },
           onOpenMixer: () {
             _showStart = false;

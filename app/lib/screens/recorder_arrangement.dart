@@ -359,10 +359,12 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                             SizedBox(
                                 height: 56,
                                 child: Center(
-                                    child: Text('Track',
+                                    child: Text(
+                                        'Track · captures available interface inputs\nPer-track arm, mute and solo unavailable',
+                                        textAlign: TextAlign.center,
                                         style: TextStyle(
                                             color: p.mutedText,
-                                            fontSize: 19)))),
+                                            fontSize: 14)))),
                             for (var i = 0; i < laneCount; i++)
                               Container(
                                   height: laneHeight,
@@ -388,33 +390,6 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                                   fontSize: 22,
                                                   fontWeight:
                                                       FontWeight.w600))),
-                                      for (final icon in [
-                                        Icons.volume_off_outlined,
-                                        Icons.headphones,
-                                        Icons.radio_button_unchecked
-                                      ])
-                                        Tooltip(
-                                            message: icon ==
-                                                    Icons.radio_button_unchecked
-                                                ? 'Track arming is unavailable'
-                                                : 'Track control is unavailable',
-                                            child: Container(
-                                                width: 36,
-                                                height: 36,
-                                                margin: const EdgeInsets.only(
-                                                    left: 5),
-                                                decoration: BoxDecoration(
-                                                    color: p
-                                                        .arrangementTrackButton,
-                                                    border: Border.all(
-                                                        color: p
-                                                            .arrangementTrackButtonBorder),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            7)),
-                                                child: Icon(icon,
-                                                    size: 20,
-                                                    color: p.mutedText))),
                                     ]),
                                     Positioned(
                                         left: 7,

@@ -1447,6 +1447,7 @@ dependencies = [
  "anyhow",
  "flutter_rust_bridge",
  "openfader-engine",
+ "openfader-sim",
  "serde_json",
  "tokio",
 ]
@@ -1512,6 +1513,7 @@ dependencies = [
  "openfader-engine",
  "openfader-sim",
  "rcgen",
+ "ring",
  "serde_json",
  "sha2",
  "socket2",
