@@ -1,12 +1,24 @@
 ---
-import { REPO, RELEASES } from '../links';
+import { RELEASES } from '../links';
 ---
-<section class="wrap section download" id="download">
-  <h2>Download</h2>
-  <p class="lede">Free and open source. Runs on iPhone, iPad, Android, Mac, Windows and Linux.</p>
-  <div class="actions">
-    <a class="btn btn-solid btn-lg" href={RELEASES}>Download</a>
-    <a class="btn btn-quiet btn-lg" href={REPO}>View source</a>
+<section class="wrap section download" id="download" aria-labelledby="download-heading">
+  <div class="download-content">
+    <h2 id="download-heading">Get OpenFader</h2>
+    <p class="lede">Free and open source.</p>
+    <div class="actions">
+      <a class="btn btn-solid btn-lg" href={RELEASES}>Download OpenFader</a>
+      <a class="download-guide" href="/docs/getting-started">Installation guide</a>
+    </div>
+    <p class="note">Try it without a mixer. Choose Work offline when you open the app.</p>
   </div>
-  <p class="note">No mixer? Choose Work offline to try the app.</p>
+  <div class="download-platforms">
+    <div>
+      <h3>Phones and tablets</h3>
+      <p>iPhone, iPad and Android</p>
+    </div>
+    <div>
+      <h3>Computers</h3>
+      <p>Mac, Windows and Linux</p>
+    </div>
+  </div>
 </section>

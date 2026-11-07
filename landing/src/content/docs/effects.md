@@ -7,7 +7,7 @@ description: The effects rack.
 
 Tap **FX** in the top bar to open the effects rack. There is one card per effects slot. The number of slots, and the effects you can load into them, come from your mixer.
 
-![The effects rack with four slots and the FX 1 controls](/docs/shots/fx.png)
+![The effects rack with four slots and the FX 1 controls](/screenshots/ipad-2026-11-07/effects-framed.png)
 
 ## Change the effect in a slot
 

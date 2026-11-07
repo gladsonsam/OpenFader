@@ -7,7 +7,7 @@ description: Patching inputs and outputs.
 
 Routing is where you choose which source feeds each channel and output. Open it with **Tools**, then **Routing**.
 
-![The routing grid with channels patched one to one](/docs/shots/routing.png)
+![The routing grid with channels patched one to one](/screenshots/ipad-2026-11-07/routing-framed.png)
 
 Tabs along the top split the routing into areas, such as inputs, outputs and USB sends. Which tabs you get depends on your mixer. In each tab, destinations run down the left and sources across the top. The lit cell with a tick is the current patch.
 

@@ -1,7 +1,9 @@
 import { defineConfig } from 'astro/config';
+import docShots from './src/lib/rehype-doc-shots.mjs';
 
 export default defineConfig({
   site: 'https://openfader.app',
+  markdown: { rehypePlugins: [docShots] },
   outDir: './dist',
   trailingSlash: 'never',
   vite: {

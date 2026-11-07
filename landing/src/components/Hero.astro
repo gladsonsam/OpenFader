@@ -1,24 +1,59 @@
 ---
-import { REPO, RELEASES } from '../links';
+import { RELEASES } from '../links';
+import { TAGLINE, DESCRIPTION } from '../brand';
 ---
-<section class="wrap hero">
+<section class="hero" aria-labelledby="hero-title">
   <div class="hero-text">
-    <h1>Control your digital mixer from any device.</h1>
+    <h1 id="hero-title">{TAGLINE}</h1>
     <div class="hero-side">
-      <p class="lede">OpenFader is a free, open source mixer control app for Behringer X Air, Mackie DL32S and more - on phones, tablets and computers.</p>
+      <p class="lede">{DESCRIPTION}</p>
       <div class="actions">
-        <a class="btn btn-solid btn-lg" href={RELEASES}>Download</a>
-        <a class="btn btn-quiet btn-lg" href={REPO}>View source</a>
+        <a class="btn btn-solid btn-lg" href={RELEASES}>Download OpenFader</a>
+        <a class="btn btn-quiet btn-lg" href="/docs">View docs</a>
       </div>
     </div>
   </div>
-  <picture class="hero-shot">
-    <source media="(max-width: 600px)" srcset="/screenshots/mixer-iphone-da5d55326774.gif" width="520" height="1084" />
-    <img
-      src="/screenshots/mixer-ipad-fd31a6554e00.gif"
-      width="1131"
-      height="868"
-      alt="The OpenFader mixer with channel strips, faders and live meters."
-    />
-  </picture>
+  <div class="hero-shot">
+    <img class="hero-frame" src="/screenshots/ipad-2026-11-07/mixing-framed.png" width="2896" height="2208" alt="" aria-hidden="true" />
+    <div class="hero-screen">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="/screenshots/ipad-2026-11-07/raw/mixing-raw.png" width="2752" height="2064" />
+        <img
+          src="/screenshots/ipad-2026-11-07/mixing-active.gif"
+          width="1376"
+          height="1032"
+          fetchpriority="high"
+          alt="OpenFader on a tablet, showing channel faders, individual EQ curves and active meters."
+        />
+      </picture>
+    </div>
+  </div>
 </section>
+
+<script>
+  const hero = document.querySelector<HTMLElement>('.hero');
+  const tablet = hero?.querySelector<HTMLElement>('.hero-shot');
+  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (hero && tablet) {
+    let frame = 0;
+    let height = hero.offsetHeight;
+    let lastOffset = -1;
+    const paint = () => {
+      frame = 0;
+      const offset = motion.matches ? 0 : Math.min(window.scrollY, height) * 0.2;
+      if (offset === lastOffset) return;
+      lastOffset = offset;
+      tablet.style.transform = `translate3d(0, ${offset}px, 0)`;
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(paint);
+    };
+    new ResizeObserver(() => {
+      height = hero.offsetHeight;
+      schedule();
+    }).observe(hero);
+    window.addEventListener('scroll', schedule, { passive: true });
+    motion.addEventListener('change', schedule);
+    schedule();
+  }
+</script>
