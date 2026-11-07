@@ -1239,7 +1239,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                             }
                                           : null,
                                       icon: const Icon(Icons.input))),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 10),
                               SizedBox(
                                   width: 52,
                                   height: 52,
@@ -1269,7 +1269,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 style: const TextStyle(
                                                     fontSize: 10))
                                           ]))),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 10),
                               SizedBox(
                                   width: 52,
                                   height: 52,
@@ -1287,7 +1287,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                             Text('Stop',
                                                 style: TextStyle(fontSize: 10))
                                           ]))),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 10),
                               SizedBox(
                                   width: 52,
                                   height: 52,
@@ -1522,7 +1522,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                                 }
                                               : null,
                                           child: const Text('Set loop')))),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 10),
                               SizedBox(
                                   height: 48,
                                   child: TextButton(
@@ -1581,7 +1581,7 @@ class _RecorderPageState extends State<RecorderPage> {
                               color: p.text1,
                               fontSize: 14,
                               fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 5),
                       Text(
                           recording
                               ? 'Recording · stop to save this take.'
@@ -1596,12 +1596,17 @@ class _RecorderPageState extends State<RecorderPage> {
                               color: needsLive ? p.amber : p.mutedText,
                               fontSize: 13)),
                       if (deviceMatchReason is String &&
-                          deviceMatchReason.isNotEmpty)
+                          deviceMatchReason.isNotEmpty) ...[
+                        const SizedBox(height: 5),
                         Text(deviceMatchReason,
                             style: TextStyle(color: p.mutedText, fontSize: 12)),
-                      if (diskSpaceError is String && diskSpaceError.isNotEmpty)
+                      ],
+                      if (diskSpaceError is String &&
+                          diskSpaceError.isNotEmpty) ...[
+                        const SizedBox(height: 5),
                         Text('Storage unavailable: $diskSpaceError',
                             style: TextStyle(color: p.amber, fontSize: 12)),
+                      ],
                     ])),
                 const SizedBox(width: 12),
                 TextButton.icon(
@@ -1735,42 +1740,50 @@ class _RecorderPageState extends State<RecorderPage> {
                   ]))),
             Expanded(child: LayoutBuilder(builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 800;
-              return Stack(children: [
-                Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  if (desktop && _showTakes)
-                    SizedBox(width: 280, child: _takesBrowser(context, store)),
-                  Expanded(
-                      child: RecorderArrangement(
-                          store: store,
-                          previewTakeId: previewId,
-                          onLoopSelection: (start, end, total) => setState(() {
-                                _loopStart = start;
-                                _loopEnd = end;
-                                _loopTotal = total;
-                                _loopTake = store.state['selected_take_id'];
-                              }))),
-                ]),
-                if (desktop)
-                  Positioned(
-                      left: _showTakes ? 256 : 0,
-                      top: (constraints.maxHeight - 76) / 2,
-                      child: SizedBox(
-                          width: 24,
-                          height: 76,
-                          child: IconButton(
-                              padding: EdgeInsets.zero,
-                              style: IconButton.styleFrom(
-                                  backgroundColor: p.recorderControl,
-                                  shape: const RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.horizontal(
-                                          left: Radius.circular(10)))),
-                              tooltip: _showTakes ? 'Hide takes' : 'Show takes',
-                              onPressed: () =>
-                                  setState(() => _showTakes = !_showTakes),
-                              icon: Icon(_showTakes
-                                  ? Icons.chevron_left
-                                  : Icons.chevron_right)))),
-              ]);
+              return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (desktop && _showTakes)
+                      SizedBox(
+                          width: 280, child: _takesBrowser(context, store)),
+                    if (desktop)
+                      Container(
+                        width: 24,
+                        decoration: BoxDecoration(
+                            color: p.panel,
+                            border: Border.symmetric(
+                                vertical: BorderSide(color: p.linePanel))),
+                        child: Center(
+                            child: SizedBox(
+                                height: 76,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  style: IconButton.styleFrom(
+                                      backgroundColor: p.recorderControl,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(6))),
+                                  tooltip:
+                                      _showTakes ? 'Hide takes' : 'Show takes',
+                                  onPressed: () =>
+                                      setState(() => _showTakes = !_showTakes),
+                                  icon: Icon(_showTakes
+                                      ? Icons.chevron_left
+                                      : Icons.chevron_right),
+                                ))),
+                      ),
+                    Expanded(
+                        child: RecorderArrangement(
+                      store: store,
+                      previewTakeId: previewId,
+                      onLoopSelection: (start, end, total) => setState(() {
+                        _loopStart = start;
+                        _loopEnd = end;
+                        _loopTotal = total;
+                        _loopTake = store.state['selected_take_id'];
+                      }),
+                    )),
+                  ]);
             })),
           ]);
         },
@@ -1810,6 +1823,87 @@ class _RecorderPageState extends State<RecorderPage> {
             return '${_time(frames, rate)}  ·  $status';
           }
 
+          Widget selectedActions(Map<String, dynamic> take) {
+            final linked = _snapshotLinks[take['id']];
+            final secondaryStyle = TextButton.styleFrom(
+              backgroundColor: p.panel,
+              foregroundColor: p.recorderMuted,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 40),
+            );
+            return Container(
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: p.panel,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: p.linePanel)),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: enabled && !recording && !soundcheck
+                              ? () => _playSelected(take['id'] as String)
+                              : null,
+                          child: const Text('Prepare virtual playback'),
+                        )),
+                    const SizedBox(height: 12),
+                    Divider(height: 1, color: p.linePanel),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(
+                          child: TextButton.icon(
+                        style: secondaryStyle,
+                        onPressed: _transferBusy || store.pending
+                            ? null
+                            : () => _transferTake(
+                                importing: false, takeId: take['id'] as String),
+                        icon:
+                            const Icon(Icons.file_download_outlined, size: 18),
+                        label: const Text('Export'),
+                      )),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Tooltip(
+                        message: 'Link native snapshot',
+                        child: TextButton.icon(
+                          style: secondaryStyle,
+                          onPressed: enabled && !recording && !soundcheck
+                              ? () => _linkSnapshot(take['id'] as String)
+                              : null,
+                          icon:
+                              const Icon(Icons.bookmark_add_outlined, size: 18),
+                          label: const Text('Snapshot'),
+                        ),
+                      )),
+                    ]),
+                    const SizedBox(height: 8),
+                    if (linked is Map)
+                      Row(children: [
+                        Expanded(
+                            child: Text(
+                                'Native snapshot: ${linked['slot']} · ${linked['name']} (${linked['label']})',
+                                style: TextStyle(
+                                    color: p.mutedText,
+                                    fontSize: 12,
+                                    height: 1.4))),
+                        const SizedBox(width: 8),
+                        IconButton(
+                            tooltip: 'Remove snapshot link',
+                            onPressed: () =>
+                                _unlinkSnapshot(take['id'] as String),
+                            icon: const Icon(Icons.link_off, size: 18)),
+                      ])
+                    else
+                      Text('No native snapshot linked',
+                          style: TextStyle(
+                              color: p.mutedText, fontSize: 12, height: 1.4)),
+                  ]),
+            );
+          }
+
           Widget panel({required Widget child}) => Container(
               padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
               color: p.recorderSurface,
@@ -1832,6 +1926,7 @@ class _RecorderPageState extends State<RecorderPage> {
                     icon: const Icon(Icons.file_upload_outlined),
                     label:
                         Text(_transferBusy ? 'Transferring…' : 'Import take')),
+                const SizedBox(height: 16),
                 if (!store.canAdminRemote ||
                     !(Platform.isMacOS ||
                         Platform.isWindows ||
@@ -1842,173 +1937,156 @@ class _RecorderPageState extends State<RecorderPage> {
                   Text('Your recorded takes will appear here.',
                       style: TextStyle(color: p.mutedText)),
                 for (final (index, take) in store.takes.indexed)
-                  Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        InkWell(
-                            key: take['id'] == _importedTakeId
-                                ? _importedTakeKey
-                                : null,
-                            onTap: !recording && !soundcheck
-                                ? () => setState(() {
-                                      _previewTakeId = take['id'] as String;
-                                      _loopStart = null;
-                                      _loopEnd = null;
-                                    })
-                                : null,
-                            child: Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                    color: take['id'] == selectedTake
-                                        ? p.recorderOlive
-                                        : p.recorderSurface,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
+                  Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            InkWell(
+                                key: take['id'] == _importedTakeId
+                                    ? _importedTakeKey
+                                    : null,
+                                onTap: !recording && !soundcheck
+                                    ? () => setState(() {
+                                          _previewTakeId = take['id'] as String;
+                                          _loopStart = null;
+                                          _loopEnd = null;
+                                        })
+                                    : null,
+                                child: Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
                                         color: take['id'] == selectedTake
-                                            ? p.recorderOliveBorder
-                                            : p.recorderSurface)),
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(children: [
-                                        Icon(
-                                            take['id'] == selectedTake
-                                                ? Icons.graphic_eq
-                                                : Icons.audio_file_outlined,
-                                            color: p.lime),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                            child: Tooltip(
-                                                message: '${take['id']}',
-                                                child: Text(
-                                                    (take['name'] is String &&
-                                                            (take['name']
-                                                                    as String)
-                                                                .trim()
-                                                                .isNotEmpty)
-                                                        ? take['name'] as String
-                                                        : _importNames[
-                                                                take['id']] ??
-                                                            'Take ${index + 1}',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                        color: p.text1,
-                                                        fontSize: 18,
-                                                        fontWeight:
-                                                            FontWeight.w600))))
-                                      ]),
-                                      Text(
-                                          '${takeSummary(take)}\n${_takeDate(take['id']).replaceFirst(' · ', '')}',
-                                          style: TextStyle(
-                                              color: p.mutedText,
-                                              fontSize: 13)),
-                                    ]))),
-                        if (take['complete'] != true && take['id'] is String)
-                          store.canAdminRemote
-                              ? TextButton.icon(
-                                  onPressed: enabled &&
-                                          !soundcheck &&
-                                          '${s['transport'] ?? 'stopped'}'
-                                                  .toLowerCase() ==
-                                              'stopped'
-                                      ? () async {
-                                          final confirmed =
-                                              await showDialog<bool>(
-                                                  context: context,
-                                                  builder: (context) =>
-                                                      AlertDialog(
-                                                        title: const Text(
-                                                            'Recover take?'),
-                                                        content: const Text(
-                                                            'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop all recording and playback before continuing.'),
-                                                        actions: [
-                                                          TextButton(
-                                                              onPressed: () =>
-                                                                  Navigator.pop(
-                                                                      context,
-                                                                      false),
-                                                              child: const Text(
-                                                                  'Cancel')),
-                                                          FilledButton(
-                                                              onPressed: () =>
-                                                                  Navigator.pop(
-                                                                      context,
-                                                                      true),
-                                                              child: const Text(
-                                                                  'Recover take')),
-                                                        ],
-                                                      ));
-                                          if (confirmed == true && mounted) {
-                                            await store.command(
-                                                'recover_take', {
-                                              'take_id': take['id'],
-                                              'confirm': true
-                                            });
-                                            if (!mounted) return;
-                                            if (store.takes.any((candidate) =>
-                                                candidate['id'] == take['id'] &&
-                                                candidate['complete'] ==
-                                                    true)) {
-                                              setState(() {
-                                                _capturePreviewId = null;
-                                                _previewTakeId =
-                                                    take['id'] as String;
-                                                _loopStart = null;
-                                                _loopEnd = null;
-                                              });
-                                            }
-                                          }
-                                        }
-                                      : null,
-                                  icon: const Icon(Icons.build_outlined),
-                                  label: const Text('Recover take'))
-                              : Text(
-                                  'Recover this take on the recorder computer.',
-                                  style: TextStyle(color: p.mutedText)),
-                        if (take['id'] == selectedTake &&
-                            take['complete'] == true) ...[
-                          Text(
-                              _snapshotLinks[take['id']] is Map
-                                  ? 'Native snapshot: ${_snapshotLinks[take['id']]['slot']} · ${_snapshotLinks[take['id']]['name']} (${_snapshotLinks[take['id']]['label']})'
-                                  : 'No native snapshot linked',
-                              style: TextStyle(color: p.mutedText)),
-                          TextButton(
-                              onPressed: _transferBusy || store.pending
-                                  ? null
-                                  : () => _transferTake(
-                                      importing: false,
-                                      takeId: take['id'] as String),
-                              child: const Text('Export take')),
-                          if (_snapshotLinks.containsKey(take['id']))
-                            TextButton(
-                                onPressed: () =>
-                                    _unlinkSnapshot(take['id'] as String),
-                                child: const Text('Remove snapshot link')),
-                          TextButton(
-                              onPressed: enabled && !recording && !soundcheck
-                                  ? () => _linkSnapshot(take['id'] as String)
-                                  : null,
-                              child: const Text('Link native snapshot')),
-                        ],
-                        const SizedBox(height: 8),
-                        if (take['id'] == selectedTake)
-                          SizedBox(
-                              height: 44,
-                              child: OutlinedButton(
-                                  onPressed: enabled &&
-                                          !recording &&
-                                          !soundcheck &&
-                                          take['complete'] == true &&
-                                          take['id'] == selectedTake
-                                      ? () =>
-                                          _playSelected(take['id'] as String)
-                                      : null,
-                                  child:
-                                      const Text('Prepare virtual playback'))),
-                      ]),
+                                            ? p.recorderOlive
+                                            : p.recorderSurface,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                            color: take['id'] == selectedTake
+                                                ? p.recorderOliveBorder
+                                                : p.recorderSurface)),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            Icon(
+                                                take['id'] == selectedTake
+                                                    ? Icons.graphic_eq
+                                                    : Icons.audio_file_outlined,
+                                                color: p.lime),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                                child: Tooltip(
+                                                    message: '${take['id']}',
+                                                    child: Text(
+                                                        (take[
+                                                                        'name']
+                                                                    is String &&
+                                                                (take['name']
+                                                                        as String)
+                                                                    .trim()
+                                                                    .isNotEmpty)
+                                                            ? take[
+                                                                    'name']
+                                                                as String
+                                                            : _importNames[take[
+                                                                    'id']] ??
+                                                                'Take ${index + 1}',
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                            color: p.text1,
+                                                            fontSize: 18,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w600))))
+                                          ]),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                              '${takeSummary(take)}\n${_takeDate(take['id']).replaceFirst(' · ', '')}',
+                                              style: TextStyle(
+                                                  color: p.mutedText,
+                                                  fontSize: 13)),
+                                        ]))),
+                            if (take['complete'] != true &&
+                                take['id'] is String)
+                              Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                                  child: store.canAdminRemote
+                                      ? OutlinedButton.icon(
+                                          onPressed: enabled &&
+                                                  !soundcheck &&
+                                                  '${s['transport'] ?? 'stopped'}'
+                                                          .toLowerCase() ==
+                                                      'stopped'
+                                              ? () async {
+                                                  final confirmed =
+                                                      await showDialog<bool>(
+                                                          context: context,
+                                                          builder:
+                                                              (context) =>
+                                                                  AlertDialog(
+                                                                    title: const Text(
+                                                                        'Recover take?'),
+                                                                    content:
+                                                                        const Text(
+                                                                            'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop all recording and playback before continuing.'),
+                                                                    actions: [
+                                                                      TextButton(
+                                                                          onPressed: () => Navigator.pop(
+                                                                              context,
+                                                                              false),
+                                                                          child:
+                                                                              const Text('Cancel')),
+                                                                      FilledButton(
+                                                                          onPressed: () => Navigator.pop(
+                                                                              context,
+                                                                              true),
+                                                                          child:
+                                                                              const Text('Recover take')),
+                                                                    ],
+                                                                  ));
+                                                  if (confirmed == true &&
+                                                      mounted) {
+                                                    await store.command(
+                                                        'recover_take', {
+                                                      'take_id': take['id'],
+                                                      'confirm': true
+                                                    });
+                                                    if (!mounted) return;
+                                                    if (store.takes.any(
+                                                        (candidate) =>
+                                                            candidate['id'] ==
+                                                                take['id'] &&
+                                                            candidate[
+                                                                    'complete'] ==
+                                                                true)) {
+                                                      setState(() {
+                                                        _capturePreviewId =
+                                                            null;
+                                                        _previewTakeId =
+                                                            take['id']
+                                                                as String;
+                                                        _loopStart = null;
+                                                        _loopEnd = null;
+                                                      });
+                                                    }
+                                                  }
+                                                }
+                                              : null,
+                                          icon:
+                                              const Icon(Icons.build_outlined),
+                                          label: const Text('Recover take'))
+                                      : Text(
+                                          'Recover this take on the recorder computer.',
+                                          style:
+                                              TextStyle(color: p.mutedText))),
+                            if (take['id'] == selectedTake &&
+                                take['complete'] == true)
+                              selectedActions(take),
+                          ])),
               ])));
         });
   }
