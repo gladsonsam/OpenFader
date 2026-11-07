@@ -1,0 +1,33 @@
+---
+const features = [
+  ['Mixing', 'Faders, mute, solo, pan and meters for every channel, bus and DCA.'],
+  ['Monitor mixes', 'Switch the faders to any bus to set monitor sends.'],
+  ['Channel processing', 'Gain, gate, compressor and EQ on every channel.'],
+  ['Effects', 'Change effect types and settings.'],
+  ['Routing', 'Patch inputs and outputs.'],
+  ['Scenes', 'Save and recall scenes.'],
+  ['Recording', 'Record every channel to your computer.'],
+  ['Virtual soundcheck', 'Play a recording back through the mixer.'],
+];
+---
+<section class="wrap section features">
+  <div class="features-list">
+    <h2>Features</h2>
+    <dl>
+      {features.map(([title, body]) => (
+        <div class="feature">
+          <dt>{title}</dt>
+          <dd>{body}</dd>
+        </div>
+      ))}
+    </dl>
+  </div>
+  <img
+    class="phone-shot"
+    src="/screenshots/mixer-iphone.gif"
+    width="480"
+    height="1044"
+    loading="lazy"
+    alt="The OpenFader mixer on an iPhone."
+  />
+</section>

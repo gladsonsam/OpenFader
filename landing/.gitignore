@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.astro/
+# Per-page research notes used while writing the docs; kept local.
+docs-research/
