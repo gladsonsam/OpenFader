@@ -33,7 +33,12 @@ class _ReferenceWidth extends RenderProxyBox {
   void performLayout() {
     final width = constraints.maxWidth;
     _scale = width / _referenceWidth;
-    child!.layout(BoxConstraints.tightFor(width: _referenceWidth),
+    child!.layout(
+        BoxConstraints(
+            minWidth: _referenceWidth,
+            maxWidth: _referenceWidth,
+            minHeight: constraints.minHeight / _scale,
+            maxHeight: constraints.maxHeight / _scale),
         parentUsesSize: true);
     size = constraints.constrain(Size(width, child!.size.height * _scale));
   }
