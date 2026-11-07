@@ -353,7 +353,9 @@ class U4EqGraph extends StatelessWidget {
         final outerWidth =
             constraints.maxWidth.isFinite ? constraints.maxWidth : 340.0;
         final w = outerWidth - 44;
-        final h = height - 44;
+        final graphHeight =
+            constraints.hasBoundedHeight ? constraints.maxHeight : height;
+        final h = graphHeight - 44;
         return Semantics(
             container: true,
             label: 'EQ graph',

@@ -69,7 +69,7 @@ class _EqTabState extends State<_EqTab> {
             min: min,
             max: max,
             compact: true,
-            inlineLabel: MediaQuery.sizeOf(context).width < 700,
+            inlineLabel: true,
             color: ConsolePalette.of(context).bandColor(band.band),
             enabled: range != null,
             onFocus: () {
@@ -209,63 +209,69 @@ class _EqTabState extends State<_EqTab> {
         selected != null && selected.typeChoices.isNotEmpty;
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1443;
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _ProcessorHeader(
-            title: 'EQ',
-            on: eq.on,
-            compact: !wide,
-            onToggle: () => store.setEqOn(!eq.on)),
-        const SizedBox(height: 12),
-        ConsoleActionGroup(children: [
-          SizedBox(
-              width: math.min(bounds.maxWidth, wide ? 460 * scale : 220),
-              child: _PresetsButton(
-                  store: store, compact: !wide, kind: ProcessorPresetKind.eq)),
-          ListenableBuilder(
-              listenable:
-                  Listenable.merge([store.spectrum, store.audioSpectrum]),
-              builder: (context, _) {
-                final available = store.audioSpectrum.value != null ||
-                    store.spectrum.value.isNotEmpty;
-                if (!available) return const SizedBox.shrink();
-                return Semantics(
-                    toggled: _showRta,
-                    child: _ProcessingButton(
-                        label: store.audioSpectrum.value?.isShared == true
-                            ? 'RTA · shared'
-                            : 'RTA',
-                        active: _showRta,
-                        onTap: () {
-                          store.resetAudioSpectrumPeaks();
-                          setState(() => _showRta = !_showRta);
-                        }));
-              }),
-        ]),
-        if (_showRta && store.rtaSettings.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _RtaSettings(store: store),
-        ],
-        const SizedBox(height: 8),
-        if (eq.responseNote != null)
-          Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(eq.responseNote!,
-                  style: AppDesign.type(14,
-                      color: ConsolePalette.of(context).text7))),
-        Opacity(
-            opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
-            child: ListenableBuilder(
-                listenable: Listenable.merge([
-                  store.spectrum,
-                  store.audioSpectrum,
-                  store.audioSpectrumPeaks,
-                ]),
-                builder: (context, _) {
-                  final bins = store.spectrum.value;
-                  final frame = store.audioSpectrum.value;
-                  return Stack(children: [
-                    U4EqGraph(
-                      height: wide ? 665 * scale : bounds.maxWidth * 344 / 346,
+      return ProcessingLayout(
+          preferredGraphHeight:
+              wide ? 665 * scale : bounds.maxWidth * 344 / 346,
+          header:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _ProcessorHeader(
+                title: 'EQ',
+                on: eq.on,
+                compact: !wide,
+                onToggle: () => store.setEqOn(!eq.on)),
+            const SizedBox(height: 12),
+            ConsoleActionGroup(children: [
+              SizedBox(
+                  width: math.min(bounds.maxWidth, wide ? 460 * scale : 220),
+                  child: _PresetsButton(
+                      store: store,
+                      compact: !wide,
+                      kind: ProcessorPresetKind.eq)),
+              ListenableBuilder(
+                  listenable:
+                      Listenable.merge([store.spectrum, store.audioSpectrum]),
+                  builder: (context, _) {
+                    final available = store.audioSpectrum.value != null ||
+                        store.spectrum.value.isNotEmpty;
+                    if (!available) return const SizedBox.shrink();
+                    return Semantics(
+                        toggled: _showRta,
+                        child: _ProcessingButton(
+                            label: store.audioSpectrum.value?.isShared == true
+                                ? 'RTA · shared'
+                                : 'RTA',
+                            active: _showRta,
+                            onTap: () {
+                              store.resetAudioSpectrumPeaks();
+                              setState(() => _showRta = !_showRta);
+                            }));
+                  }),
+            ]),
+            if (_showRta && store.rtaSettings.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _RtaSettings(store: store),
+            ],
+            const SizedBox(height: 8),
+            if (eq.responseNote != null)
+              Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(eq.responseNote!,
+                      style: AppDesign.type(14,
+                          color: ConsolePalette.of(context).text7))),
+          ]),
+          graph: Opacity(
+              opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
+              child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    store.spectrum,
+                    store.audioSpectrum,
+                    store.audioSpectrumPeaks,
+                  ]),
+                  builder: (context, _) {
+                    final bins = store.spectrum.value;
+                    final frame = store.audioSpectrum.value;
+                    return U4EqGraph(
+                      height: 180,
                       eq: eq,
                       responseDb: eqResponseDb(eq),
                       rtaBins: bins,
@@ -290,149 +296,150 @@ class _EqTabState extends State<_EqTab> {
                         store.setEqParam(band, 'q', q);
                         widget.onFocus(_eqQFocus(store, band));
                       },
-                    ),
-                  ]);
-                })),
-        const SizedBox(height: 8),
-        if (wide)
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            for (var i = 0; i < eq.bands.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(
-                  child: _panel(eq.bands[i], (500 * scale).clamp(400, 500))),
-            ],
-          ])
-        else ...[
-          Row(children: [
-            Expanded(
-                child: Container(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    decoration: BoxDecoration(
-                        color: ConsolePalette.of(context).chip,
-                        borderRadius: U4.rBtn),
-                    padding: const EdgeInsets.all(3),
-                    child: Row(children: [
-                      for (final band in eq.bands)
-                        Expanded(
-                            child: Semantics(
-                                button: true,
-                                selected: eq.selectedBand == band.band,
-                                label: 'EQ Band ${band.band}',
-                                child: InkWell(
-                                    onTap: () => _pick(band.band),
-                                    child: Container(
-                                        constraints: const BoxConstraints(
-                                            minHeight: AppDesign.touchTarget),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 4, vertical: 10),
-                                        alignment: Alignment.center,
-                                        decoration: BoxDecoration(
-                                            color: eq.selectedBand == band.band
-                                                ? ConsolePalette.of(context)
-                                                    .processingSelected
-                                                : null,
-                                            borderRadius: U4.rBtn),
-                                        child: Text(
-                                            showMobileShapes
-                                                ? '${band.band}'
-                                                : 'Band ${band.band}',
-                                            style: AppDesign.type(15,
+                    );
+                  })),
+          controls:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const SizedBox(height: 8),
+            if (wide)
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                for (var i = 0; i < eq.bands.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: _panel(eq.bands[i], 0)),
+                ],
+              ])
+            else ...[
+              Row(children: [
+                Expanded(
+                    child: Container(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        decoration: BoxDecoration(
+                            color: ConsolePalette.of(context).chip,
+                            borderRadius: U4.rBtn),
+                        padding: const EdgeInsets.all(3),
+                        child: Row(children: [
+                          for (final band in eq.bands)
+                            Expanded(
+                                child: Semantics(
+                                    button: true,
+                                    selected: eq.selectedBand == band.band,
+                                    label: 'EQ Band ${band.band}',
+                                    child: InkWell(
+                                        onTap: () => _pick(band.band),
+                                        child: Container(
+                                            constraints: const BoxConstraints(
+                                                minHeight:
+                                                    AppDesign.touchTarget),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 4, vertical: 10),
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
                                                 color: eq.selectedBand == band.band
-                                                    ? ConsolePalette.of(context).cyan
-                                                    : ConsolePalette.of(context).text7,
-                                                weight: FontWeight.w600)))))),
-                    ]))),
-            if (showMobileShapes) ...[
-              const SizedBox(width: 8),
-              SizedBox(
-                  width: 128, child: _shapeChoices(selected, compact: true)),
+                                                    ? ConsolePalette.of(context)
+                                                        .processingSelected
+                                                    : null,
+                                                borderRadius: U4.rBtn),
+                                            child: Text(showMobileShapes ? '${band.band}' : 'Band ${band.band}',
+                                                style: AppDesign.type(15,
+                                                    color: eq.selectedBand ==
+                                                            band.band
+                                                        ? ConsolePalette.of(context).cyan
+                                                        : ConsolePalette.of(context).text7,
+                                                    weight: FontWeight.w600)))))),
+                        ]))),
+                if (showMobileShapes) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                      width: 128,
+                      child: _shapeChoices(selected, compact: true)),
+                ],
+              ]),
+              if (selected != null) ...[
+                _slider(selected, 'g', 'G'),
+                _slider(selected, 'f', 'F'),
+                _slider(selected, 'q', 'Q'),
+              ],
             ],
-          ]),
-          if (selected != null) ...[
-            _slider(selected, 'g', 'G'),
-            _slider(selected, 'f', 'F'),
-            _slider(selected, 'q', 'Q'),
-          ],
-        ],
-        if (store.paramApplies('hpf_on')) _hpf(),
-        if (store.paramApplies('hpf_slope') &&
-            parameterChoices(store.paramMetadata('hpf_slope')).isNotEmpty)
-          Padding(
-              padding: const EdgeInsets.only(top: 7),
-              child: _ParameterChoices(
-                  store: store,
-                  leaf: 'hpf_slope',
-                  label: 'Low cut slope',
-                  fallback: 'Loading…',
-                  compact: true,
-                  onChanged: (value) => store.cmdParam('hpf_slope', value))),
-        if (store.paramApplies('provider:hcf_on')) ...[
-          const SizedBox(height: 14),
-          _InputPreampControl(
-              store: store,
-              leaf: 'provider:hcf_freq',
-              label: 'High cut',
-              section: 'Input filters',
-              onFocus: widget.onFocus,
-              trailing: _ProcessingButton(
-                  label: 'On',
-                  active: store.paramBool('provider:hcf_on') == true,
-                  semanticsLabel: 'High cut enabled',
-                  onTap: store.supports('provider:hcf_on')
-                      ? () => store.cmdParam('provider:hcf_on',
-                          store.paramBool('provider:hcf_on') != true)
-                      : null)),
-          const SizedBox(height: 7),
-          _ParameterChoices(
-              store: store,
-              leaf: 'provider:hcf_slope',
-              label: 'High cut slope',
-              fallback: 'Loading…',
-              compact: true,
-              onChanged: (value) =>
-                  store.cmdParam('provider:hcf_slope', value)),
-        ],
-        if (store.paramApplies('provider:filter_model')) ...[
-          const SizedBox(height: 14),
-          Row(children: [
-            Expanded(
-                child: _ParameterChoices(
-                    store: store,
-                    leaf: 'provider:filter_model',
-                    label: 'Tool filter',
-                    fallback: 'Loading…',
-                    compact: true,
-                    onChanged: (value) =>
-                        store.cmdParam('provider:filter_model', value))),
-            const SizedBox(width: 8),
-            _ProcessingButton(
-                label: 'On',
-                active: store.paramBool('provider:filter_on') == true,
-                semanticsLabel: 'Tool filter enabled',
-                onTap: store.supports('provider:filter_on')
-                    ? () => store.cmdParam('provider:filter_on',
-                        store.paramBool('provider:filter_on') != true)
-                    : null),
-          ]),
-          for (final control in const [
-            ('provider:filter_tilt', 'Tilt'),
-            ('provider:filter_low', 'Low contour'),
-            ('provider:filter_high', 'High process'),
-            ('provider:filter_ap1_freq', 'Frequency'),
-            ('provider:filter_ap2_freq', 'Frequency'),
-            ('provider:filter_ap2_q', 'Q'),
-          ])
-            if (store.paramMetadata(control.$1)?['hidden'] != true)
+            if (store.paramApplies('hpf_on')) _hpf(),
+            if (store.paramApplies('hpf_slope') &&
+                parameterChoices(store.paramMetadata('hpf_slope')).isNotEmpty)
               Padding(
                   padding: const EdgeInsets.only(top: 7),
-                  child: _InputPreampControl(
+                  child: _ParameterChoices(
                       store: store,
-                      leaf: control.$1,
-                      label: control.$2,
-                      section: 'Tool filter',
-                      onFocus: widget.onFocus)),
-        ],
-      ]);
+                      leaf: 'hpf_slope',
+                      label: 'Low cut slope',
+                      fallback: 'Loading…',
+                      compact: true,
+                      onChanged: (value) =>
+                          store.cmdParam('hpf_slope', value))),
+            if (store.paramApplies('provider:hcf_on')) ...[
+              const SizedBox(height: 14),
+              _InputPreampControl(
+                  store: store,
+                  leaf: 'provider:hcf_freq',
+                  label: 'High cut',
+                  section: 'Input filters',
+                  onFocus: widget.onFocus,
+                  trailing: _ProcessingButton(
+                      label: 'On',
+                      active: store.paramBool('provider:hcf_on') == true,
+                      semanticsLabel: 'High cut enabled',
+                      onTap: store.supports('provider:hcf_on')
+                          ? () => store.cmdParam('provider:hcf_on',
+                              store.paramBool('provider:hcf_on') != true)
+                          : null)),
+              const SizedBox(height: 7),
+              _ParameterChoices(
+                  store: store,
+                  leaf: 'provider:hcf_slope',
+                  label: 'High cut slope',
+                  fallback: 'Loading…',
+                  compact: true,
+                  onChanged: (value) =>
+                      store.cmdParam('provider:hcf_slope', value)),
+            ],
+            if (store.paramApplies('provider:filter_model')) ...[
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(
+                    child: _ParameterChoices(
+                        store: store,
+                        leaf: 'provider:filter_model',
+                        label: 'Tool filter',
+                        fallback: 'Loading…',
+                        compact: true,
+                        onChanged: (value) =>
+                            store.cmdParam('provider:filter_model', value))),
+                const SizedBox(width: 8),
+                _ProcessingButton(
+                    label: 'On',
+                    active: store.paramBool('provider:filter_on') == true,
+                    semanticsLabel: 'Tool filter enabled',
+                    onTap: store.supports('provider:filter_on')
+                        ? () => store.cmdParam('provider:filter_on',
+                            store.paramBool('provider:filter_on') != true)
+                        : null),
+              ]),
+              for (final control in const [
+                ('provider:filter_tilt', 'Tilt'),
+                ('provider:filter_low', 'Low contour'),
+                ('provider:filter_high', 'High process'),
+                ('provider:filter_ap1_freq', 'Frequency'),
+                ('provider:filter_ap2_freq', 'Frequency'),
+                ('provider:filter_ap2_q', 'Q'),
+              ])
+                if (store.paramMetadata(control.$1)?['hidden'] != true)
+                  Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: _InputPreampControl(
+                          store: store,
+                          leaf: control.$1,
+                          label: control.$2,
+                          section: 'Tool filter',
+                          onFocus: widget.onFocus)),
+            ],
+          ]));
     });
   }
 }

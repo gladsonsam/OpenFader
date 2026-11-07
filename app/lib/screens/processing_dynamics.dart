@@ -104,132 +104,139 @@ class _DynTab extends StatelessWidget {
           ? math.min(bounds.maxWidth / 2,
               96 * textScaler.scale(optionFontSize) / optionFontSize)
           : 420 * scale;
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _ProcessorHeader(
-            title: title,
-            on: d.on,
-            compact: compact,
-            onToggle: () => store.setDynOn(kind, !d.on)),
-        const SizedBox(height: AppDesign.spaceSm),
-        ConstrainedBox(
-          constraints: BoxConstraints(minHeight: optionsHeight),
-          child: ConsoleActionGroup(children: [
-            SizedBox(
-                width: presetsWidth,
-                child: _PresetsButton(
-                    store: store, compact: compact, kind: presetKind)),
-            if (kind == DynKind.comp &&
-                store.paramMetadata('comp_knee')?['hidden'] != true)
-              if (parameterChoices(store.paramMetadata('comp_knee')).isNotEmpty)
+      return ProcessingLayout(
+          preferredGraphHeight: compact ? 282 : 700 * scale,
+          header:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _ProcessorHeader(
+                title: title,
+                on: d.on,
+                compact: compact,
+                onToggle: () => store.setDynOn(kind, !d.on)),
+            const SizedBox(height: AppDesign.spaceSm),
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: optionsHeight),
+              child: ConsoleActionGroup(children: [
                 SizedBox(
-                    width: math.min(
-                        bounds.maxWidth,
-                        math.max(
-                            200,
-                            bounds.maxWidth -
-                                presetsWidth -
-                                AppDesign.spaceSm)),
-                    child: _ParameterChoices(
-                        store: store,
-                        leaf: 'comp_knee',
-                        label: 'Knee',
-                        fallback: 'Loading…',
-                        compact: compact,
-                        onChanged: (value) =>
-                            store.setDynParam(DynKind.comp, 'knee', value)))
-              else
-                ConsoleActionGroup(children: [
-                  for (final soft in [true, false])
-                    Semantics(
-                        toggled: d.softKnee == soft,
-                        child: _ProcessingButton(
-                            fontSize: optionFontSize,
-                            label: soft ? 'Soft Knee' : 'Hard Knee',
-                            active: d.softKnee == soft,
-                            onTap: store.supports('comp_knee') &&
-                                    d.softKnee != null
-                                ? () => store.setCompSoftKnee(soft)
-                                : null)),
-                ]),
+                    width: presetsWidth,
+                    child: _PresetsButton(
+                        store: store, compact: compact, kind: presetKind)),
+                if (kind == DynKind.comp &&
+                    store.paramMetadata('comp_knee')?['hidden'] != true)
+                  if (parameterChoices(store.paramMetadata('comp_knee'))
+                      .isNotEmpty)
+                    SizedBox(
+                        width: math.min(
+                            bounds.maxWidth,
+                            math.max(
+                                200,
+                                bounds.maxWidth -
+                                    presetsWidth -
+                                    AppDesign.spaceSm)),
+                        child: _ParameterChoices(
+                            store: store,
+                            leaf: 'comp_knee',
+                            label: 'Knee',
+                            fallback: 'Loading…',
+                            compact: compact,
+                            onChanged: (value) =>
+                                store.setDynParam(DynKind.comp, 'knee', value)))
+                  else
+                    ConsoleActionGroup(children: [
+                      for (final soft in [true, false])
+                        Semantics(
+                            toggled: d.softKnee == soft,
+                            child: _ProcessingButton(
+                                fontSize: optionFontSize,
+                                label: soft ? 'Soft Knee' : 'Hard Knee',
+                                active: d.softKnee == soft,
+                                onTap: store.supports('comp_knee') &&
+                                        d.softKnee != null
+                                    ? () => store.setCompSoftKnee(soft)
+                                    : null)),
+                    ]),
+              ]),
+            ),
+            const SizedBox(height: AppDesign.spaceSm),
           ]),
-        ),
-        const SizedBox(height: AppDesign.spaceSm),
-        Opacity(
-            opacity: d.on || ConsolePalette.of(context).isLight ? 1 : .55,
-            child: AnimatedBuilder(
-                animation:
-                    Listenable.merge([store.levelDb, store.dynamicsMeters]),
-                builder: (context, _) {
-                  final meters = store.dynamicsMeters.value;
-                  final gate = kind == DynKind.gate;
-                  return _DynamicsGraph(
-                      dyn: d,
-                      measured: store.hasDynamicsMeters,
-                      level: store.hasDynamicsMeters
-                          ? (gate ? meters?.gateIn : meters?.compIn)
-                          : store.levelDb.value,
-                      output: gate ? meters?.gateOut : meters?.compOut,
-                      reduction: store.hasDynamicsMeters
-                          ? (meters == null
-                              ? null
-                              : -(gate
-                                  ? meters.gateReduction
-                                  : meters.compReduction))
-                          : store.grDb(kind),
-                      height: compact ? 282 : 700 * scale,
-                      compact: compact,
-                      enabled: (prop) =>
-                          d.ranges[prop] != null &&
-                          visibleKnobProps.contains(prop),
-                      onFocus: (prop) {
-                        final knob = knobByProp[prop];
-                        if (knob != null) focus(knob);
-                      },
-                      onChanged: (prop, v) {
-                        final knob = knobByProp[prop];
-                        if (knob != null) apply(knob, v);
-                      });
-                })),
-        const SizedBox(height: AppDesign.spaceSm),
-        if (compact && visibleKnobs.isNotEmpty) ...[
-          if (knobByProp['thr'] case final threshold?) ...[
-            control(threshold, threshold: true),
-            if (visibleKnobs.length > 1) const SizedBox(height: 8),
-          ],
-          if (visibleKnobs.any((knob) => knob.prop != 'thr'))
-            LayoutBuilder(builder: (context, controlsBounds) {
-              const gap = 8.0;
-              final width = (controlsBounds.maxWidth - gap) / 2;
-              return Wrap(spacing: gap, runSpacing: gap, children: [
-                for (final knob in visibleKnobs)
-                  if (knob.prop != 'thr')
-                    SizedBox(width: width, child: control(knob)),
-              ]);
-            }),
-        ] else if (!compact && visibleKnobs.isNotEmpty) ...[
-          Container(
-              constraints:
-                  BoxConstraints(minHeight: (200 * scale).clamp(128.0, 200.0)),
-              decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).processingPanel,
-                  borderRadius: U4.rWell),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(children: [
-                for (var i = 0; i < visibleKnobs.length; i++) ...[
-                  if (i > 0)
-                    Container(
-                        width: 1,
-                        height: 100 * scale,
-                        color: ConsolePalette.of(context).lineCtl),
-                  Expanded(
-                      child: control(visibleKnobs[i],
-                          threshold: visibleKnobs[i].prop == 'thr')),
-                ]
-              ])),
-        ],
-        _AdvancedDynamics(
-            store: store, kind: kind, compact: compact, onFocus: onFocus),
-      ]);
+          graph: Opacity(
+              opacity: d.on || ConsolePalette.of(context).isLight ? 1 : .55,
+              child: AnimatedBuilder(
+                  animation:
+                      Listenable.merge([store.levelDb, store.dynamicsMeters]),
+                  builder: (context, _) {
+                    final meters = store.dynamicsMeters.value;
+                    final gate = kind == DynKind.gate;
+                    return _DynamicsGraph(
+                        dyn: d,
+                        measured: store.hasDynamicsMeters,
+                        level: store.hasDynamicsMeters
+                            ? (gate ? meters?.gateIn : meters?.compIn)
+                            : store.levelDb.value,
+                        output: gate ? meters?.gateOut : meters?.compOut,
+                        reduction: store.hasDynamicsMeters
+                            ? (meters == null
+                                ? null
+                                : -(gate
+                                    ? meters.gateReduction
+                                    : meters.compReduction))
+                            : store.grDb(kind),
+                        height: 180,
+                        compact: compact,
+                        enabled: (prop) =>
+                            d.ranges[prop] != null &&
+                            visibleKnobProps.contains(prop),
+                        onFocus: (prop) {
+                          final knob = knobByProp[prop];
+                          if (knob != null) focus(knob);
+                        },
+                        onChanged: (prop, v) {
+                          final knob = knobByProp[prop];
+                          if (knob != null) apply(knob, v);
+                        });
+                  })),
+          controls:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const SizedBox(height: AppDesign.spaceSm),
+            if (compact && visibleKnobs.isNotEmpty) ...[
+              if (knobByProp['thr'] case final threshold?) ...[
+                control(threshold, threshold: true),
+                if (visibleKnobs.length > 1) const SizedBox(height: 8),
+              ],
+              if (visibleKnobs.any((knob) => knob.prop != 'thr'))
+                LayoutBuilder(builder: (context, controlsBounds) {
+                  const gap = 8.0;
+                  final width = (controlsBounds.maxWidth - gap) / 2;
+                  return Wrap(spacing: gap, runSpacing: gap, children: [
+                    for (final knob in visibleKnobs)
+                      if (knob.prop != 'thr')
+                        SizedBox(width: width, child: control(knob)),
+                  ]);
+                }),
+            ] else if (!compact && visibleKnobs.isNotEmpty) ...[
+              Container(
+                  constraints: BoxConstraints(
+                      minHeight: (200 * scale).clamp(128.0, 200.0)),
+                  decoration: BoxDecoration(
+                      color: ConsolePalette.of(context).processingPanel,
+                      borderRadius: U4.rWell),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(children: [
+                    for (var i = 0; i < visibleKnobs.length; i++) ...[
+                      if (i > 0)
+                        Container(
+                            width: 1,
+                            height: 100 * scale,
+                            color: ConsolePalette.of(context).lineCtl),
+                      Expanded(
+                          child: control(visibleKnobs[i],
+                              threshold: visibleKnobs[i].prop == 'thr')),
+                    ]
+                  ])),
+            ],
+            _AdvancedDynamics(
+                store: store, kind: kind, compact: compact, onFocus: onFocus),
+          ]));
     });
   }
 }
@@ -536,7 +543,8 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
   int? _pointer;
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final size = Size(box.maxWidth, widget.height);
+        final size = Size(
+            box.maxWidth, box.hasBoundedHeight ? box.maxHeight : widget.height);
         final geom = _DynamicsGeometry(size, widget.compact);
         return Container(
             height: widget.height,

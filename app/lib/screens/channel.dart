@@ -20,6 +20,7 @@ import '../settings/prefs.dart';
 import '../mixer/geometry.dart';
 import '../theme.dart';
 import '../widgets/mobile_reference_width.dart';
+import '../widgets/processing_layout.dart';
 import '../ui/console.dart';
 import '../u4law.dart';
 
@@ -442,23 +443,29 @@ class _ChannelPageState extends State<ChannelPage> {
                   onFocus: (f) => _focus.value = f,
                   kind: DynKind.comp),
             };
-            final content = SingleChildScrollView(
-              // Gate and Compressor share geometry and scroll position.
-              key: PageStorageKey(selectedTab == ChannelTab.gate ||
-                      selectedTab == ChannelTab.comp
-                  ? 'processing-dynamics'
-                  : 'processing-${selectedTab.name}'),
-              child: KeyedSubtree(
-                  key: ValueKey((store.stripKey, selectedTab)),
-                  child: wide
-                      ? Padding(
-                          padding: const EdgeInsets.all(12), child: tabContent)
-                      : MobileReferenceWidth(
-                          referenceWidth: 362,
-                          child: Padding(
-                              padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
-                              child: tabContent))),
-            );
+            final content = LayoutBuilder(builder: (context, viewport) {
+              return SingleChildScrollView(
+                // Gate and Compressor share geometry and scroll position.
+                key: PageStorageKey(selectedTab == ChannelTab.gate ||
+                        selectedTab == ChannelTab.comp
+                    ? 'processing-dynamics'
+                    : 'processing-${selectedTab.name}'),
+                child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: viewport.maxHeight),
+                    child: KeyedSubtree(
+                        key: ValueKey((store.stripKey, selectedTab)),
+                        child: wide
+                            ? Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: tabContent)
+                            : MobileReferenceWidth(
+                                referenceWidth: 362,
+                                child: Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(8, 12, 8, 20),
+                                    child: tabContent)))),
+              );
+            });
             return LayoutBuilder(builder: (context, bounds) {
               final stripWidth = wide
                   ? MixerGeometry.stripWidth(bounds.maxWidth, false) +
