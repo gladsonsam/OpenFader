@@ -25,7 +25,7 @@
 //!    `user` *output* plane: card/user routing lives in layer 2 and
 //!    `/config/userrout/*`.
 //!
-//! Live emulator evidence (pinned `mixer-simulator@unrecorded`,
+//! Emulator checks (
 //! fresh state, 127.0.0.4, this slice): fresh reads succeed on all 161
 //! advertised output/bank/user/FX destinations; guarded writes round-trip
 //! with fresh readback for `outputs/aux/01` (`src`, `pos` 0->1->0,

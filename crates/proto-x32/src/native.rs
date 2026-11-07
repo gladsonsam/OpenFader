@@ -1,42 +1,6 @@
-//! X32/M32 native show + library support (separate from OpenFader scenes).
-//!
-//!
-//! Native X32 slots stay separate from OpenFader local scene numbers and
-//! storage: scenes 0..=99, snippets 0..=99, cue positions 0..=499 and
-//! library banks ch/fx/r/mon slots 1..=100 are desk addresses, never
-//! remapped. There is no desk-USB file transfer over OSC: the protocol
-//! exposes dataset operations (/add /copy /save /load /delete /rename),
-//! inventory leaves (/-show/..., /-libs/...), node reads (/node) and
-//! node writes (`/`), not arbitrary filesystem access. Local archive
-//! import/export below is OpenFader-side JSON serialization of observed
-//! node text; it is not a desk USB image and is never presented as one.
-//!
-//! Wiring (parent owns the `X32Driver` struct field, `driver.rs` and the
-//! engine adapter; this module compiles standalone):
-//! ```ignore
-//! // lib.rs: add `pub mod native;` (only edit allowed here) and add the
-//! // field `native: std::sync::Mutex<native::NativeState>` to X32Driver,
-//! // initialised with `NativeState::default()` in `new()`.
-//! // driver.rs:
-//! //   fn native_library(&self) -> Option<serde_json::Value> {
-//! //       Some(self.native_inventory_with(&self.native.lock().ok()?))
-//! //   }
-//! //   async fn native_library_action(&self, action, expected, check) {
-//! //       self.native_action_with(&self.native, action, expected, check).await
-//! //   }
-//! //   fn native_snapshots(&self) -> Option<NativeSnapshots> {
-//! //       Some(self.native_snapshots_with(&self.native.lock().ok()?))
-//! //   }
-//! ```
-//! Lock poisoning never panics: every `Mutex<NativeState>` acquisition maps
-//! a poisoned lock to an error (pre-mutation paths) or to a `Null`
-//! inventory receipt (post-dispatch paths), so a poisoned cache reads as
-//! unavailable rather than stale. Session identity is a `Weak<OscSession>`
-//! upgrade plus `Arc::ptr_eq`: a freed session never validates against a
-//! recycled address (no pointer-`usize` ABA).
-//! Engine `provider_library_validation`: no new persisted local domains
-//! are introduced, so no new policy is required; archives are validated
-//! by `validate_archive` before any write.
+//! X32/M32 native show and library operations, separate from local scenes.
+//! OSC exposes dataset operations, not arbitrary desk-USB file access.
+//! Unconfirmed sends never become readback; stale sessions cannot validate writes.
 
 #[path = "native_tables.rs"]
 mod tables;

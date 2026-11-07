@@ -3,8 +3,7 @@
 //! X-Air level blobs (`/meters/0`..`/meters/3`, `/meters/5`, `/meters/7`
 //! ..`/meters/9`, ~20/s) share one layout (rig-verified 2026-10-20, XR18
 //! FW 1.20, all ten streams; corroborated by the Behringer X AIR OSC doc
-//! "signed integer 16 bit, resolution 1/256 dB" and the protocol reference
-//! mixer-simulator meter threads): a 4-byte LE i32 sample count followed by
+//! "signed integer 16 bit, resolution 1/256 dB"): a 4-byte LE i32 sample count followed by
 //! that many LE i16 samples, each dBFS x 256 (signed, `<= 0`;
 //! `i16::MIN` = -128 dB floor = silence). Levels decode to linear
 //! 0.0..1.0 via `10^(dB/20)`. [`parse_xair_meter_blob`] owns this form and
