@@ -76,8 +76,14 @@ class MixerStrip extends StatelessWidget {
         final visible = layout.visibleOrder;
         final fixed =
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
-        final spacing =
-            gap * math.max(0, visible.length - 1) + AppDesign.spaceSm * 2;
+        // The final nameplate tape meets the bottom edge of the strip.
+        // Other layouts retain clearance below their last control.
+        final bottomGap = visible.lastOrNull == StripElement.nameplate
+            ? 0.0
+            : AppDesign.spaceSm;
+        final spacing = gap * math.max(0, visible.length - 1) +
+            AppDesign.spaceSm +
+            bottomGap;
         final contentHeight = math.max(
             box.maxHeight,
             fixed +
@@ -186,59 +192,74 @@ class MixerStrip extends StatelessWidget {
                       ),
                       place(
                           StripElement.fader,
-                          ValueListenableBuilder<double>(
-                              valueListenable:
-                                  controller.faderNoteOf(chIndex, isMaster),
-                              builder: (context, fader, _) => Stack(children: [
-                                    ExcludeSemantics(
-                                        excluding: ready & 1 == 0,
-                                        child: IgnorePointer(
-                                            ignoring: ready & 1 == 0,
-                                            child: Opacity(
-                                                opacity: ready & 1 != 0 ? 1 : 0,
-                                                child: ValueListenableBuilder<
-                                                        String>(
-                                                    valueListenable: controller
-                                                        .store
-                                                        .controlGroupNoteOf(
-                                                            chIndex ?? -1),
-                                                    builder: (context, group, _) => Tooltip(
-                                                        message: group,
-                                                        child: MixerFader(
-                                                            channel: _withFader(ch, fader),
-                                                            compact: compact,
-                                                            showMeter: layout.showMeter,
-                                                            onTouch: () => onControlFocus?.call(MixerReadoutControl.volume),
-                                                            onPosition: (v) {
-                                                              onControlFocus?.call(
-                                                                  MixerReadoutControl
-                                                                      .volume);
-                                                              controller
-                                                                  .setPosition(
-                                                                      ch, v);
-                                                            },
-                                                            onSelect: () {
-                                                              onControlFocus?.call(
-                                                                  MixerReadoutControl
-                                                                      .volume);
-                                                              controller
-                                                                  .select(ch);
-                                                            },
-                                                            onUnity: () {
-                                                              onControlFocus?.call(
-                                                                  MixerReadoutControl
-                                                                      .volume);
-                                                              controller
-                                                                  .unity(ch);
-                                                            })))))),
-                                    if (ready & 1 == 0)
-                                      Center(
-                                          child: Text('-',
-                                              style: AppDesign.type(14,
-                                                  color:
-                                                      ConsolePalette.of(context)
-                                                          .mutedText))),
-                                  ]))),
+                          ListenableBuilder(
+                              listenable: Listenable.merge([
+                                controller.faderNoteOf(chIndex, isMaster),
+                                controller.muteNoteOf(chIndex, isMaster),
+                              ]),
+                              builder: (context, _) {
+                                final fader = controller
+                                    .faderNoteOf(chIndex, isMaster)
+                                    .value;
+                                return Stack(children: [
+                                  ExcludeSemantics(
+                                      excluding: ready & 1 == 0,
+                                      child: IgnorePointer(
+                                          ignoring: ready & 1 == 0,
+                                          child: Opacity(
+                                              opacity: ready & 1 != 0 ? 1 : 0,
+                                              child: ValueListenableBuilder<
+                                                      String>(
+                                                  valueListenable: controller
+                                                      .store
+                                                      .controlGroupNoteOf(
+                                                          chIndex ?? -1),
+                                                  builder: (context, group, _) =>
+                                                      Tooltip(
+                                                          message: group,
+                                                          child: MixerFader(
+                                                              channel: _withFader(
+                                                                  ch, fader),
+                                                              compact: compact,
+                                                              showMeter: layout
+                                                                  .showMeter,
+                                                              onTouch: () =>
+                                                                  onControlFocus
+                                                                      ?.call(MixerReadoutControl.volume),
+                                                              onPosition: (v) {
+                                                                onControlFocus?.call(
+                                                                    MixerReadoutControl
+                                                                        .volume);
+                                                                controller
+                                                                    .setPosition(
+                                                                        ch, v);
+                                                              },
+                                                              onSelect: () {
+                                                                onControlFocus?.call(
+                                                                    MixerReadoutControl
+                                                                        .volume);
+                                                                controller
+                                                                    .select(ch);
+                                                              },
+                                                              onUnity: controller.canUnity(ch)
+                                                                  ? () {
+                                                                      onControlFocus
+                                                                          ?.call(
+                                                                              MixerReadoutControl.volume);
+                                                                      controller
+                                                                          .unity(
+                                                                              ch);
+                                                                    }
+                                                                  : null)))))),
+                                  if (ready & 1 == 0)
+                                    Center(
+                                        child: Text('-',
+                                            style: AppDesign.type(14,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .mutedText))),
+                                ]);
+                              })),
                       place(
                         StripElement.solo,
                         ValueListenableBuilder<bool>(

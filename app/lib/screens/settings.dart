@@ -13,6 +13,7 @@ import '../core/access_limits.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
 import 'settings_access.dart';
+import 'connection.dart' show MixerType;
 
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';

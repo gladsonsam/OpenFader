@@ -65,8 +65,6 @@ class _MixerPageState extends State<MixerPage> {
       color: ConsolePalette.of(context).background,
       child: SafeArea(
           bottom: false,
-          minimum: EdgeInsets.only(
-              bottom: MediaQuery.paddingOf(context).bottom * .5),
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
             final mobile = constraints.maxWidth < 600;
@@ -119,8 +117,7 @@ class _MixerPageState extends State<MixerPage> {
                       identityChannel:
                           ch.master ? controller.masterIdentityChannel : null,
                       compact: mobile,
-                      bottomInset:
-                          mobile ? MediaQuery.paddingOf(context).bottom : 0,
+                      bottomInset: MediaQuery.paddingOf(context).bottom,
                       onOpenProcessing: ch.master
                           ? () {
                               controller.select(ch);
@@ -180,7 +177,8 @@ class _MixerPageState extends State<MixerPage> {
                             if (!widget.embedded)
                               Container(
                                   height: mobile ? 6 : 8,
-                                  color: ConsolePalette.of(context).bus),
+                                  color: controller
+                                      .masterColor(ConsolePalette.of(context))),
                             // Custom layer banner: names the active layer.
                             // Tapping opens the layer list; the master strip
                             // stays fixed and is never part of a layer.
@@ -277,6 +275,21 @@ class _MixerPageState extends State<MixerPage> {
                                                                           15,
                                                                           color:
                                                                               ConsolePalette.of(context).mutedText))),
+                                                              const SizedBox(
+                                                                  height: 12),
+                                                              OutlinedButton(
+                                                                onPressed: () =>
+                                                                    showMixerLayerEditor(
+                                                                  context,
+                                                                  layer: controller
+                                                                      .activeLayer,
+                                                                  channels:
+                                                                      layerChannelOptionsOf(
+                                                                          controller),
+                                                                ),
+                                                                child: const Text(
+                                                                    'Edit layer'),
+                                                              ),
                                                             ])
                                                       : Text(
                                                           controller.store

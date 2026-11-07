@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -16,7 +15,6 @@ abstract class RecorderStore extends ChangeNotifier {
   bool get canAdminRemote;
   Map<String, dynamic> get remoteStatus;
   List<String> get remoteClients;
-  String? get pairingJson;
   String? get remoteError;
   bool get remotePending;
   Future<void> remoteAction(String action, [String? value]);
@@ -1403,79 +1401,85 @@ class _RecorderPageState extends State<RecorderPage> {
                                       fontSize: 23,
                                       fontWeight: FontWeight.w600)),
                               const SizedBox(width: 26),
-                              SizedBox(
-                                  height: 48,
-                                  child: TextButton(
-                                      onPressed: null,
-                                      child: const Text('Loop'))),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                  height: 48,
-                                  child: TextButton(
-                                      onPressed: enabled &&
-                                              prepared &&
-                                              capabilities['loop'] == true
-                                          ? () async {
-                                              final take = store.takes
-                                                  .where((t) =>
-                                                      t['id'] == selectedTake)
-                                                  .firstOrNull;
-                                              final frames =
-                                                  (take?['duration_frames']
-                                                              as num?)
-                                                          ?.toInt() ??
-                                                      0;
-                                              final rate =
-                                                  (take?['sample_rate'] as num?)
-                                                          ?.toDouble() ??
-                                                      (s['sample_rate'] as num?)
-                                                          ?.toDouble() ??
-                                                      0;
-                                              if (frames <= 0 || rate <= 0) {
-                                                return;
-                                              }
-                                              final range = await showDialog<
-                                                      List<int>>(
-                                                  context: context,
-                                                  builder: (_) => _LoopDialog(
-                                                      frames: frames,
-                                                      rate: rate,
-                                                      start: _loopTake ==
-                                                              selectedTake
-                                                          ? _loopStart
-                                                          : null,
-                                                      end: _loopTake ==
-                                                              selectedTake
-                                                          ? _loopEnd
-                                                          : null));
-                                              if (range != null &&
-                                                  store.connected &&
-                                                  !store.pending &&
-                                                  store.state[
-                                                          'selected_take_id'] ==
-                                                      selectedTake &&
-                                                  (store.state['capabilities']
-                                                          as Map?)?['loop'] ==
-                                                      true) {
-                                                await store.command(
-                                                    'set_loop', {
-                                                  'start_frame': range[0],
-                                                  'end_frame': range[1],
-                                                  'enabled': true
-                                                });
-                                                if (mounted &&
-                                                    store.error == null) {
-                                                  setState(() {
-                                                    _loopStart = range[0];
-                                                    _loopEnd = range[1];
-                                                    _loopTotal = frames;
-                                                    _loopTake = selectedTake;
-                                                  });
+                              Tooltip(
+                                  message: prepared
+                                      ? (capabilities['loop'] == true
+                                          ? 'Choose loop range'
+                                          : 'Looping is unavailable on this host')
+                                      : 'Prepare soundcheck for the selected take to enable looping',
+                                  child: SizedBox(
+                                      height: 48,
+                                      child: TextButton(
+                                          onPressed: enabled &&
+                                                  prepared &&
+                                                  capabilities['loop'] == true
+                                              ? () async {
+                                                  final take = store.takes
+                                                      .where((t) =>
+                                                          t['id'] ==
+                                                          selectedTake)
+                                                      .firstOrNull;
+                                                  final frames =
+                                                      (take?['duration_frames']
+                                                                  as num?)
+                                                              ?.toInt() ??
+                                                          0;
+                                                  final rate =
+                                                      (take?['sample_rate']
+                                                                  as num?)
+                                                              ?.toDouble() ??
+                                                          (s['sample_rate']
+                                                                  as num?)
+                                                              ?.toDouble() ??
+                                                          0;
+                                                  if (frames <= 0 ||
+                                                      rate <= 0) {
+                                                    return;
+                                                  }
+                                                  final range = await showDialog<
+                                                          List<int>>(
+                                                      context: context,
+                                                      builder: (_) => _LoopDialog(
+                                                          frames: frames,
+                                                          rate: rate,
+                                                          start: _loopTake ==
+                                                                  selectedTake
+                                                              ? _loopStart
+                                                              : null,
+                                                          end: _loopTake ==
+                                                                  selectedTake
+                                                              ? _loopEnd
+                                                              : null));
+                                                  if (range != null &&
+                                                      store.connected &&
+                                                      !store.pending &&
+                                                      store.state[
+                                                              'selected_take_id'] ==
+                                                          selectedTake &&
+                                                      (store.state['capabilities']
+                                                                  as Map?)?[
+                                                              'loop'] ==
+                                                          true) {
+                                                    await store.command(
+                                                        'set_loop', {
+                                                      'start_frame': range[0],
+                                                      'end_frame': range[1],
+                                                      'enabled': true
+                                                    });
+                                                    if (mounted &&
+                                                        store.error == null) {
+                                                      setState(() {
+                                                        _loopStart = range[0];
+                                                        _loopEnd = range[1];
+                                                        _loopTotal = frames;
+                                                        _loopTake =
+                                                            selectedTake;
+                                                      });
+                                                    }
+                                                  }
                                                 }
-                                              }
-                                            }
-                                          : null,
-                                      child: const Text('Set loop'))),
+                                              : null,
+                                          child: const Text('Set loop')))),
                               const SizedBox(width: 6),
                               SizedBox(
                                   height: 48,
@@ -1815,6 +1819,55 @@ class _RecorderPageState extends State<RecorderPage> {
                                               color: p.mutedText,
                                               fontSize: 19)),
                                     ]))),
+                        if (take['complete'] != true && take['id'] is String)
+                          store.canAdminRemote
+                              ? TextButton.icon(
+                                  onPressed: enabled &&
+                                          !soundcheck &&
+                                          '${s['transport'] ?? 'stopped'}'
+                                                  .toLowerCase() ==
+                                              'stopped'
+                                      ? () async {
+                                          final confirmed =
+                                              await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (context) =>
+                                                      AlertDialog(
+                                                        title: const Text(
+                                                            'Recover take?'),
+                                                        content: const Text(
+                                                            'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop all recording and playback before continuing.'),
+                                                        actions: [
+                                                          TextButton(
+                                                              onPressed: () =>
+                                                                  Navigator.pop(
+                                                                      context,
+                                                                      false),
+                                                              child: const Text(
+                                                                  'Cancel')),
+                                                          FilledButton(
+                                                              onPressed: () =>
+                                                                  Navigator.pop(
+                                                                      context,
+                                                                      true),
+                                                              child: const Text(
+                                                                  'Recover take')),
+                                                        ],
+                                                      ));
+                                          if (confirmed == true && mounted) {
+                                            await store.command(
+                                                'recover_take', {
+                                              'take_id': take['id'],
+                                              'confirm': true
+                                            });
+                                          }
+                                        }
+                                      : null,
+                                  icon: const Icon(Icons.build_outlined),
+                                  label: const Text('Recover take'))
+                              : Text(
+                                  'Recover this take on the recorder computer.',
+                                  style: TextStyle(color: p.mutedText)),
                         if (take['id'] == selectedTake &&
                             take['complete'] == true) ...[
                           Text(
@@ -1951,10 +2004,10 @@ class _RemoteAdminPanel extends StatefulWidget {
 }
 
 class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
-  final ip = TextEditingController();
+  final password = TextEditingController();
   @override
   void dispose() {
-    ip.dispose();
+    password.dispose();
     super.dispose();
   }
 
@@ -1964,33 +2017,68 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
     final p = ConsolePalette.of(context);
     final enabled = store.remoteStatus['enabled'] == true;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Remote pairing',
+      Text('Remote server',
           style: TextStyle(
               color: p.text1, fontSize: 18, fontWeight: FontWeight.bold)),
       Text(
           enabled ? 'Enabled · port ${store.remoteStatus['port']}' : 'Disabled',
           style: TextStyle(color: p.mutedText)),
+      Text(
+          'Connect from another device using this computer’s LAN IP address or hostname and port ${store.remoteStatus['port'] ?? 8845}.',
+          style: TextStyle(color: p.mutedText)),
+      Text(
+          store.remoteStatus['password_required'] == true
+              ? 'Password required'
+              : 'No password required',
+          style: TextStyle(color: p.text1)),
       TextField(
-          controller: ip,
+          controller: password,
+          obscureText: true,
+          enableSuggestions: false,
+          autocorrect: false,
+          enabled: !store.remotePending,
           style: TextStyle(color: p.text1),
-          decoration: const InputDecoration(labelText: 'LAN IPv4 address'),
-          keyboardType: TextInputType.url),
+          decoration:
+              const InputDecoration(labelText: 'Optional server password'),
+          onChanged: (_) => setState(() {})),
+      Text(
+          'Password is saved on this computer. Changing it disconnects existing clients.',
+          style: TextStyle(color: p.mutedText)),
       Wrap(spacing: 8, children: [
         OutlinedButton(
-            onPressed: store.remotePending
+            onPressed: store.remotePending || password.text.isEmpty
                 ? null
-                : () => store.remoteAction('allowRecording'),
-            child: const Text('Allow recording')),
+                : () async {
+                    await store.remoteAction('password', password.text);
+                    if (mounted && store.remoteError == null) {
+                      password.clear();
+                      setState(() {});
+                    }
+                  },
+            child: const Text('Set password')),
+        OutlinedButton(
+            onPressed: store.remotePending ||
+                    store.remoteStatus['password_required'] != true
+                ? null
+                : () => store.remoteAction('password', ''),
+            child: const Text('Remove password')),
+      ]),
+      if (!Platform.isMacOS)
+        Text(
+            'Microphone access is managed by the operating system and audio interface driver.',
+            style: TextStyle(color: p.mutedText)),
+      Wrap(spacing: 8, children: [
+        if (Platform.isMacOS)
+          OutlinedButton(
+              onPressed: store.remotePending
+                  ? null
+                  : () => store.remoteAction('allowRecording'),
+              child: const Text('Allow recording')),
         OutlinedButton(
             onPressed: store.remotePending || enabled
                 ? null
-                : () => store.remoteAction('enable', ip.text),
+                : () => store.remoteAction('enable'),
             child: const Text('Enable')),
-        OutlinedButton(
-            onPressed: store.remotePending || !enabled
-                ? null
-                : () => store.remoteAction('pairing', ip.text),
-            child: const Text('Create pairing')),
         OutlinedButton(
             onPressed: store.remotePending || !enabled
                 ? null
@@ -1999,18 +2087,10 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
       ]),
       if (store.remoteError != null)
         Text(store.remoteError!, style: TextStyle(color: p.amber)),
-      if (store.pairingJson != null) ...[
-        SelectableText(store.pairingJson!, style: TextStyle(color: p.text1)),
-        TextButton.icon(
-            onPressed: () =>
-                Clipboard.setData(ClipboardData(text: store.pairingJson!)),
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy pairing JSON')),
-      ],
-      Text('Paired clients',
+      Text('Authorized clients',
           style: TextStyle(color: p.text1, fontWeight: FontWeight.bold)),
       if (store.remoteClients.isEmpty)
-        Text('No paired clients', style: TextStyle(color: p.mutedText)),
+        Text('No authorized clients', style: TextStyle(color: p.mutedText)),
       for (final client in store.remoteClients)
         Row(children: [
           Expanded(

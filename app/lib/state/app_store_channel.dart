@@ -171,6 +171,18 @@ mixin _AppStoreChannel on _AppStoreContext {
   void setFaderDb(double db) => setFader(_channel, dbToPos(db));
 
   @override
+  List<double>? get faderEntryRange {
+    // Simulation explicitly uses the UI law. Unknown native laws stay disabled.
+    if (engine.driver == 'sim') return [-90, 10];
+    final law = lawForDriver(engine.driver);
+    if (law == null) return null;
+    return [
+      law.floorDb.clamp(-90, 10).toDouble(),
+      law.topDb.clamp(-90, 10).toDouble()
+    ];
+  }
+
+  @override
   double? paramNum(String leaf) {
     final v = ps.optimisticValue(_maps, _channel, _providerLeaf(engine, leaf));
     return v is num ? v.toDouble() : null;
@@ -508,6 +520,8 @@ mixin _AppStoreChannel on _AppStoreContext {
     final cutModel = mixerProviderPolicy(engine.driver).cutModel;
     final bands = <EqBandVm>[];
     for (var b = 1; b <= count; b++) {
+      final bandOn = value('eq${b}_on');
+      if (applies('eq${b}_on') && bandOn is! bool) return null;
       final native = number('eq${b}_type')?.toInt();
       final type =
           mixerProviderPolicy(engine.driver).eqPresentationType(native);
@@ -530,6 +544,7 @@ mixin _AppStoreChannel on _AppStoreContext {
       bands.add(EqBandVm(
           band: b,
           name: '',
+          on: applies('eq${b}_on') && bandOn is bool ? bandOn : true,
           f: f,
           g: g ?? 0,
           q: q ?? 1,
@@ -671,7 +686,9 @@ mixin _AppStoreChannel on _AppStoreContext {
               shelfModel: mixerProviderPolicy(engine.driver).shelfModel,
               shelfUsesQ: mixerProviderPolicy(engine.driver).shelfUsesQ &&
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
-              on: true,
+              on: paramApplies('eq${b}_on')
+                  ? paramBool('eq${b}_on') ?? true
+                  : true,
               type: _eqPresentationType(b),
               typeControlValue:
                   mixerProviderPolicy(engine.driver).useNativeEqChoices
@@ -907,7 +924,11 @@ mixin _AppStoreChannel on _AppStoreContext {
       cmdParam('hpf_on', on);
       return;
     }
-    // Neither hardware driver has a per-band bypass leaf.
+    if (band < 1 || band > _eqBandCount) return;
+    final leaf = 'eq${band}_on';
+    // Never synthesize bypass via gain or type: only a provider-advertised,
+    // read-back switch can represent an individual band's actual state.
+    if (supports(leaf) && paramBool(leaf) != null) cmdParam(leaf, on);
   }
 
   @override

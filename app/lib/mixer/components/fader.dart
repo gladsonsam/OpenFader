@@ -13,7 +13,8 @@ class MixerFader extends StatefulWidget {
   final bool compact;
   final bool showMeter;
   final ValueChanged<double> onPosition;
-  final VoidCallback onSelect, onUnity;
+  final VoidCallback onSelect;
+  final VoidCallback? onUnity;
   final VoidCallback? onTouch;
   const MixerFader(
       {super.key,
@@ -47,6 +48,9 @@ class _MixerFaderState extends State<MixerFader> {
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
+            hint: widget.onUnity == null
+                ? null
+                : 'Double-tap fader cap for unity',
             increasedValue: !ch.fader.isFinite
                 ? null
                 : '${fmtDb(MixerFaderScale.toEngine(position + .01))} dB',
@@ -95,7 +99,9 @@ class _MixerFaderState extends State<MixerFader> {
                         width: geometry.capWidth + geometry.touchPad * 2,
                         height: geometry.capHeight + geometry.touchPad * 2,
                         child: Tooltip(
-                            message: '${ch.levelLabel} · double-tap for unity',
+                            message: widget.onUnity == null
+                                ? '${ch.levelLabel} · unity reset requires an unmuted level within 12 dB of 0'
+                                : '${ch.levelLabel} · double-tap for unity',
                             triggerMode: TooltipTriggerMode.manual,
                             child: Listener(
                                 onPointerDown: (_) {

@@ -7,15 +7,14 @@ import 'package:app/engine_protocol.dart';
 
 Future<void> main(List<String> args) async {
   if (args.length != 1) throw ArgumentError('Pass path to openfader-serve');
-  final home = await Directory.systemTemp.createTemp('openfader-smoke-');
+  final dataRoot = await Directory.systemTemp.createTemp('openfader-smoke-');
   Process? process;
   RemoteHost? first;
   RemoteHost? second;
   try {
     process = await Process.start(args.single, ['--desktop-host'],
-        environment: {'HOME': home.path});
-    final descriptor = File(
-        '${home.path}/Library/Application Support/OpenFader/Recorder/host.json');
+        environment: {'OPENFADER_DATA_DIR': dataRoot.path});
+    final descriptor = File('${dataRoot.path}/host.json');
     for (var i = 0; i < 200 && !await descriptor.exists(); i++) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
@@ -40,16 +39,8 @@ Future<void> main(List<String> args) async {
       return Map<String, dynamic>.from(jsonDecode(text) as Map);
     }
 
-    await request('enable', {'ip': '127.0.0.1'});
-    Future<String> link() async {
-      final p = await request('pairing', {});
-      return jsonEncode({
-        'endpoint': 'https://127.0.0.1:${p['port']}',
-        'fingerprint': p['fingerprint'],
-        'secret': p['secret']
-      });
-    }
-
+    final enabled = await request('enable', {'ip': '127.0.0.1', 'port': 0});
+    final address = 'https://127.0.0.1:${enabled['port']}';
     Future<void> rejects(Future<void> Function() action) async {
       var failed = false;
       try {
@@ -60,18 +51,27 @@ Future<void> main(List<String> args) async {
       if (!failed) throw StateError('Expected rejection');
     }
 
-    final original = await link();
-    final wrong = Map<String, dynamic>.from(jsonDecode(original) as Map);
-    wrong['fingerprint'] = '0' * 64;
-    await rejects(() async {
-      await RemoteHost.pair(PairingLink.parse(jsonEncode(wrong)));
-    });
-    first = await RemoteHost.pair(PairingLink.parse(original));
-    await rejects(() async {
-      await RemoteHost.pair(PairingLink.parse(original));
-    });
+    final open = await RemoteHost.inspect(address);
+    if (open.passwordRequired) throw StateError('Unexpected server password');
+    first = await RemoteHost.connect(open);
     await first.recorderRequest('state');
-    second = await RemoteHost.pair(PairingLink.parse(await link()));
+    await first.disconnect();
+    await request('password', {'password': 'smoke-password'});
+    final secured =
+        await RemoteHost.inspect(address, trustedFingerprint: open.fingerprint);
+    if (!secured.passwordRequired) {
+      throw StateError('Missing password challenge');
+    }
+    await rejects(() async {
+      await RemoteHost.connect(secured, password: 'wrong');
+    });
+    final wrong = RemoteServer(secured.endpoint, '0' * 64, null, true);
+    await rejects(() async {
+      await RemoteHost.connect(wrong, password: 'smoke-password');
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    first = await RemoteHost.connect(secured, password: 'smoke-password');
+    second = await RemoteHost.connect(secured, password: 'smoke-password');
     await first.boot();
     await second.boot();
     await first.cmd(first.clientId, Cmds.connectSim());
@@ -123,6 +123,6 @@ Future<void> main(List<String> args) async {
     await second?.disconnect();
     process?.kill();
     if (process != null) await process.exitCode;
-    await home.delete(recursive: true);
+    await dataRoot.delete(recursive: true);
   }
 }

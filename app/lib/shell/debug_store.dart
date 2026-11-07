@@ -60,24 +60,6 @@ class ShellDebugStore extends ShellStoreAdapter implements DebugStore {
   void sendStats() => send(Cmds.stats());
 
   @override
-  void nudgeFader() {
-    var f = 0.75;
-    for (final s in engine.strips) {
-      if (s.ch == 0) f = s.fader;
-    }
-    send(Cmds.fader(0, (f + 0.05).clamp(0.0, 1.0)));
-  }
-
-  @override
-  void toggleMute() {
-    var m = false;
-    for (final s in engine.strips) {
-      if (s.ch == 0) m = s.muted;
-    }
-    send(Cmds.mute(0, !m));
-  }
-
-  @override
   void scan() => send(Cmds.scan());
 
   @override

@@ -54,6 +54,10 @@ impl Recorder {
     }
 }
 pub fn data_dir() -> Option<PathBuf> {
+    if let Some(directory) = std::env::var_os("OPENFADER_DATA_DIR") {
+        let directory = PathBuf::from(directory);
+        return directory.is_absolute().then_some(directory);
+    }
     #[cfg(target_os = "macos")]
     {
         std::env::var_os("HOME")
@@ -684,6 +688,26 @@ async fn worker_with_config(
                                         backend.as_mut().unwrap().command("stop", args).await
                                     } else {
                                         s.stop().map_err(|e| e.to_string())
+                                    }
+                                }
+                                "recover_take"
+                                    if capture_active || s.status().transport != "stopped" =>
+                                {
+                                    Err("stop recording and playback before recovering a take"
+                                        .into())
+                                }
+                                "recover_take" => {
+                                    if args["confirm"] != true {
+                                        Err("take recovery requires explicit confirmation".into())
+                                    } else {
+                                        args["take_id"]
+                                            .as_str()
+                                            .ok_or_else(|| "take_id required".to_string())
+                                            .and_then(|take| {
+                                                s.recover_take(take)
+                                                    .map(|_| ())
+                                                    .map_err(|e| e.to_string())
+                                            })
                                     }
                                 }
                                 "import_take" | "export_take"

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../palette.dart';
+import '../../core/control_reset.dart';
 import '../../theme.dart';
 import 'dart:math' as math;
 import '../../design.dart';
@@ -47,9 +48,14 @@ class _U4KnobState extends State<U4Knob> {
 
   @override
   Widget build(BuildContext context) {
+    final reset = numericResetValue(widget.min, widget.max,
+        nativeDefault: widget.defaultValue);
     return Semantics(
       button: true,
       label: '${widget.label} knob, ${widget.text}',
+      hint: widget.enabled && reset != null
+          ? 'Double-tap to reset to $reset'
+          : null,
       onTap: widget.enabled ? widget.onFocus : null,
       child: GestureDetector(
         onTap: widget.enabled ? widget.onFocus : null,
@@ -71,11 +77,10 @@ class _U4KnobState extends State<U4Knob> {
             : null,
         onVerticalDragEnd: widget.enabled ? (_) => _startN = null : null,
         onVerticalDragCancel: widget.enabled ? () => _startN = null : null,
-        onDoubleTap: widget.enabled
+        onDoubleTap: widget.enabled && reset != null
             ? () {
                 widget.onFocus?.call();
-                widget
-                    .onInput(widget.defaultValue.clamp(widget.min, widget.max));
+                widget.onInput(reset);
               }
             : null,
         child: Opacity(

@@ -1,3 +1,4 @@
+import '../core/control_reset.dart';
 import '../design.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -386,39 +387,51 @@ class _ControlTileState extends State<_ControlTile> {
     double engineering(double v) => logarithmic
         ? control.min! * math.pow(control.max! / control.min!, v)
         : v;
+    final reset = control.numeric
+        ? numericResetValue(control.min!, control.max!,
+            nativeDefault: control.descriptor['default'])
+        : null;
     final slider = control.numeric && value != null
         ? Semantics(
             label: '${control.destinationName}, ${control.label}',
-            child: Slider(
-              min: logarithmic ? 0 : control.min!,
-              max: logarithmic ? 1 : control.max!,
-              value: position(value.clamp(control.min!, control.max!)),
-              label:
-                  '${value.toStringAsFixed(control.decimals)} ${control.unit}',
-              semanticFormatterCallback: (positionValue) =>
-                  '${engineering(positionValue).toStringAsFixed(control.decimals)} ${control.unit}'
-                  '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-              onChangeStart: enabled
-                  ? (_) {
-                      widget.onFocus(control, value, false);
-                      _dragControl = control;
-                      _dragAccessEpoch = widget.store.controlAccessEpoch;
-                    }
+            hint: enabled && reset != null
+                ? 'Double-tap to reset to $reset ${control.unit}'
+                : null,
+            child: GestureDetector(
+              onDoubleTap: enabled && reset != null
+                  ? () => _commit(control, reset)
                   : null,
-              onChanged: enabled
-                  ? (v) {
-                      setState(() => _draft = engineering(v));
-                      widget.onFocus(control, engineering(v), false);
-                    }
-                  : null,
-              onChangeEnd: enabled
-                  ? (v) {
-                      final captured = _dragControl;
-                      if (captured != null) {
-                        _commit(captured, engineering(v));
+              child: Slider(
+                min: logarithmic ? 0 : control.min!,
+                max: logarithmic ? 1 : control.max!,
+                value: position(value.clamp(control.min!, control.max!)),
+                label:
+                    '${value.toStringAsFixed(control.decimals)} ${control.unit}',
+                semanticFormatterCallback: (positionValue) =>
+                    '${engineering(positionValue).toStringAsFixed(control.decimals)} ${control.unit}'
+                    '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                onChangeStart: enabled
+                    ? (_) {
+                        widget.onFocus(control, value, false);
+                        _dragControl = control;
+                        _dragAccessEpoch = widget.store.controlAccessEpoch;
                       }
-                    }
-                  : null,
+                    : null,
+                onChanged: enabled
+                    ? (v) {
+                        setState(() => _draft = engineering(v));
+                        widget.onFocus(control, engineering(v), false);
+                      }
+                    : null,
+                onChangeEnd: enabled
+                    ? (v) {
+                        final captured = _dragControl;
+                        if (captured != null) {
+                          _commit(captured, engineering(v));
+                        }
+                      }
+                    : null,
+              ),
             ),
           )
         : null;

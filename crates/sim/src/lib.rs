@@ -166,6 +166,8 @@ pub enum SimPreset {
     /// Historical default: `CH01..CH32`, `BUS1..BUS8`.
     #[default]
     Generic,
+    /// A live-band scene for the app’s offline demonstration.
+    Demo,
     /// Behringer XR18 layout: 18 real inputs + `CH19..CH32` spare.
     Xr18,
     /// Mackie DL32S layout: 32 real inputs.
@@ -178,11 +180,12 @@ pub enum SimPreset {
 }
 
 impl SimPreset {
-    /// Parse a `--preset` flag value (`generic|xr18|dl32s|studio`,
+    /// Parse a `--preset` flag value (`generic|demo|xr18|dl32s|studio`,
     /// case-insensitive).
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "generic" | "gen" | "default" | "sim" => Some(SimPreset::Generic),
+            "demo" => Some(SimPreset::Demo),
             "xr18" | "xair" | "x-air" => Some(SimPreset::Xr18),
             "dl32s" | "dl32-s" | "dl" => Some(SimPreset::Dl32s),
             "studio" | "rig" | "home" => Some(SimPreset::Studio),
@@ -194,6 +197,7 @@ impl SimPreset {
     pub fn name(self) -> &'static str {
         match self {
             SimPreset::Generic => "generic",
+            SimPreset::Demo => "demo",
             SimPreset::Xr18 => "xr18",
             SimPreset::Dl32s => "dl32s",
             SimPreset::Studio => "studio",
@@ -201,12 +205,95 @@ impl SimPreset {
     }
 }
 
-/// XR18 input scribbles (18 physical inputs of a typical live band layout).
-/// Strips 19..=32 keep their `CHxx` spare labels.
-pub const XR18_CHANNELS: [&str; 18] = [
+/// Input labels for the live-band demo; later inputs remain parked spares.
+pub const DEMO_CHANNELS: [&str; 18] = [
     "Kick", "Snare", "Hat", "Tom 1", "Tom 2", "Floor", "OH L", "OH R", "Bass", "Gtr L", "Gtr R",
     "Keys L", "Keys R", "Vox 1", "Vox 2", "Vox 3", "Play L", "Play R",
 ];
+
+/// XR18 fixture retains its historical input labels.
+pub const XR18_CHANNELS: [&str; 18] = DEMO_CHANNELS;
+
+// Simulation-owned numeric icon choices. Symbols are OpenFader artwork keys,
+// not hardware wire IDs; other providers advertise their own mappings.
+const SIM_ICON_SYMBOLS: &[openfader_core::params::ParamSymbol] = &[
+    openfader_core::params::ParamSymbol {
+        value: 0.0,
+        label: "None",
+        symbol: "none",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1.0,
+        label: "Kick drum",
+        symbol: "kick",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 2.0,
+        label: "Snare drum",
+        symbol: "snare",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 3.0,
+        label: "Hi-hat",
+        symbol: "hihat",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 4.0,
+        label: "Tom drum",
+        symbol: "tom",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 5.0,
+        label: "Cymbals",
+        symbol: "cymbals",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 6.0,
+        label: "Bass guitar",
+        symbol: "bass1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 7.0,
+        label: "Guitar",
+        symbol: "guitar1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 8.0,
+        label: "Keyboards",
+        symbol: "keyboards",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 9.0,
+        label: "Vocal",
+        symbol: "vocal1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 10.0,
+        label: "Playback",
+        symbol: "speaker",
+    },
+];
+
+fn demo_icon(name: &str) -> f32 {
+    let label = name.to_ascii_uppercase();
+    if label.contains("HAT") {
+        3.0
+    } else if label.starts_with("OH") {
+        5.0
+    } else {
+        match chan_role(name) {
+            "kick" => 1.0,
+            "snare" => 2.0,
+            "tom" => 4.0,
+            "bass" => 6.0,
+            "gtr" => 7.0,
+            "keys" => 8.0,
+            "vox" => 9.0,
+            "playback" => 10.0,
+            _ => 0.0,
+        }
+    }
+}
 
 /// DL32S input scribbles (32 physical inputs, typical live band layout).
 pub const DL32S_CHANNELS: [&str; 32] = [
@@ -264,6 +351,10 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
     for i in 0..SIM_CHANNELS {
         let name = match preset {
             SimPreset::Generic => format!("CH{:02}", i + 1),
+            SimPreset::Demo => DEMO_CHANNELS
+                .get(i)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("CH{:02}", i + 1)),
             SimPreset::Xr18 => XR18_CHANNELS
                 .get(i)
                 .map(|s| s.to_string())
@@ -283,6 +374,10 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
         // the first poll already shows L/R placement.
         s.pan = seed_pan(i, &s.name);
         match preset {
+            SimPreset::Demo if i >= DEMO_CHANNELS.len() => {
+                s.fader = 0.0;
+                s.mute = true;
+            }
             SimPreset::Studio => {
                 // Desk-as-found scene (§2): baseline fader/mute on strips
                 // 1..16, parked spares past the 16-channel desk.
@@ -393,11 +488,11 @@ fn chan_role(name: &str) -> &'static str {
         "kick"
     } else if u.contains("SNARE") {
         "snare"
-    } else if u.contains("TOM") {
+    } else if u.contains("TOM") || u.contains("FLOOR") {
         "tom"
     } else if u.contains("HAT") || u.contains("OH ") || u.starts_with("OH") {
         "oh"
-    } else if u.contains("VOX") {
+    } else if u.contains("VOX") || u.contains("CHOIR") {
         "vox"
     } else if u.contains("GTR") {
         "gtr"
@@ -471,37 +566,70 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
         "gate_on".into(),
         b(matches!(role, "kick" | "snare" | "tom" | "drum")),
     );
-    m.insert("comp_on".into(), b(matches!(role, "bass" | "vox" | "gtr")));
-    m.insert("eq_on".into(), b(idx % 4 != 3));
-    // EQ bands with plausible freq/gain/q/type (types 0..=5 whole numbers).
-    let low_boost = if matches!(role, "bass" | "kick") {
-        3.0
-    } else {
-        (idx % 3) as f32 - 1.0
-    };
-    m.insert("eq1_gain".into(), f(low_boost));
-    m.insert("eq1_freq".into(), f(100.0));
-    m.insert("eq1_q".into(), f(1.0));
-    m.insert("eq1_type".into(), f(1.0));
-    m.insert("eq2_gain".into(), f(if role == "vox" { 2.0 } else { 0.0 }));
-    m.insert("eq2_freq".into(), f(800.0 + (idx % 4) as f32 * 100.0));
-    m.insert("eq2_q".into(), f(1.2));
-    m.insert("eq2_type".into(), f(2.0));
     m.insert(
-        "eq3_gain".into(),
-        f(if matches!(role, "gtr" | "keys") {
-            2.0
-        } else {
-            0.0
-        }),
+        "comp_on".into(),
+        b(matches!(role, "bass" | "vox" | "gtr" | "kick" | "snare")),
     );
-    m.insert("eq3_freq".into(), f(3000.0));
-    m.insert("eq3_q".into(), f(1.4));
-    m.insert("eq3_type".into(), f(2.0));
-    m.insert("eq4_gain".into(), f(if role == "vox" { 1.0 } else { 0.0 }));
-    m.insert("eq4_freq".into(), f(12000.0));
-    m.insert("eq4_q".into(), f(0.7));
-    m.insert("eq4_type".into(), f(4.0));
+    m.insert("eq_on".into(), b(true));
+    // Starting points for a live band, in engineering units. These are
+    // demonstration settings, not measurements of actual instruments.
+    let bands: [(f32, f32, f32); 4] = match role {
+        "kick" => [
+            (65.0, 3.0, 0.8),
+            (320.0, -4.0, 1.2),
+            (3500.0, 3.0, 1.0),
+            (10000.0, -1.0, 0.7),
+        ],
+        "snare" => [
+            (120.0, 2.0, 0.9),
+            (500.0, -3.0, 1.2),
+            (2500.0, 3.0, 1.0),
+            (9000.0, 2.0, 0.7),
+        ],
+        "tom" => [
+            (90.0, 3.0, 0.9),
+            (400.0, -3.0, 1.2),
+            (4000.0, 2.5, 1.0),
+            (10000.0, 1.0, 0.7),
+        ],
+        "bass" => [
+            (80.0, 2.0, 0.8),
+            (250.0, -2.5, 1.1),
+            (900.0, 1.5, 1.0),
+            (5000.0, -2.0, 0.7),
+        ],
+        "vox" => [
+            (150.0, -2.0, 0.8),
+            (350.0, -3.0, 1.2),
+            (3200.0, 2.5, 1.0),
+            (11000.0, 2.0, 0.7),
+        ],
+        "gtr" => [
+            (120.0, -2.0, 0.8),
+            (300.0, -2.5, 1.1),
+            (2500.0, 2.0, 1.0),
+            (8000.0, -1.0, 0.7),
+        ],
+        "oh" => [
+            (180.0, -2.0, 0.8),
+            (500.0, -2.0, 1.1),
+            (4000.0, 1.0, 1.0),
+            (10000.0, 2.0, 0.7),
+        ],
+        _ => [
+            (120.0, -1.0, 0.8),
+            (400.0, -1.5, 1.0),
+            (3000.0, 1.0, 1.0),
+            (10000.0, 1.0, 0.7),
+        ],
+    };
+    for (band, (freq, gain, q)) in bands.into_iter().enumerate() {
+        let n = band + 1;
+        m.insert(format!("eq{n}_freq"), f(freq));
+        m.insert(format!("eq{n}_gain"), f(gain));
+        m.insert(format!("eq{n}_q"), f(q));
+        m.insert(format!("eq{n}_type"), f([1.0, 2.0, 2.0, 4.0][band]));
+    }
     // A few sends non-zero (vox to monitors/FX, band to monitors);
     // everything else parks at -inf (-90 dB). Mutes stay off. The generic
     // `sendN_*` ids mirror the legacy aux/fx slots (send1..6 = aux1..6 bus
@@ -543,8 +671,8 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     m.insert("hpf_slope".into(), f(0.0));
     // Gate full set: plausible per-role scene (drums gated, others open).
     let gated = matches!(role, "kick" | "snare" | "tom" | "drum");
-    m.insert("gate_thr".into(), f(if gated { -30.0 } else { -50.0 }));
-    m.insert("gate_range".into(), f(60.0));
+    m.insert("gate_thr".into(), f(if gated { -24.0 } else { -50.0 }));
+    m.insert("gate_range".into(), f(if gated { 15.0 } else { 60.0 }));
     m.insert("gate_att".into(), f(1.0));
     m.insert("gate_hold".into(), f(50.0));
     m.insert("gate_rel".into(), f(100.0));
@@ -552,7 +680,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     m.insert("gate_key_src".into(), f(0.0));
     m.insert("gate_key_filter".into(), f(0.0));
     // Comp full set: bass/vox/gtr compressed (matches comp_on above).
-    let compressed = matches!(role, "bass" | "vox" | "gtr");
+    let compressed = matches!(role, "bass" | "vox" | "gtr" | "kick" | "snare");
     m.insert("comp_thr".into(), f(if compressed { -20.0 } else { -10.0 }));
     m.insert("comp_ratio".into(), f(if compressed { 4.0 } else { 2.0 }));
     m.insert("comp_knee".into(), f(3.0));
@@ -848,7 +976,14 @@ impl SimDriver {
             .map(|(i, s)| {
                 let kind = kind_of_strip(i).expect("topology covers every strip");
                 if i < SIM_CHANNELS {
-                    seed_params_for(i, &s.name)
+                    let mut values = seed_params_for(i, &s.name);
+                    // Demo labels are independent inputs; adjacent stereo pairs
+                    // are not implied by their names.
+                    if preset == SimPreset::Demo {
+                        values.insert("link".into(), ParamValue::Bool(false));
+                        values.insert("icon".into(), ParamValue::Float(demo_icon(&s.name)));
+                    }
+                    values
                 } else {
                     seed_params_for_family(i, &s.name, kind)
                 }
@@ -973,14 +1108,52 @@ impl SimDriver {
             .wrapping_add(self.tick_offset.load(Ordering::Relaxed))
     }
 
-    fn input_db(i: usize, tick: u64) -> f32 {
-        // Slow, staggered phrases instead of full-scale rhythmic flashing.
-        let t = tick as f32 * 0.025;
-        let ph = i as f32 * 0.7;
-        let rate = 0.65 + (i % 5) as f32 * 0.07;
-        let phrase = (0.5 + 0.35 * (t * rate + ph).sin() + 0.15 * (t * 1.7 + ph * 1.3).sin())
-            .clamp(0.0, 1.0);
-        -36.0 + 24.0 * phrase
+    fn raw_input_level(i: usize, name: &str, tick: u64) -> f32 {
+        let t = tick as f32 * 0.05;
+        let role = chan_role(name);
+        // A deterministic arrangement with sharp drum attacks and decays,
+        // intermittent vocal phrases and less regular instrument envelopes.
+        let beat = t * 2.0;
+        let pulse = |phase: f32, decay: f32| (-((beat + phase).fract()) * decay).exp();
+        let variation = |speed: f32| {
+            (0.5 + 0.25 * (t * speed + i as f32).sin()
+                + 0.15 * (t * speed * 2.37 + i as f32 * 0.7).sin())
+            .clamp(0.05, 1.0)
+        };
+        match role {
+            "kick" => 0.045 + 0.22 * pulse(0.0, 4.0),
+            "snare" => 0.040 + 0.20 * pulse(0.5, 4.5),
+            "tom" => {
+                0.035
+                    + 0.18
+                        * pulse(i as f32 * 0.13, 8.0)
+                        * ((t * 0.19 + i as f32).sin().max(0.0)).powi(8)
+            }
+            "oh" => 0.025 + 0.12 * pulse(0.0, 5.0) + 0.07 * variation(2.7),
+            "vox" => {
+                0.025
+                    + 0.25
+                        * variation(2.4)
+                        * ((t * 0.55 + i as f32).sin() * 1.8 + 0.5).clamp(0.0, 1.0)
+            }
+            "bass" => 0.015 + 0.25 * pulse(0.0, 2.0) * variation(1.4),
+            "gtr" | "keys" => 0.012 + 0.23 * variation(1.8) * (0.55 + 0.45 * pulse(0.0, 2.0)),
+            _ => 0.015 + 0.16 * variation(1.3),
+        }
+    }
+
+    fn input_db(i: usize, name: &str, tick: u64) -> f32 {
+        // Ballistic smoothing is derived from the shared clock, so reads of
+        // meters, taps and spectrum agree without adding another ticker.
+        // A short weighted history softens both attacks and releases.
+        let mut total = 0.0;
+        let mut weight_sum = 0.0;
+        for age in 0..12 {
+            let weight = 0.82_f32.powi(age as i32);
+            total += weight * Self::raw_input_level(i, name, tick.saturating_sub(age));
+            weight_sum += weight;
+        }
+        20.0 * (total / weight_sum).log10()
     }
 
     fn meter_level(&self, i: usize, tick: u64) -> f32 {
@@ -994,11 +1167,11 @@ impl SimDriver {
         // Pre-mute signal preview, like the desk's own level stream
         // (XR18 `/meters/1` stays hot while channels sit muted): mute
         // never hides the input here, the mute button shows the state.
-        10.0_f32.powf(Self::input_db(i, tick) / 20.0) * strip.fader
+        10.0_f32.powf(Self::input_db(i, &strip.name, tick) / 20.0) * strip.fader
     }
 
-    /// Demo-only frequency display: fixed logarithmic-band peaks with a slow
-    /// level envelope. Never FFT the handful of control-rate meter samples or
+    /// Demo-only frequency display: source-shaped logarithmic-band peaks
+    /// with an animated level envelope. Never FFT the handful of control-rate meter samples or
     /// normalize each frame, which makes tiny timing differences look full scale.
     pub fn demo_spectrum(&self, ch: usize) -> Vec<f32> {
         let level = self.meter_level(ch, self.signal_tick());
@@ -1006,15 +1179,28 @@ impl SimDriver {
             return vec![0.0; 64];
         }
         let envelope = ((20.0 * level.log10() + 90.0) / 70.0).clamp(0.0, 1.0);
+        let strips = self.read();
+        let role = strips
+            .get(ch)
+            .map(|s| chan_role(&s.name))
+            .unwrap_or("other");
+        let (low, mid, high) = match role {
+            "kick" | "bass" => (1.0, 0.35, 0.08),
+            "snare" | "tom" => (0.55, 0.8, 0.38),
+            "oh" => (0.12, 0.5, 0.8),
+            "vox" => (0.25, 0.9, 0.4),
+            _ => (0.4, 0.7, 0.35),
+        };
+        let t = self.signal_tick() as f32 * 0.05;
         (0..64)
             .map(|bin| {
                 let x = bin as f32;
                 let peak = |center: f32, width: f32| (-0.5 * ((x - center) / width).powi(2)).exp();
-                let profile = 0.012
-                    + 0.92 * peak(12.0 + (ch % 3) as f32, 3.0)
-                    + 0.55 * peak(23.0 + (ch % 4) as f32, 3.8)
-                    + 0.20 * peak(34.0, 5.0);
-                let texture = 0.85 + 0.15 * (x * 1.9 + ch as f32 * 0.7).cos();
+                let profile =
+                    0.012 + low * peak(12.0, 4.0) + mid * peak(25.0, 6.0) + high * peak(39.0, 7.0);
+                let texture = 0.86
+                    + 0.08 * (x * 1.9 + ch as f32 * 0.7 + t * 1.2).cos()
+                    + 0.06 * (x * 0.71 - t * 1.7).sin();
                 (profile * texture * envelope).clamp(0.0, 1.0)
             })
             .collect()
@@ -1157,7 +1343,7 @@ impl SimDriver {
                         gr_comp_db: 0.0,
                     };
                 }
-                let input_db = Self::input_db(i, tick);
+                let input_db = Self::input_db(i, &strips[i].name, tick);
                 let input = 10.0_f32.powf(input_db / 20.0);
                 let s = &strips[i];
                 let post = if s.mute { 0.0 } else { input * s.fader };
@@ -1454,6 +1640,14 @@ impl MixerDriver for SimDriver {
                 .chain(self.param_defs().iter().map(|d| d.id))
                 .collect()
         })
+    }
+
+    fn param_symbols(&self, param: &str) -> &'static [openfader_core::params::ParamSymbol] {
+        if param == "icon" {
+            SIM_ICON_SYMBOLS
+        } else {
+            &[]
+        }
     }
 
     fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import '../boot/desktop_host.dart';
 import 'dart:math';
 import 'package:flutter/services.dart';
@@ -63,15 +62,12 @@ class ShellRecorderStore extends RecorderStore {
   @override
   List<String> get remoteClients => _remoteClients;
   @override
-  String? get pairingJson => _pairingJson;
-  @override
   String? get remoteError => _remoteError;
   @override
   bool get remotePending => _remotePending;
   Map<String, dynamic> _remoteStatus = {};
   List<String> _remoteClients = [];
-  String? _pairingJson, _remoteError;
-  DateTime? _pairingExpiry;
+  String? _remoteError;
   bool _remotePending = false, _remoteRefreshing = false;
   DateTime _remoteLastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -99,10 +95,6 @@ class ShellRecorderStore extends RecorderStore {
       _remoteClients = (clients['clients'] is List)
           ? (clients['clients'] as List).whereType<String>().toList()
           : [];
-      if (status['enabled'] != true) {
-        _pairingJson = null;
-        _pairingExpiry = null;
-      }
     } catch (e) {
       _remoteError = 'Remote administration: $e';
     } finally {
@@ -114,27 +106,15 @@ class ShellRecorderStore extends RecorderStore {
   @override
   Future<void> remoteAction(String action, [String? value]) async {
     if (!canAdminRemote || _remotePending) return;
-    InternetAddress? address;
-    if (action == 'enable' || action == 'pairing') {
-      address = InternetAddress.tryParse(value?.trim() ?? '');
-      if (address == null ||
-          address.type != InternetAddressType.IPv4 ||
-          address.isLoopback ||
-          address.rawAddress.every((b) => b == 0) ||
-          (address.type == InternetAddressType.IPv6 &&
-              address.rawAddress.take(12).every((b) => b == 0) &&
-              address.rawAddress[12] == 127)) {
-        _remoteError =
-            'Enter a numeric LAN IPv4 address that is not loopback or unspecified.';
-        _notify();
-        return;
-      }
-    }
     _remotePending = true;
     _remoteError = null;
     _notify();
     try {
       if (action == 'allowRecording') {
+        if (!Platform.isMacOS) {
+          throw StateError(
+              'Microphone access is managed by the operating system and audio interface driver.');
+        }
         final status = await _microphonePermission(request: true);
         if (status != 'authorized') {
           throw StateError(
@@ -142,38 +122,14 @@ class ShellRecorderStore extends RecorderStore {
         }
         return;
       }
-      final result = await (host as DesktopHost).remoteAdminRequest(action,
+      await (host as DesktopHost).remoteAdminRequest(action,
           body: action == 'enable'
               ? {'ip': '0.0.0.0'}
-              : action == 'revoke'
-                  ? {'client_id': value}
-                  : {});
-      if (action == 'disable') {
-        _pairingJson = null;
-        _pairingExpiry = null;
-      }
-      if (action == 'pairing') {
-        final port = result['port'];
-        final fingerprint = result['fingerprint'];
-        final secret = result['secret'];
-        final expires = result['expires_in'];
-        if (port is! int ||
-            fingerprint is! String ||
-            secret is! String ||
-            expires is! num) {
-          throw const FormatException('Invalid pairing response');
-        }
-        final hostname = address!.type == InternetAddressType.IPv6
-            ? '[${address.address}]'
-            : address.address;
-        _pairingJson = jsonEncode({
-          'endpoint': 'https://$hostname:$port',
-          'fingerprint': fingerprint,
-          'secret': secret
-        });
-        _pairingExpiry = DateTime.now()
-            .add(Duration(milliseconds: (expires * 1000).floor()));
-      }
+              : action == 'password'
+                  ? {'password': value ?? ''}
+                  : action == 'revoke'
+                      ? {'client_id': value}
+                      : {});
     } catch (e) {
       _remoteError = 'Remote administration: $e';
     } finally {
@@ -184,11 +140,6 @@ class ShellRecorderStore extends RecorderStore {
   }
 
   void tick() {
-    if (_pairingExpiry != null && !DateTime.now().isBefore(_pairingExpiry!)) {
-      _pairingJson = null;
-      _pairingExpiry = null;
-      _notify();
-    }
     if (canAdminRemote &&
         DateTime.now().difference(_remoteLastRefresh) >=
             const Duration(seconds: 2)) {

@@ -145,22 +145,21 @@ class _InputTab extends StatelessWidget {
                   store.inputSource?.editable == true;
               return AlertDialog(
                   title: const Text('Input source'),
+                  scrollable: true,
                   content: SizedBox(
                       width: 420,
-                      height:
-                          math.min(480, snapshot.choices.length * 56.0 + 16),
-                      child: ListView(shrinkWrap: true, children: [
-                        for (final option in snapshot.choices)
-                          ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(option.selected
-                                  ? Icons.radio_button_checked
-                                  : Icons.radio_button_unchecked),
-                              title: Text(option.label),
-                              selected: option.selected,
-                              onTap: current && !option.selected
-                                  ? () => Navigator.pop(dialogContext, option)
-                                  : null),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        CompactChoicePicker<ChannelInputSourceChoice>(
+                            choices: snapshot.choices,
+                            label: (option) => option.label,
+                            selected: (option) => option.selected,
+                            onSelected: current
+                                ? (option) {
+                                    if (!option.selected) {
+                                      Navigator.pop(dialogContext, option);
+                                    }
+                                  }
+                                : null),
                         if (!current)
                           const Text(
                               'The source or connection changed. Reopen this control.'),
@@ -193,40 +192,42 @@ class _InputTab extends StatelessWidget {
                           store.inputInsert?.editable == true;
                   return AlertDialog(
                       title: const Text('Insert'),
+                      scrollable: true,
                       content: SizedBox(
                           width: 420,
                           child:
                               Column(mainAxisSize: MainAxisSize.min, children: [
-                            for (final option in snapshot.choices)
-                              ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Icon(option.value == snapshot.value
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_unchecked),
-                                  title: Text(option.label),
-                                  selected: option.value == snapshot.value,
-                                  onTap: current &&
-                                          !sending &&
-                                          option.value != snapshot.value
-                                      ? () async {
-                                          setLocalState(() {
-                                            sending = true;
-                                            error = null;
-                                          });
-                                          final result =
-                                              await store.setInputInsert(
-                                                  snapshot, option.value);
-                                          if (!dialogContext.mounted) return;
-                                          if (result == null) {
-                                            Navigator.pop(dialogContext);
-                                          } else {
-                                            setLocalState(() {
-                                              sending = false;
-                                              error = result;
-                                            });
-                                          }
+                            CompactChoicePicker<DestinationChoiceVm>(
+                                choices: snapshot.choices,
+                                label: (option) => option.label,
+                                selected: (option) =>
+                                    option.value == snapshot.value,
+                                onSelected: current && !sending
+                                    ? (option) async {
+                                        if (option.value == snapshot.value) {
+                                          return;
                                         }
-                                      : null),
+                                        setLocalState(() {
+                                          sending = true;
+                                          error = null;
+                                        });
+                                        final result =
+                                            await store.setInputInsert(
+                                                snapshot, option.value);
+                                        if (!dialogContext.mounted) return;
+                                        if (result == null) {
+                                          Navigator.pop(dialogContext);
+                                        } else {
+                                          setLocalState(() {
+                                            sending = false;
+                                            error = result;
+                                          });
+                                        }
+                                      }
+                                    : null),
+                            if (!current)
+                              const Text(
+                                  'The channel or connection changed. Reopen this control.'),
                             if (sending) const LinearProgressIndicator(),
                             if (error != null) ...[
                               const SizedBox(height: 8),
@@ -854,6 +855,10 @@ class _InputPreampControl extends StatelessWidget {
         fillFromStart: true,
         solidFill: true,
         value: value ?? range?.min ?? 0,
+        resetValue: range == null
+            ? null
+            : numericResetValue(range.min, range.max,
+                nativeDefault: metadata?['default']),
         min: range?.min ?? 0,
         max: range?.max ?? 1,
         text: text,

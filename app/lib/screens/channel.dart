@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
 import '../core/channel_views.dart';
+import '../core/control_reset.dart';
 import '../core/audio_spectrum_peaks.dart';
 import '../engine.dart' show AudioSpectrumFrame;
 import '../settings/prefs.dart';
@@ -26,6 +27,7 @@ import '../u4law.dart';
 import '../widgets/channel_widgets.dart';
 import '../widgets/processor_preset_library.dart';
 import '../widgets/destination_control_editor.dart';
+import '../widgets/compact_choice_picker.dart';
 
 part 'processing_input.dart';
 part 'channel_controls.dart';
@@ -51,6 +53,9 @@ abstract class ChannelStore extends ChangeNotifier
 
   /// Live fader notifier for the toolbar readout + typed entry.
   ValueNotifier<double> faderNote();
+
+  /// Typed dB bounds supported by the provider and current UI conversion.
+  List<double>? get faderEntryRange => null;
 
   /// Move this channel's fader to an absolute dB value.
   void setFaderDb(double db);
@@ -233,6 +238,7 @@ class ChannelPage extends StatefulWidget {
 
 class _ChannelPageState extends State<ChannelPage> {
   double _motionDirection = 1;
+  Axis _motionAxis = Axis.vertical;
   final _swipePointers = <int>{};
   bool _swipeMultiTouch = false;
   double _swipeDistance = 0;
@@ -267,7 +273,9 @@ class _ChannelPageState extends State<ChannelPage> {
   }
 
   void _switchTab(ChannelStore store, ChannelTab tab) {
-    _motionDirection = tab.index >= store.tab.index ? 1 : -1;
+    _motionAxis = Axis.vertical;
+    // Follow the gesture: the next processor enters from above on a down swipe.
+    _motionDirection = tab.index >= store.tab.index ? -1 : 1;
     store.setTab(tab);
     _focus.value =
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
@@ -296,6 +304,7 @@ class _ChannelPageState extends State<ChannelPage> {
       return;
     }
     if (axis == Axis.horizontal) {
+      _motionAxis = Axis.horizontal;
       _motionDirection = distance < 0 ? 1 : -1;
       widget.onChannelStep?.call(distance < 0 ? 1 : -1);
       return;
@@ -486,6 +495,7 @@ class _ChannelPageState extends State<ChannelPage> {
                                           selectedTab
                                         ),
                                             direction: _motionDirection,
+                                            axis: _motionAxis,
                                             child: content)),
                                     if (!wide)
                                       _BottomNav(
@@ -509,9 +519,13 @@ class _ChannelPageState extends State<ChannelPage> {
 class _ChannelContentMotion extends StatefulWidget {
   final Object identity;
   final double direction;
+  final Axis axis;
   final Widget child;
   const _ChannelContentMotion(
-      {required this.identity, required this.direction, required this.child});
+      {required this.identity,
+      required this.direction,
+      required this.axis,
+      required this.child});
 
   @override
   State<_ChannelContentMotion> createState() => _ChannelContentMotionState();
@@ -522,12 +536,14 @@ class _ChannelContentMotionState extends State<_ChannelContentMotion>
   late final _animation = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 160), value: 1);
   double _direction = 1;
+  Axis _axis = Axis.vertical;
 
   @override
   void didUpdateWidget(covariant _ChannelContentMotion oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.identity != widget.identity) {
       _direction = widget.direction;
+      _axis = widget.axis;
       if (MediaQuery.disableAnimationsOf(context)) {
         _animation.value = 1;
       } else {
@@ -552,7 +568,9 @@ class _ChannelContentMotionState extends State<_ChannelContentMotion>
                 ? 1.0
                 : Curves.easeOutCubic.transform(_animation.value);
             return FractionalTranslation(
-                translation: Offset((1 - progress) * .12 * _direction, 0),
+                translation: _axis == Axis.vertical
+                    ? Offset(0, (1 - progress) * .12 * _direction)
+                    : Offset((1 - progress) * .12 * _direction, 0),
                 child: Opacity(opacity: .65 + .35 * progress, child: child));
           }));
 }

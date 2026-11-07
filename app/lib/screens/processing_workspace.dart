@@ -83,6 +83,8 @@ class _ProcessingSlider extends StatefulWidget {
   final Color? color;
   final Color? valueColor;
   final VoidCallback? onFocus;
+  final double? resetValue;
+  final bool resetEnabled;
   final ValueChanged<double> onChanged;
   const _ProcessingSlider(
       {required this.label,
@@ -94,6 +96,8 @@ class _ProcessingSlider extends StatefulWidget {
       this.fontSize = 14,
       this.trailing,
       this.onFocus,
+      this.resetValue,
+      this.resetEnabled = true,
       this.enabled = true,
       this.pan = false,
       this.showLabel = true,
@@ -116,6 +120,15 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
   Widget build(BuildContext context) {
     final color = widget.color ?? ConsolePalette.of(context).cyan;
     final v = _drag ?? widget.value;
+    final candidate =
+        widget.resetValue ?? numericResetValue(widget.min, widget.max);
+    final reset = widget.resetEnabled &&
+            candidate != null &&
+            candidate.isFinite &&
+            candidate >= widget.min &&
+            candidate <= widget.max
+        ? candidate
+        : null;
     final track = Row(children: [
       Expanded(
           child: LayoutBuilder(
@@ -124,11 +137,18 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                   enabled: widget.enabled,
                   label: widget.label,
                   value: widget.text,
+                  hint: widget.enabled && reset != null
+                      ? 'Double-tap to reset to $reset'
+                      : null,
                   increasedValue: widget.enabled
-                      ? (v + (widget.max - widget.min) / 100).clamp(widget.min, widget.max).toStringAsFixed(2)
+                      ? (v + (widget.max - widget.min) / 100)
+                          .clamp(widget.min, widget.max)
+                          .toStringAsFixed(2)
                       : null,
                   decreasedValue: widget.enabled
-                      ? (v - (widget.max - widget.min) / 100).clamp(widget.min, widget.max).toStringAsFixed(2)
+                      ? (v - (widget.max - widget.min) / 100)
+                          .clamp(widget.min, widget.max)
+                          .toStringAsFixed(2)
                       : null,
                   onIncrease: widget.enabled
                       ? () {
@@ -147,6 +167,12 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                   child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: widget.enabled ? _focusControl : null,
+                      onDoubleTap: widget.enabled && reset != null
+                          ? () {
+                              _focusControl();
+                              widget.onChanged(reset);
+                            }
+                          : null,
                       onHorizontalDragStart: widget.enabled
                           ? (_) {
                               widget.onFocus?.call();

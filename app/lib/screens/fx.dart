@@ -3,11 +3,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 
 import '../ui/console.dart';
 import '../core/selected_control_readout.dart';
 import '../core/destination_controls.dart';
 import '../widgets/number_entry.dart';
+import '../widgets/compact_choice_picker.dart';
+import '../core/control_reset.dart';
 
 class FxKnobVm {
   final String id;
@@ -269,17 +272,28 @@ class _U4FxPageState extends State<U4FxPage> {
                   final slot = target.slot!;
                   final double? value;
                   if (knob.choices.isNotEmpty) {
-                    value = await showDialog<double>(
-                        animationStyle: AnimationStyle.noAnimation,
+                    final choice = await showCompactChoiceDialog<int>(
                         context: context,
-                        builder: (context) =>
-                            SimpleDialog(title: Text(knob.label), children: [
-                              for (var i = 0; i < knob.choices.length; i++)
-                                SimpleDialogOption(
-                                    onPressed: () =>
-                                        Navigator.pop(context, i.toDouble()),
-                                    child: Text(knob.choices[i]))
-                            ]));
+                        title: knob.label,
+                        choices: List.generate(
+                            knob.choices.length, (index) => index),
+                        label: (index) => knob.choices[index],
+                        selected: (index) =>
+                            index.toDouble() == knob.entryValue,
+                        changes: store,
+                        isCurrent: () =>
+                            mounted &&
+                            epoch == store.controlAccessEpoch &&
+                            session == store.controlSession &&
+                            _focusedTarget == target.key &&
+                            _focusedId == knob.id &&
+                            store.selected < store.slots.length &&
+                            store.slots[store.selected].slot == slot.slot &&
+                            store.slots[store.selected].type == slot.type &&
+                            store.knobs.any((candidate) =>
+                                candidate.id == knob.id &&
+                                listEquals(candidate.choices, knob.choices)));
+                    value = choice?.toDouble();
                   } else {
                     value = await showNumberEntry(
                         context: context,
@@ -302,6 +316,7 @@ class _U4FxPageState extends State<U4FxPage> {
                       store.slots[store.selected].type != slot.type ||
                       !store.knobs.any((k) =>
                           k.id == knob.id &&
+                          listEquals(k.choices, knob.choices) &&
                           k.min == knob.min &&
                           k.max == knob.max &&
                           k.entryMin == knob.entryMin &&
@@ -443,13 +458,18 @@ class _NativeFxDetail extends StatelessWidget {
     onFocus(control.id);
     final epoch = store.controlAccessEpoch;
     final session = store.controlSession;
-    final value = await showAnchoredMenu<double>(anchor, [
-      for (final choice in control.choices)
-        CheckedPopupMenuItem<double>(
-            value: choice.value,
-            checked: choice.value == control.value,
-            child: Text(choice.label)),
-    ]);
+    final choice = await showCompactChoiceDialog<DestinationChoiceVm>(
+        context: anchor,
+        title: '${control.label} · ${control.destinationName}',
+        choices: control.choices,
+        label: (choice) => choice.label,
+        selected: (choice) => choice.value == control.value,
+        changes: store,
+        isCurrent: () =>
+            epoch == store.controlAccessEpoch &&
+            session == store.controlSession &&
+            store.destinationControlIsCurrent(control));
+    final value = choice?.value;
     if (value == null ||
         !anchor.mounted ||
         epoch != store.controlAccessEpoch ||
@@ -545,6 +565,10 @@ class _NativeFxDetail extends StatelessWidget {
                       ? 0.01
                       : control.step! / (control.max! - control.min!),
                   enabled: store.destinationControlIsCurrent(control),
+                  resetFraction: control.numeric && control.max! > control.min!
+                      ? _resetFraction(control.min!, control.max!,
+                          nativeDefault: control.descriptor['default'])
+                      : null,
                   onTap: () => onFocus(control.id),
                   onChange: control.numeric
                       ? (fraction) => _apply(
@@ -616,21 +640,34 @@ class _LegacyFxDetail extends StatelessWidget {
       ]),
       const SizedBox(height: AppDesign.spaceMd),
       if (store.typeOptions.isNotEmpty)
-        DropdownButton<String>(
-          isExpanded: true,
-          value: store.typeOptions.contains(slot.type) ? slot.type : null,
-          hint: Text(store.typeLabel(slot.type)),
-          items: [
-            for (final type in store.typeOptions)
-              DropdownMenuItem(
-                  value: type,
-                  child: Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: Text(store.typeLabel(type),
-                          maxLines: 1, overflow: TextOverflow.ellipsis))),
-          ],
-          onChanged: (type) {
-            if (type != null && type != slot.type) store.setType(type);
+        OutlinedButton.icon(
+          icon: const Icon(Icons.expand_more),
+          label: Text(store.typeLabel(slot.type)),
+          onPressed: () async {
+            final epoch = store.controlAccessEpoch;
+            final session = store.controlSession;
+            final options = List<String>.of(store.typeOptions);
+            bool current() =>
+                epoch == store.controlAccessEpoch &&
+                session == store.controlSession &&
+                store.selected < store.slots.length &&
+                store.slots[store.selected].slot == slot.slot &&
+                store.slots[store.selected].type == slot.type;
+            final type = await showCompactChoiceDialog<String>(
+                context: context,
+                title: '${slot.name} · Effect type',
+                choices: options,
+                label: store.typeLabel,
+                selected: (type) => type == slot.type,
+                changes: store,
+                isCurrent: current);
+            if (context.mounted &&
+                type != null &&
+                current() &&
+                type != slot.type &&
+                store.typeOptions.contains(type)) {
+              store.setType(type);
+            }
           },
         ),
       const SizedBox(height: AppDesign.spaceMd),
@@ -646,6 +683,9 @@ class _LegacyFxDetail extends StatelessWidget {
                       .clamp(0, 1)
                   : 0,
               enabled: true,
+              resetFraction: knob.choices.isEmpty
+                  ? _resetFraction(knob.min, knob.max)
+                  : null,
               onTap: () => onFocus(knob.id),
               onChange: (fraction) {
                 onFocus(knob.id);
@@ -723,11 +763,17 @@ class _KnobLayout extends StatelessWidget {
       });
 }
 
+double? _resetFraction(double min, double max, {Object? nativeDefault}) {
+  final reset = numericResetValue(min, max, nativeDefault: nativeDefault);
+  return reset == null || max <= min ? null : (reset - min) / (max - min);
+}
+
 class _FxRotary extends StatefulWidget {
   final String label;
   final String text;
   final double fraction;
   final double increment;
+  final double? resetFraction;
   final bool enabled;
   final ValueChanged<double>? onChange;
   final VoidCallback? onTap;
@@ -737,6 +783,7 @@ class _FxRotary extends StatefulWidget {
       required this.text,
       required this.fraction,
       this.increment = 0.01,
+      this.resetFraction,
       required this.enabled,
       this.onChange,
       this.onTap});
@@ -757,6 +804,9 @@ class _FxRotaryState extends State<_FxRotary> {
         slider: adjustable,
         enabled: widget.enabled,
         label: '${widget.label}, ${widget.text}',
+        hint: adjustable && widget.resetFraction != null
+            ? 'Double-tap to reset'
+            : null,
         value: '${(widget.fraction * 100).round()}%',
         increasedValue: adjustable
             ? '${((widget.fraction + widget.increment).clamp(0, 1) * 100).round()}%'
@@ -771,6 +821,12 @@ class _FxRotaryState extends State<_FxRotary> {
             child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: widget.enabled ? widget.onTap : null,
+                onDoubleTap: adjustable && widget.resetFraction != null
+                    ? () {
+                        widget.onTap?.call();
+                        widget.onChange!(widget.resetFraction!);
+                      }
+                    : null,
                 onVerticalDragStart: adjustable
                     ? (_) {
                         _drag = widget.fraction;

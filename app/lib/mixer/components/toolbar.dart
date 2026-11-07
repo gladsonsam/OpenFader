@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../controller.dart';
 import '../../u4law.dart';
-import '../../widgets/number_entry.dart';
+import 'package:flutter/services.dart';
 import '../../ui/console.dart';
 
 class MixerToolbar extends StatelessWidget {
@@ -13,6 +13,7 @@ class MixerToolbar extends StatelessWidget {
 
   /// Persistent workspace home (top-left brand button).
   final VoidCallback? onHome;
+  final String homeLabel;
   final VoidCallback? onOpenTools;
   final Widget? readoutContent;
   final String? pageTitle;
@@ -22,6 +23,7 @@ class MixerToolbar extends StatelessWidget {
       required this.controller,
       required this.onNavigate,
       this.onHome,
+      this.homeLabel = 'Mixer',
       this.onOpenTools,
       this.readoutContent,
       this.pageTitle,
@@ -60,6 +62,8 @@ class MixerToolbar extends StatelessWidget {
                                     alignment: Alignment.centerRight,
                                     child: TextButton(
                                         style: TextButton.styleFrom(
+                                            alignment: Alignment.centerRight,
+                                            padding: EdgeInsets.zero,
                                             backgroundColor:
                                                 Colors.transparent),
                                         onPressed: () => onNavigate(
@@ -171,10 +175,11 @@ class MixerToolbar extends StatelessWidget {
             border: Border(
                 bottom: BorderSide(color: ConsolePalette.of(context).line))),
         child: Row(children: [
-          // The brand button always returns to Mixer.
+          // The shell supplies the next destination in its navigation chain.
           _BrandButton(
               compact: compact,
               onHome: onHome,
+              label: homeLabel,
               trailingGap: compact ? 6.0 : 0.0),
           Expanded(
               child: compact
@@ -202,7 +207,7 @@ class MixerToolbar extends StatelessWidget {
                   color: ConsolePalette.of(context).mutedText)),
           const SizedBox(width: AppDesign.spaceSm),
           SizedBox(
-              width: compact ? 48 : null,
+              width: compact ? 48 : 80,
               height: AppDesign.touchTarget,
               child: OutlinedButton(
                   onPressed: pageTitle == 'Tools' ? onHome : onOpenTools,
@@ -268,7 +273,7 @@ String _controlLabel(MixerReadoutControl control, {String? sendMix}) =>
     };
 
 /// Only this readout follows focus changes and live fader/pan writes.
-class _SelectedLevel extends StatelessWidget {
+class _SelectedLevel extends StatefulWidget {
   final MixerController controller;
   final MixerChannel? channel;
   final MixerReadoutControl control;
@@ -280,9 +285,131 @@ class _SelectedLevel extends StatelessWidget {
       required this.compact});
 
   @override
+  State<_SelectedLevel> createState() => _SelectedLevelState();
+}
+
+class _SelectedLevelState extends State<_SelectedLevel> {
+  final _text = TextEditingController();
+  final _focus = FocusNode();
+  bool _editing = false;
+  int? _epoch;
+  String? _mixTarget;
+  String? _editKey;
+  MixerReadoutControl? _editControl;
+  String? _error;
+  MixerController get controller => widget.controller;
+  MixerChannel? get channel => widget.channel;
+  MixerReadoutControl get control => widget.control;
+  bool get compact => widget.compact;
+
+  @override
+  void didUpdateWidget(covariant _SelectedLevel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channel?.key != channel?.key ||
+        oldWidget.control != control) {
+      _editing = false;
+      _focus.unfocus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _begin() {
+    final ch = channel;
+    if (ch == null) return;
+    final initial = switch (control) {
+      MixerReadoutControl.volume =>
+        posToDb(controller.faderNoteOf(ch.channel, ch.master).value),
+      MixerReadoutControl.pan => controller.panNoteOf(ch.channel!).value * 100,
+      MixerReadoutControl.gain => (ch.params['gain'] as num?)?.toDouble() ?? 0,
+    };
+    _epoch = controller.store.connectionEpoch;
+    _mixTarget = controller.store.masterProcessingTarget;
+    _editKey = ch.key;
+    _editControl = control;
+    _text.text = initial.isFinite ? initial.toStringAsFixed(1) : '-inf';
+    _text.selection =
+        TextSelection(baseOffset: 0, extentOffset: _text.text.length);
+    setState(() {
+      _editing = true;
+      _error = null;
+    });
+    _focus.requestFocus();
+  }
+
+  void _cancel() {
+    setState(() => _editing = false);
+    _focus.unfocus();
+  }
+
+  void _submit() {
+    final ch = channel;
+    if (ch == null ||
+        ch.key != _editKey ||
+        control != _editControl ||
+        controller.readoutChannel?.key != _editKey ||
+        controller.readoutFocus.value.control != control ||
+        controller.store.connectionEpoch != _epoch ||
+        controller.store.masterProcessingTarget != _mixTarget) {
+      _cancel();
+      return;
+    }
+    final ready =
+        controller.store.controlReadyNote(ch.master ? -1 : ch.channel!).value;
+    if ((control == MixerReadoutControl.volume && ready & 1 == 0) ||
+        (control == MixerReadoutControl.pan && ready & 4 == 0)) {
+      _cancel();
+      return;
+    }
+    final raw = _text.text
+        .trim()
+        .toLowerCase()
+        .replaceAll(',', '.')
+        .replaceAll('−', '-');
+    final volume = control == MixerReadoutControl.volume;
+    final silence = volume && (raw == '-inf' || raw == '-∞');
+    final parsed = double.tryParse(raw);
+    if (!silence && (parsed == null || !parsed.isFinite)) {
+      setState(() => _error = 'Enter a number');
+      return;
+    }
+    final range =
+        control == MixerReadoutControl.gain ? controller.gainRangeOf(ch) : null;
+    if (control != MixerReadoutControl.pan && range == null) {
+      _cancel();
+      return;
+    }
+    final value = silence ? double.negativeInfinity : parsed!;
+    final rounded = value.isFinite ? (value * 10).roundToDouble() / 10 : value;
+    switch (control) {
+      case MixerReadoutControl.volume:
+        controller.setPosition(
+            ch,
+            silence
+                ? 0
+                : MixerFaderScale.positionForDb(
+                    rounded.clamp(range!.first, range.last)));
+      case MixerReadoutControl.pan:
+        controller.setPan(ch, rounded.clamp(-100, 100) / 100);
+      case MixerReadoutControl.gain:
+        controller.setGain(ch, rounded.clamp(range!.first, range.last));
+    }
+    _cancel();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ch = channel;
     if (ch == null) return _value(context, '-');
+    if (control == MixerReadoutControl.volume &&
+        controller.store.faderEntryRange == null) {
+      return _value(context, '-', enabled: false);
+    }
     if (control == MixerReadoutControl.gain) {
       if (controller.gainRangeOf(ch) == null) {
         return _value(context, '-', enabled: false);
@@ -314,9 +441,42 @@ class _SelectedLevel extends StatelessWidget {
 
   Widget _value(BuildContext context, String text, {bool enabled = true}) {
     final ch = channel;
-    final onEdit = ch == null || !enabled
-        ? null
-        : () => _typeControl(context, controller, ch, control);
+    final onEdit = ch == null || !enabled ? null : _begin;
+    if (_editing && onEdit != null) {
+      return ConstrainedBox(
+          constraints: const BoxConstraints(
+              minWidth: AppDesign.touchTarget,
+              minHeight: AppDesign.touchTarget),
+          child: TextField(
+              controller: _text,
+              focusNode: _focus,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              keyboardType: const TextInputType.numberWithOptions(
+                  signed: true, decimal: true),
+              textInputAction: TextInputAction.done,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[-+0-9.,infIN∞−]'))
+              ],
+              style: mixerType(
+                  context,
+                  compact
+                      ? AppDesign.compactParameterValue
+                      : AppDesign.parameterValue,
+                  color: ConsolePalette.of(context).lime,
+                  weight: FontWeight.w700),
+              decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  hintText: text,
+                  errorText: _error),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+              onSubmitted: (_) => _submit(),
+              onTapOutside: (_) => _cancel()));
+    }
     return Semantics(
         button: onEdit != null,
         label: ch == null
@@ -328,60 +488,24 @@ class _SelectedLevel extends StatelessWidget {
         child: GestureDetector(
             onTap: onEdit,
             behavior: HitTestBehavior.opaque,
-            child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(text,
-                    maxLines: 1,
-                    style: mixerType(
-                        context,
-                        compact
-                            ? AppDesign.compactParameterValue
-                            : AppDesign.parameterValue,
-                        color: ConsolePalette.of(context).lime,
-                        weight: FontWeight.w700)))));
-  }
-}
-
-/// Capture the target and control before opening entry, so acceptance writes
-/// the value the dialog described even if focus changes while it is open.
-Future<void> _typeControl(BuildContext context, MixerController controller,
-    MixerChannel channel, MixerReadoutControl control) async {
-  final double initial;
-  switch (control) {
-    case MixerReadoutControl.volume:
-      initial = controller.faderNoteOf(channel.channel, channel.master).value;
-    case MixerReadoutControl.pan:
-      if (channel.master) return;
-      initial = controller.panNoteOf(channel.channel!).value * 100;
-    case MixerReadoutControl.gain:
-      if (channel.master) return;
-      initial = (channel.params['gain'] as num?)?.toDouble() ?? 0;
-  }
-  final volume = control == MixerReadoutControl.volume;
-  final pan = control == MixerReadoutControl.pan;
-  final gainRange = control == MixerReadoutControl.gain
-      ? controller.gainRangeOf(channel)
-      : null;
-  if (control == MixerReadoutControl.gain && gainRange == null) return;
-  final value = await showNumberEntry(
-      context: context,
-      title:
-          '${_targetLabel(channel)} ${_controlLabel(control, sendMix: channel.master ? null : controller.sendsOnFadersBusName)}${pan ? ' (−100 L … +100 R)' : ''}',
-      initial: volume ? fmtDb(initial) : initial.toStringAsFixed(1),
-      min: volume ? -60 : (pan ? -100 : gainRange!.first),
-      max: volume ? 10 : (pan ? 100 : gainRange!.last),
-      allowNegInf: volume,
-      negInfValue: double.negativeInfinity);
-  if (value == null) return;
-  if (channel.master && channel.name != controller.master.name) return;
-  switch (control) {
-    case MixerReadoutControl.volume:
-      controller.setPosition(
-          channel, value.isFinite ? MixerFaderScale.positionForDb(value) : 0);
-    case MixerReadoutControl.pan:
-      controller.setPan(channel, value / 100);
-    case MixerReadoutControl.gain:
-      controller.setGain(channel, value);
+            child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                    minWidth: AppDesign.touchTarget,
+                    minHeight: AppDesign.touchTarget),
+                child: Center(
+                    widthFactor: 1,
+                    heightFactor: 1,
+                    child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(text,
+                            maxLines: 1,
+                            style: mixerType(
+                                context,
+                                compact
+                                    ? AppDesign.compactParameterValue
+                                    : AppDesign.parameterValue,
+                                color: ConsolePalette.of(context).lime,
+                                weight: FontWeight.w700)))))));
   }
 }
 
@@ -407,13 +531,17 @@ class MixerToolButton extends StatelessWidget {
       child: child);
 }
 
-/// Persistent workspace home: the logo always returns to Mixer.
+/// Persistent logo navigation using the shell-provided destination.
 class _BrandButton extends StatelessWidget {
   final bool compact;
   final VoidCallback? onHome;
   final double trailingGap;
+  final String label;
   const _BrandButton(
-      {required this.compact, required this.onHome, required this.trailingGap});
+      {required this.compact,
+      required this.onHome,
+      required this.trailingGap,
+      required this.label});
   @override
   Widget build(BuildContext context) {
     final logo = SizedBox(
@@ -424,10 +552,10 @@ class _BrandButton extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Semantics(
           button: true,
-          label: 'OpenFader - Mixer',
+          label: 'OpenFader - $label',
           onTap: onHome,
           child: Tooltip(
-              message: 'Mixer',
+              message: label,
               child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: onHome,

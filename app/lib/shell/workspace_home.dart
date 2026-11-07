@@ -7,6 +7,7 @@ import '../palette.dart';
 /// Workspace tools have a stable home instead of competing with mixer controls.
 class WorkspaceHome extends StatelessWidget {
   final VoidCallback onMixer;
+  final VoidCallback onConnections;
   final VoidCallback? onRecorder;
   final VoidCallback? onQuit;
   final ValueChanged<MixerDestination> onNavigate;
@@ -14,6 +15,7 @@ class WorkspaceHome extends StatelessWidget {
   const WorkspaceHome(
       {super.key,
       required this.onMixer,
+      required this.onConnections,
       this.onRecorder,
       this.onQuit,
       required this.onNavigate,
@@ -113,7 +115,7 @@ class WorkspaceHome extends StatelessWidget {
                                 'Connections',
                                 'Connect a mixer or work offline',
                                 Icons.router_outlined,
-                                () => onNavigate(MixerDestination.connect)),
+                                onConnections),
                             tile(
                                 'Settings',
                                 'Appearance and app preferences',

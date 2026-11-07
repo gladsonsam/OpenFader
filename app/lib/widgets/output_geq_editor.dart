@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/destination_controls.dart';
+import '../core/control_reset.dart';
 import '../core/output_geq.dart';
 import '../core/output_presets.dart';
 import '../core/output_processing.dart';
@@ -251,20 +252,27 @@ class _OutputGeqEditorState extends State<_OutputGeqEditor> {
                   '${_gains[_selected].toStringAsFixed(band.decimals)} ${band.unit}',
                   textAlign: TextAlign.center,
                 ),
-                Slider(
-                  min: band.min!,
-                  max: band.max!,
-                  value: _gains[_selected].clamp(band.min!, band.max!),
-                  semanticFormatterCallback: (value) =>
-                      '${band.label}: ${value.toStringAsFixed(band.decimals)} ${band.unit}, local draft',
-                  onChanged: _editable
-                      ? (value) => setState(
-                            () => _gains[_selected] = outputGeqDraftGain(
-                              band,
-                              value,
-                            ),
-                          )
+                GestureDetector(
+                  onDoubleTap: _editable &&
+                          numericResetValue(band.min!, band.max!) != null
+                      ? () => setState(
+                          () => _gains[_selected] = outputGeqDraftGain(band, 0))
                       : null,
+                  child: Slider(
+                    min: band.min!,
+                    max: band.max!,
+                    value: _gains[_selected].clamp(band.min!, band.max!),
+                    semanticFormatterCallback: (value) =>
+                        '${band.label}: ${value.toStringAsFixed(band.decimals)} ${band.unit}, local draft',
+                    onChanged: _editable
+                        ? (value) => setState(
+                              () => _gains[_selected] = outputGeqDraftGain(
+                                band,
+                                value,
+                              ),
+                            )
+                        : null,
+                  ),
                 ),
                 if (_applying) ...[
                   const LinearProgressIndicator(),
