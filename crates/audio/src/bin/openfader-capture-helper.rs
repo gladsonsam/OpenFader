@@ -52,6 +52,11 @@ fn main() {
                 return Err(io::Error::other("manual routing session expired"));
             }
         }
+        if !playback {
+            send(
+                json!({"state":"PROGRESS","generation":generation,"stage":"initializing_recorder_storage"}),
+            )?;
+        }
         let mut service = RecorderService::new(root)?;
         service.select_discovered_device(device)?;
         if playback {
@@ -64,7 +69,9 @@ fn main() {
                 .ok_or_else(|| io::Error::other("missing take_id"))?;
             service.load_take(id)?;
         } else {
-            service.prepare_capture()?;
+            service.prepare_capture_with(|stage| {
+                let _ = send(json!({"state":"PROGRESS","generation":generation,"stage":stage}));
+            })?;
         }
         send(json!({"state":"READY","generation":generation}))?;
         for line in lines {
@@ -77,7 +84,13 @@ fn main() {
                     let id = request["take_id"]
                         .as_str()
                         .ok_or_else(|| io::Error::other("missing take_id"))?;
-                    service.commit_capture(id)?;
+                    let names: Vec<String> =
+                        serde_json::from_value(request["channel_names"].clone())
+                            .unwrap_or_default();
+                    service.commit_capture_named_with(id, names, |stage| {
+                        let _ =
+                            send(json!({"state":"PROGRESS","generation":generation,"stage":stage}));
+                    })?;
                     send(
                         json!({"state":"RECORDING","generation":generation,"status":service.status()}),
                     )?;
@@ -122,9 +135,12 @@ fn main() {
                     json!({"state":"STATUS","generation":generation,"status":service.status()}),
                 )?,
                 Some("stop") => {
-                    service.stop()?;
+                    // Stop removes the stream and joins its writer even when an
+                    // interrupted take cannot finalize. Acknowledge termination
+                    // with the diagnostic intact so the host can offer recovery.
+                    let stop_error = service.stop().err().map(|e| e.to_string());
                     send(
-                        json!({"state":"STOPPED","generation":generation,"status":service.status()}),
+                        json!({"state":"STOPPED","generation":generation,"status":service.status(),"stop_error":stop_error}),
                     )?;
                     return Ok(());
                 }

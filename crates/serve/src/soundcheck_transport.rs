@@ -113,6 +113,10 @@ impl<R: RoutingProvider, P: PlaybackTransport> Coordinator<R, P> {
                 .await
                 .map_err(anyhow::Error::msg)?;
         }
+        self.session()?
+            .seek(self.generation, 0)
+            .await
+            .map_err(anyhow::Error::msg)?;
         self.output_may_be_active = false;
         self.controller.stop();
         Ok(())

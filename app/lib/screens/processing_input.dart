@@ -144,7 +144,7 @@ class _InputTab extends StatelessWidget {
               final current = store.inputSource?.context == snapshot.context &&
                   store.inputSource?.editable == true;
               return AlertDialog(
-                  title: const Text('Input source'),
+                  title: const Text('Input patch'),
                   scrollable: true,
                   content: SizedBox(
                       width: 420,
@@ -300,48 +300,38 @@ class _InputTab extends StatelessWidget {
 
     final sourceControls =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // The active provider source is independent of an editable patch in a
+      // dormant input bank. Never use that patch as the active-source readout.
+      if (store.paramApplies('source') || store.inputSource != null) ...[
+        _InputReadout(label: 'Active source', value: src.srcName),
+        const SizedBox(height: 8),
+      ],
       if (store.inputSource != null)
         _ProcessingButton(
-            label: 'Input source',
+            label: 'Input patch',
             detail: store.inputSource!.editable
                 ? store.inputSource!.label
                 : store.inputSource!.unavailableReason ??
                     store.inputSource!.label,
-            semanticsLabel: 'Choose input source',
+            semanticsLabel: 'Choose input patch',
             onTap: store.inputSource!.editable
                 ? () => _editInputSource(context)
                 : null)
-      else if (store.paramApplies('source') ||
-          store.paramApplies('source_a') ||
-          store.paramApplies('usbreturn')) ...[
-        if (sources.isEmpty)
-          _InputReadout(
-              label: 'Source',
-              value: [store.source.srcName, store.source.srcGroup]
-                      .where((s) => s.isNotEmpty)
-                      .join(' · ')
-                      .trim()
-                      .isEmpty
-                  ? '-'
-                  : [store.source.srcName, store.source.srcGroup]
-                      .where((s) => s.isNotEmpty)
-                      .join(' · '))
-        else
-          Row(children: [
-            for (var i = 0; i < sources.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              Expanded(
-                  child: _ProcessingButton(
-                      label: 'Source ${sources[i].label}',
-                      detail: sources[i].name,
-                      active: sources[i].selected,
-                      onTap: sources[i].enabled
-                          ? () =>
-                              store.setSourceSelected(int.parse(sources[i].id))
-                          : null)),
-            ]
-          ]),
-      ],
+      else if (sources.isNotEmpty)
+        Row(children: [
+          for (var i = 0; i < sources.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+                child: _ProcessingButton(
+                    label: 'Source ${sources[i].label}',
+                    detail: sources[i].name,
+                    active: sources[i].selected,
+                    onTap: sources[i].enabled
+                        ? () =>
+                            store.setSourceSelected(int.parse(sources[i].id))
+                        : null)),
+          ]
+        ]),
       if (store.paramApplies('provider:input_mode')) ...[
         const SizedBox(height: 10),
         if (store.sourceMode?.editable == true)

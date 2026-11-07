@@ -24,7 +24,8 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   double? _loopStart;
   double? _loopEnd;
   static const laneHeight = 62.0;
-  final _horizontal = ScrollController();
+  final _horizontal = ScrollController(keepScrollOffset: false);
+  final _vertical = ScrollController(keepScrollOffset: false);
   String? _requestKey;
   String? _desiredKey;
   bool _loadingPeaks = false;
@@ -52,6 +53,11 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
       _loopStart = null;
       _loopEnd = null;
       _followRecording = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_vertical.hasClients) _vertical.jumpTo(0);
+        if (_horizontal.hasClients) _horizontal.jumpTo(0);
+      });
     }
   }
 
@@ -62,6 +68,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   @override
   void dispose() {
     _horizontal.dispose();
+    _vertical.dispose();
     super.dispose();
   }
 
@@ -163,14 +170,19 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     final caps = s['capabilities'] is Map ? s['capabilities'] as Map : const {};
     final recording = s['transport'] == 'recording';
     final take = widget.store.takes
-        .where((t) => t['complete'] == true && t['id'] == widget.previewTakeId)
+        .where((t) => t['id'] == widget.previewTakeId)
         .firstOrNull;
-    final laneSource = take ??
-        (widget.previewTakeId == null ||
-                '${s['transport']}'.toLowerCase().contains('record')
-            ? s
-            : const <String, dynamic>{});
+    final laneSource = recording
+        ? s
+        : take ??
+            (widget.previewTakeId == null ||
+                    '${s['transport']}'.toLowerCase().contains('record')
+                ? s
+                : const <String, dynamic>{});
     final names = recorderChannelNames(laneSource);
+    final manifest = laneSource['manifest'];
+    final namesReason = laneSource['channel_names_reason'] ??
+        (manifest is Map ? manifest['channel_names_reason'] : null);
     final knownRate = (take?['sample_rate'] as num?)?.toDouble() ??
         (s['sample_rate'] as num?)?.toDouble();
     final rateKnown = knownRate != null && knownRate > 0;
@@ -210,102 +222,119 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
                 height: 60,
-                child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text('Arrangement',
-                          style: TextStyle(
-                              color: p.text1,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 24)),
-                      const SizedBox(width: 20),
-                      Text('$laneCount tracks',
-                          style: TextStyle(color: p.mutedText, fontSize: 20)),
-                      const SizedBox(width: 20),
-                      if (_peakError != null)
-                        Tooltip(
-                            message: _peakError!,
-                            child: TextButton(
-                                onPressed: () => setState(() {
-                                      _requestKey = null;
-                                      _peakError = null;
-                                    }),
-                                child: const Text('Retry waveform'))),
-                      if (take != null)
-                        TextButton(
-                            onPressed: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              try {
-                                final data = await widget.store
-                                    .inspectTake(take['id'] as String);
-                                if (!context.mounted) return;
-                                final manifest = data['manifest'] as Map;
-                                await showDialog<void>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                          title: Text(
-                                              'Take details · ${take['id']}'),
-                                          content: SizedBox(
-                                              width: 600,
-                                              child: SingleChildScrollView(
-                                                  child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                    Text(
-                                                        'Manifest: ${manifest['frames']} frames · ${manifest['sample_rate']} Hz · ${manifest['channels']} channels · complete ${manifest['complete']}'),
-                                                    for (final h
-                                                        in data['wav_headers']
+                child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text('Arrangement',
+                              style: TextStyle(
+                                  color: p.text1,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 20)),
+                          const SizedBox(width: 20),
+                          Text('$laneCount tracks',
+                              style:
+                                  TextStyle(color: p.mutedText, fontSize: 14)),
+                          const SizedBox(width: 20),
+                          if (_peakError != null)
+                            Tooltip(
+                                message: _peakError!,
+                                child: TextButton(
+                                    onPressed: () => setState(() {
+                                          _requestKey = null;
+                                          _peakError = null;
+                                        }),
+                                    child: const Text('Retry waveform'))),
+                          if (take != null)
+                            TextButton(
+                                onPressed: () async {
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
+                                  try {
+                                    final data = await widget.store
+                                        .inspectTake(take['id'] as String);
+                                    if (!context.mounted) return;
+                                    final manifest = data['manifest'] as Map;
+                                    await showDialog<void>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                              title: Text(
+                                                  'Take details · ${take['id']}'),
+                                              content: SizedBox(
+                                                  width: 600,
+                                                  child: SingleChildScrollView(
+                                                      child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                        Text(
+                                                            'Manifest: ${manifest['frames']} frames · ${manifest['sample_rate']} Hz · ${manifest['channels']} channels · complete ${manifest['complete']}'),
+                                                        for (final h in data[
+                                                                'wav_headers']
                                                             as List)
-                                                      Text(
-                                                          'WAV ${h['file']}: ${h['channels']} channels · ${h['bits_per_sample']} bit · ${h['sample_rate']} Hz · ${h['frames']} frames'),
-                                                    Text(
-                                                        'Measured frames ${data['start_frame']}–${data['end_frame']} (end exclusive), normalized PCM'),
-                                                    for (final c
-                                                        in data['channels']
-                                                            as List)
-                                                      SelectableText(
-                                                          'Ch ${c['channel']}: min ${(c['min'] as num).toStringAsFixed(8)}  max ${(c['max'] as num).toStringAsFixed(8)}  RMS ${(c['rms'] as num).toStringAsFixed(8)}'),
-                                                  ]))),
-                                          actions: [
-                                            TextButton(
-                                                onPressed: () =>
-                                                    Navigator.pop(context),
-                                                child: const Text('Close'))
-                                          ],
-                                        ));
-                              } catch (e) {
-                                messenger.showSnackBar(SnackBar(
-                                    content: Text('Inspection failed: $e')));
-                              }
-                            },
-                            child: const Text('Take details')),
-                      const Spacer(),
-                      if (recording)
-                        IconButton(
-                            tooltip: _followRecording
-                                ? 'Following recording · click to scroll freely'
-                                : 'Follow recording playhead',
-                            isSelected: _followRecording,
-                            onPressed: () => setState(
-                                () => _followRecording = !_followRecording),
-                            icon: const Icon(Icons.follow_the_signs)),
-                      Text('Time zoom', style: TextStyle(color: p.mutedText)),
-                      SizedBox(
-                          width: 140,
-                          child: Slider(
-                              value: _zoom,
-                              min: 1,
-                              max: 8,
-                              onChanged: (v) => setState(() => _zoom = v))),
-                      TextButton(
-                          onPressed: () {
-                            setState(() => _zoom = 1);
-                            if (_horizontal.hasClients) _horizontal.jumpTo(0);
-                          },
-                          child: const Text('Fit')),
-                    ]))),
+                                                          Text(
+                                                              'WAV ${h['file']}: ${h['channels']} channels · ${h['bits_per_sample']} bit · ${h['sample_rate']} Hz · ${h['frames']} frames'),
+                                                        Text(
+                                                            'Measured frames ${data['start_frame']}–${data['end_frame']} (end exclusive), normalized PCM'),
+                                                        for (final c
+                                                            in data['channels']
+                                                                as List)
+                                                          SelectableText(
+                                                              'Ch ${c['channel']}: min ${(c['min'] as num).toStringAsFixed(8)}  max ${(c['max'] as num).toStringAsFixed(8)}  RMS ${(c['rms'] as num).toStringAsFixed(8)}'),
+                                                      ]))),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(context),
+                                                    child: const Text('Close'))
+                                              ],
+                                            ));
+                                  } catch (e) {
+                                    messenger.showSnackBar(SnackBar(
+                                        content:
+                                            Text('Inspection failed: $e')));
+                                  }
+                                },
+                                child: const Text('Take details')),
+                          const SizedBox(width: 16),
+                          if (recording)
+                            IconButton(
+                                tooltip: _followRecording
+                                    ? 'Following recording · click to scroll freely'
+                                    : 'Follow recording playhead',
+                                isSelected: _followRecording,
+                                onPressed: () => setState(
+                                    () => _followRecording = !_followRecording),
+                                icon: const Icon(Icons.follow_the_signs)),
+                          Text('Time zoom',
+                              style: TextStyle(color: p.mutedText)),
+                          SizedBox(
+                              width: 100,
+                              child: Slider(
+                                  value: _zoom,
+                                  min: 1,
+                                  max: 8,
+                                  onChanged: (v) => setState(() => _zoom = v))),
+                          TextButton(
+                              onPressed: () {
+                                setState(() => _zoom = 1);
+                                if (_horizontal.hasClients) {
+                                  _horizontal.jumpTo(0);
+                                }
+                              },
+                              child: const Text('Fit')),
+                        ])))),
+        if (laneCount > 0 &&
+            (namesReason is String && namesReason.isNotEmpty || names.isEmpty))
+          Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                  namesReason is String && namesReason.isNotEmpty
+                      ? namesReason
+                      : 'Track names are unavailable for this capture. Interface input numbers are shown.',
+                  style: TextStyle(color: p.mutedText, fontSize: 13))),
         if (laneCount == 0)
           Expanded(
               child: Center(
@@ -316,7 +345,8 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                       style: TextStyle(color: p.mutedText))))
         else
           Expanded(child: LayoutBuilder(builder: (context, constraints) {
-            final viewport = math.max(1.0, constraints.maxWidth - 300);
+            final trackWidth = (constraints.maxWidth * .28).clamp(140.0, 240.0);
+            final viewport = math.max(1.0, constraints.maxWidth - trackWidth);
             final width = math.max(
                 600.0,
                 recording
@@ -328,7 +358,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                     : take?['id'] as String?,
                 frames,
                 width,
-                constraints.maxWidth - 300,
+                constraints.maxWidth - trackWidth,
                 recording
                     ? recordedFrames
                     : (take?['duration_frames'] as num?)?.toInt() ?? 0,
@@ -348,172 +378,211 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
             }
             _requestOverview(recording ? null : take?['id'] as String?,
                 (take?['duration_frames'] as num?)?.toInt() ?? 0);
-            return SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                          width: 300,
-                          child: Column(children: [
-                            SizedBox(
-                                height: 56,
-                                child: Center(
-                                    child: Text(
-                                        'Track · captures available interface inputs\nPer-track arm, mute and solo unavailable',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                            color: p.mutedText,
-                                            fontSize: 14)))),
-                            for (var i = 0; i < laneCount; i++)
-                              Container(
-                                  height: laneHeight,
-                                  padding: const EdgeInsets.only(right: 8),
-                                  decoration: BoxDecoration(
-                                      color: p.arrangementTrack,
-                                      border: Border(
-                                          top: BorderSide(color: p.line))),
-                                  child: Stack(children: [
-                                    Row(children: [
-                                      Container(
-                                          width: 7, color: _channelColor(p, i)),
-                                      const SizedBox(width: 12),
-                                      Text((i + 1).toString(),
-                                          style: TextStyle(color: p.mutedText)),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                          child: Text(
-                                              names[i] ?? 'Channel ${i + 1}',
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                  color: p.text1,
-                                                  fontSize: 22,
-                                                  fontWeight:
-                                                      FontWeight.w600))),
-                                    ]),
-                                    Positioned(
-                                        left: 7,
-                                        right: 0,
-                                        bottom: 0,
-                                        height: 4,
-                                        child: LayoutBuilder(
-                                            builder: (context, box) =>
-                                                Stack(children: [
-                                                  ColoredBox(
-                                                      color: p.slot,
-                                                      child: SizedBox(
-                                                          width: box.maxWidth,
-                                                          height: 4)),
-                                                  SizedBox(
-                                                      width: box.maxWidth *
-                                                          (i < meters.length &&
-                                                                  meters[i]
-                                                                      is num
-                                                              ? (meters[i]
-                                                                      as num)
-                                                                  .toDouble()
-                                                                  .clamp(0, 1)
-                                                              : 0),
-                                                      height: 4,
-                                                      child: ColoredBox(
-                                                          color: _channelColor(
-                                                              p, i))),
-                                                ]))),
-                                  ])),
-                          ])),
-                      Expanded(
-                          child: SingleChildScrollView(
-                              controller: _horizontal,
-                              scrollDirection: Axis.horizontal,
-                              child: SizedBox(
-                                  width: width,
-                                  height: 56 + laneHeight * laneCount,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapUp: canSeek
-                                        ? (d) => widget.store.command('seek', {
-                                              'position_frames':
-                                                  (d.localPosition.dx /
-                                                          width *
-                                                          frames)
-                                                      .round()
-                                            })
-                                        : null,
-                                    onHorizontalDragStart: canLoop
-                                        ? (d) => setState(() {
-                                              _loopStart =
-                                                  (d.localPosition.dx / width)
-                                                      .clamp(0, 1);
-                                              _loopEnd = _loopStart;
-                                            })
-                                        : null,
-                                    onHorizontalDragUpdate: canLoop
-                                        ? (d) => setState(() => _loopEnd =
-                                            (d.localPosition.dx / width)
-                                                .clamp(0, 1))
-                                        : null,
-                                    onHorizontalDragEnd: canLoop
-                                        ? (_) {
-                                            if (_loopStart != null &&
-                                                _loopEnd != null) {
-                                              widget.onLoopSelection(
-                                                  (math.min(_loopStart!,
-                                                              _loopEnd!) *
-                                                          frames)
-                                                      .round(),
-                                                  (math.max(_loopStart!,
-                                                              _loopEnd!) *
-                                                          frames)
-                                                      .round(),
-                                                  frames.round());
+            return Stack(children: [
+              SingleChildScrollView(
+                  controller: _vertical,
+                  scrollDirection: Axis.vertical,
+                  child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                            width: trackWidth,
+                            child: Column(children: [
+                              SizedBox(
+                                  height: 56,
+                                  child: Center(
+                                      child: Text(
+                                          'Track · captures available interface inputs\nPer-track arm, mute and solo unavailable',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              color: p.mutedText,
+                                              fontSize: 14)))),
+                              for (var i = 0; i < laneCount; i++)
+                                Container(
+                                    height: laneHeight,
+                                    padding: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                        color: p.arrangementTrack,
+                                        border: Border(
+                                            top: BorderSide(color: p.line))),
+                                    child: Stack(children: [
+                                      Row(children: [
+                                        Container(
+                                            width: 7,
+                                            color: _channelColor(p, i)),
+                                        const SizedBox(width: 12),
+                                        Text((i + 1).toString(),
+                                            style:
+                                                TextStyle(color: p.mutedText)),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                            child: Text(
+                                                names[i] ?? 'Channel ${i + 1}',
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                    color: p.text1,
+                                                    fontSize: 16,
+                                                    fontWeight:
+                                                        FontWeight.w600))),
+                                      ]),
+                                      Positioned(
+                                          left: 7,
+                                          right: 0,
+                                          bottom: 0,
+                                          height: 4,
+                                          child: LayoutBuilder(
+                                              builder: (context, box) =>
+                                                  Stack(children: [
+                                                    ColoredBox(
+                                                        color: p.slot,
+                                                        child: SizedBox(
+                                                            width: box.maxWidth,
+                                                            height: 4)),
+                                                    SizedBox(
+                                                        width: box.maxWidth *
+                                                            (i < meters.length &&
+                                                                    meters[i]
+                                                                        is num
+                                                                ? (meters[i]
+                                                                        as num)
+                                                                    .toDouble()
+                                                                    .clamp(0, 1)
+                                                                : 0),
+                                                        height: 4,
+                                                        child: ColoredBox(
+                                                            color:
+                                                                _channelColor(
+                                                                    p, i))),
+                                                  ]))),
+                                    ])),
+                            ])),
+                        Expanded(
+                            child: SingleChildScrollView(
+                                controller: _horizontal,
+                                scrollDirection: Axis.horizontal,
+                                child: SizedBox(
+                                    width: width,
+                                    height: 56 + laneHeight * laneCount,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTapUp: canSeek
+                                          ? (d) => widget.store.command(
+                                                  'seek', {
+                                                'position_frames':
+                                                    (d.localPosition.dx /
+                                                            width *
+                                                            frames)
+                                                        .round()
+                                              })
+                                          : null,
+                                      onHorizontalDragStart: canLoop
+                                          ? (d) => setState(() {
+                                                _loopStart =
+                                                    (d.localPosition.dx / width)
+                                                        .clamp(0, 1);
+                                                _loopEnd = _loopStart;
+                                              })
+                                          : null,
+                                      onHorizontalDragUpdate: canLoop
+                                          ? (d) => setState(() => _loopEnd =
+                                              (d.localPosition.dx / width)
+                                                  .clamp(0, 1))
+                                          : null,
+                                      onHorizontalDragEnd: canLoop
+                                          ? (_) {
+                                              if (_loopStart != null &&
+                                                  _loopEnd != null) {
+                                                widget.onLoopSelection(
+                                                    (math
+                                                                .min(
+                                                                    _loopStart!,
+                                                                    _loopEnd!) *
+                                                            frames)
+                                                        .round(),
+                                                    (math.max(_loopStart!,
+                                                                _loopEnd!) *
+                                                            frames)
+                                                        .round(),
+                                                    frames.round());
+                                              }
                                             }
-                                          }
-                                        : null,
-                                    child: CustomPaint(
-                                        painter: _TimelinePainter(
-                                            palette: p,
-                                            frames: frames,
-                                            rate: rate,
-                                            position: current,
-                                            visibleStart:
-                                                (_horizontal.hasClients
-                                                        ? _horizontal.offset
-                                                        : 0) /
-                                                    width,
-                                            visibleEnd: ((_horizontal.hasClients
-                                                        ? _horizontal.offset
-                                                        : 0) +
-                                                    viewport) /
-                                                width,
-                                            clipFrames: recording
-                                                ? recordedFrames.toDouble()
-                                                : frames,
-                                            peaks: _peaks,
-                                            names: names,
-                                            takeName: recording
-                                                ? 'Recording'
-                                                : take == null
-                                                    ? null
-                                                    : ((take['name']
-                                                                    is String &&
-                                                                (take['name']
-                                                                        as String)
-                                                                    .trim()
-                                                                    .isNotEmpty)
-                                                            ? take['name']
-                                                            : 'Take ${widget.store.takes.indexOf(take) + 1}')
-                                                        .toString(),
-                                            colors: List.generate(laneCount,
-                                                (i) => _channelColor(p, i)),
-                                            loopStart: _loopStart,
-                                            loopEnd: _loopEnd)),
-                                  )))),
-                    ]));
+                                          : null,
+                                      child: CustomPaint(
+                                          painter: _TimelinePainter(
+                                              palette: p,
+                                              frames: frames,
+                                              rate: rate,
+                                              position: current,
+                                              visibleStart:
+                                                  (_horizontal.hasClients
+                                                          ? _horizontal.offset
+                                                          : 0) /
+                                                      width,
+                                              visibleEnd: ((_horizontal
+                                                              .hasClients
+                                                          ? _horizontal.offset
+                                                          : 0) +
+                                                      viewport) /
+                                                  width,
+                                              clipFrames: recording
+                                                  ? recordedFrames.toDouble()
+                                                  : frames,
+                                              peaks: _peaks,
+                                              names: names,
+                                              takeName: recording
+                                                  ? 'Recording'
+                                                  : take == null
+                                                      ? null
+                                                      : ((take['name'] is String &&
+                                                                  (take['name']
+                                                                          as String)
+                                                                      .trim()
+                                                                      .isNotEmpty)
+                                                              ? take['name']
+                                                              : 'Take ${widget.store.takes.indexOf(take) + 1}')
+                                                          .toString(),
+                                              colors: List.generate(laneCount,
+                                                  (i) => _channelColor(p, i)),
+                                              loopStart: _loopStart,
+                                              loopEnd: _loopEnd)),
+                                    )))),
+                      ])),
+              Positioned(
+                  left: 0,
+                  top: 0,
+                  width: trackWidth,
+                  height: 56,
+                  child: IgnorePointer(
+                      child: ColoredBox(
+                          color: p.panel,
+                          child: Center(
+                              child: Text('Interface inputs',
+                                  style: TextStyle(
+                                      color: p.mutedText, fontSize: 13)))))),
+              Positioned(
+                  left: trackWidth,
+                  top: 0,
+                  right: 0,
+                  height: 56,
+                  child: IgnorePointer(
+                      child: ClipRect(
+                          child: CustomPaint(
+                              painter: _StickyRulerPainter(
+                                  p,
+                                  frames,
+                                  rate,
+                                  current,
+                                  width,
+                                  _horizontal.hasClients
+                                      ? _horizontal.offset
+                                      : 0))))),
+            ]);
           })),
         SizedBox(
             height: 72,
             child: LayoutBuilder(builder: (context, box) {
-              final view = math.max(1.0, box.maxWidth - 300);
+              final view = math.max(
+                  1.0, box.maxWidth - (box.maxWidth * .28).clamp(140.0, 240.0));
               final total = math.max(600.0, view * _zoom);
               final offset = _horizontal.hasClients ? _horizontal.offset : 0.0;
               void move(double x) {
@@ -554,6 +623,41 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
       ]),
     );
   }
+}
+
+/// Draws the same time axis above the independently scrolling track lanes.
+class _StickyRulerPainter extends CustomPainter {
+  final ConsolePalette palette;
+  final double frames, rate, position, timelineWidth, offset;
+  const _StickyRulerPainter(this.palette, this.frames, this.rate, this.position,
+      this.timelineWidth, this.offset);
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(-offset, 0);
+    _TimelinePainter(
+        palette: palette,
+        frames: frames,
+        rate: rate,
+        position: position,
+        clipFrames: frames,
+        visibleStart: offset / timelineWidth,
+        visibleEnd: (offset + size.width) / timelineWidth,
+        peaks: const [],
+        names: const {},
+        takeName: null,
+        colors: const []).paint(canvas, Size(timelineWidth, 56));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StickyRulerPainter oldDelegate) =>
+      palette != oldDelegate.palette ||
+      frames != oldDelegate.frames ||
+      rate != oldDelegate.rate ||
+      position != oldDelegate.position ||
+      timelineWidth != oldDelegate.timelineWidth ||
+      offset != oldDelegate.offset;
 }
 
 class _TimelinePainter extends CustomPainter {
@@ -630,18 +734,34 @@ class _TimelinePainter extends CustomPainter {
       final y = 56.0 + i * _RecorderArrangementState.laneHeight;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
-    final divisions = math.max(1, (size.width / 120).floor());
-    final firstDivision =
-        (visibleStart * divisions).floor().clamp(0, divisions);
-    final lastDivision = (visibleEnd * divisions).ceil().clamp(0, divisions);
+    final seconds = frames / rate;
+    final targetStep = seconds / math.max(1, (size.width / 120).floor());
+    final magnitude =
+        math.pow(10, (math.log(targetStep) / math.ln10).floor()).toDouble();
+    final normalized = targetStep / magnitude;
+    final step = (normalized <= 1
+            ? 1
+            : normalized <= 2
+                ? 2
+                : normalized <= 5
+                    ? 5
+                    : 10) *
+        magnitude;
+    final decimals = math.max(0, -(math.log(step) / math.ln10).floor());
+    final firstDivision = math.max(0, (visibleStart * seconds / step).floor());
+    final lastDivision = math.min(
+        (seconds / step).floor(), (visibleEnd * seconds / step).ceil());
     for (var i = firstDivision; i <= lastDivision; i++) {
-      final x = size.width * i / divisions;
+      final tickSeconds = i * step;
+      final x = tickSeconds / seconds * size.width;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-      final sec = (frames / rate * i / divisions).floor();
+      final minutes = (tickSeconds / 60).floor();
+      final remainder = (tickSeconds - minutes * 60).toStringAsFixed(decimals);
+      final tickLabel =
+          '${minutes.toString().padLeft(2, '0')}:${remainder.padLeft(decimals == 0 ? 2 : decimals + 3, '0')}';
       final text = TextPainter(
           text: TextSpan(
-              text:
-                  '${(sec ~/ 60).toString().padLeft(2, '0')}:${(sec % 60).toString().padLeft(2, '0')}',
+              text: tickLabel,
               style: TextStyle(color: palette.recorderMuted, fontSize: 18)),
           textDirection: TextDirection.ltr)
         ..layout();

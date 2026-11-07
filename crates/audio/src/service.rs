@@ -85,12 +85,17 @@ pub struct RecorderStatus {
     pub xruns: u64,
     pub live_peaks: Option<Vec<f32>>,
     pub error: Option<String>,
+    pub capture_sample_format: Option<String>,
 }
 struct PreparedCapture {
     stream: cpal::Stream,
     consumer: rtrb::Consumer<[i32; MAX_CHANNELS]>,
     done: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    closing: Arc<AtomicBool>,
+    failure_reason: Arc<AtomicU32>,
+    native_error: Arc<std::sync::Mutex<Option<String>>>,
+    sample_format: String,
     xruns: Arc<AtomicU64>,
     frames: Arc<AtomicU64>,
     peaks: Arc<[AtomicU32; MAX_CHANNELS]>,
@@ -101,6 +106,10 @@ struct Capture {
     stream: cpal::Stream,
     done: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    closing: Arc<AtomicBool>,
+    failure_reason: Arc<AtomicU32>,
+    native_error: Arc<std::sync::Mutex<Option<String>>>,
+    sample_format: String,
     xruns: Arc<AtomicU64>,
     frames: Arc<AtomicU64>,
     peaks: Arc<[AtomicU32; MAX_CHANNELS]>,
@@ -445,6 +454,7 @@ impl RecorderService {
                     .map(|v| f32::from_bits(v.load(Ordering::Relaxed)))
                     .collect()
             }),
+            capture_sample_format: c.map(|c| c.sample_format.clone()),
             error: if self
                 .playback
                 .as_ref()
@@ -452,7 +462,22 @@ impl RecorderService {
             {
                 Some("playback device or worker failed".into())
             } else if c.is_some_and(|c| c.failed.load(Ordering::Relaxed)) {
-                Some("capture failed: device error, disk error, or queue overflow; stop and recover take".into())
+                Some(match c.unwrap().failure_reason.load(Ordering::Acquire) {
+                    1 => {
+                        "capture failed: audio callback channel layout changed; recover take".into()
+                    }
+                    2 => "capture failed: capture queue overflow; recover take".into(),
+                    3 => format!(
+                        "capture device failed: {}; recover take",
+                        c.unwrap()
+                            .native_error
+                            .lock()
+                            .unwrap()
+                            .as_deref()
+                            .unwrap_or("unknown native device error")
+                    ),
+                    _ => "capture writer failed; recover take".into(),
+                })
             } else {
                 self.last_error.clone()
             },
@@ -521,6 +546,9 @@ impl RecorderService {
     /// Open a stopped input stream without creating any take files.
     /// This operation may block in the native driver and must run in an owned helper.
     pub fn prepare_capture(&mut self) -> io::Result<()> {
+        self.prepare_capture_with(|_| {})
+    }
+    pub fn prepare_capture_with(&mut self, mut progress: impl FnMut(&str)) -> io::Result<()> {
         if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
             return Err(error("transport active"));
         }
@@ -528,11 +556,13 @@ impl RecorderService {
             .selected
             .as_ref()
             .ok_or_else(|| error("select a device first"))?;
+        progress("enumerating_input_device");
         let device = Self::host()?
             .devices()
             .map_err(error)?
             .find(|d| d.id().is_ok_and(|i| i.to_string() == *selected))
             .ok_or_else(|| error("selected device disconnected"))?;
+        progress("reading_input_configuration");
         let default = device.default_input_config().map_err(error)?;
         let rate = default.sample_rate();
         let selected_info = self
@@ -552,6 +582,7 @@ impl RecorderService {
                 "ASIO input layout changed; refresh and select the interface again",
             ));
         }
+        progress("reading_supported_input_formats");
         let supported = device
             .supported_input_configs()
             .map_err(error)?
@@ -572,6 +603,14 @@ impl RecorderService {
         let xruns = Arc::new(AtomicU64::new(0));
         let frames = Arc::new(AtomicU64::new(0));
         let peaks = Arc::new(std::array::from_fn(|_| AtomicU32::new(0)));
+        let failure_reason = Arc::new(AtomicU32::new(0));
+        let native_error = Arc::new(std::sync::Mutex::new(None));
+        let closing = Arc::new(AtomicBool::new(false));
+        let cb_closing = closing.clone();
+        let err_closing = closing.clone();
+        let cb_reason = failure_reason.clone();
+        let err_reason = failure_reason.clone();
+        let err_detail = native_error.clone();
         let cb_failed = failed.clone();
         let cb_xruns = xruns.clone();
         let err_failed = failed.clone();
@@ -581,10 +620,13 @@ impl RecorderService {
                     .build_input_stream(
                         config,
                         move |data: &[$sample], _| {
-                            if cb_failed.load(Ordering::Relaxed) {
+                            if cb_closing.load(Ordering::Acquire)
+                                || cb_failed.load(Ordering::Relaxed)
+                            {
                                 return;
                             }
                             if !data.len().is_multiple_of(channels as usize) {
+                                cb_reason.store(1, Ordering::Release);
                                 cb_failed.store(true, Ordering::Release);
                                 return;
                             }
@@ -595,12 +637,18 @@ impl RecorderService {
                                 }
                                 if producer.push(frame).is_err() {
                                     cb_xruns.fetch_add(1, Ordering::Relaxed);
+                                    cb_reason.store(2, Ordering::Release);
                                     cb_failed.store(true, Ordering::Release);
                                     break;
                                 }
                             }
                         },
-                        move |_| {
+                        move |e| {
+                            if err_closing.load(Ordering::Acquire) {
+                                return;
+                            }
+                            *err_detail.lock().unwrap() = Some(e.to_string());
+                            err_reason.store(3, Ordering::Release);
                             err_failed.store(true, Ordering::Release);
                         },
                         None,
@@ -608,12 +656,18 @@ impl RecorderService {
                     .map_err(error)
             };
         }
+        progress("building_input_stream");
         let stream = pcm_stream!(sample_format, build_input)?;
+        let sample_format = format!("{sample_format:?}");
         self.prepared = Some(PreparedCapture {
             stream,
             consumer,
             done,
             failed,
+            closing,
+            failure_reason,
+            native_error,
+            sample_format,
             xruns,
             frames,
             peaks,
@@ -625,12 +679,27 @@ impl RecorderService {
 
     /// Commit an already prepared stream to a new take.
     pub fn commit_capture(&mut self, id: &str) -> io::Result<()> {
+        self.commit_capture_named(id, Vec::new())
+    }
+    pub fn commit_capture_named(&mut self, id: &str, names: Vec<String>) -> io::Result<()> {
+        self.commit_capture_named_with(id, names, |_| {})
+    }
+    pub fn commit_capture_named_with(
+        &mut self,
+        id: &str,
+        names: Vec<String>,
+        mut progress: impl FnMut(&str),
+    ) -> io::Result<()> {
         valid_id(id)?;
         let PreparedCapture {
             stream,
             mut consumer,
             done,
             failed,
+            closing,
+            failure_reason,
+            native_error,
+            sample_format,
             xruns,
             frames,
             peaks,
@@ -641,12 +710,15 @@ impl RecorderService {
             .take()
             .ok_or_else(|| error("capture not prepared"))?;
         let layout = ChannelLayout::new(channels as u16)?;
+        progress("creating_take_manifest");
         let mut writer = TakeWriter::create_with_layout(
             self.root.join(id),
             rate,
             capture_segment_frames(rate, layout),
             layout,
         )?;
+        progress("saving_capture_names");
+        writer.set_channel_names(names)?;
         let worker_done = done.clone();
         let worker_failed = failed.clone();
         let worker_frames = frames.clone();
@@ -716,6 +788,7 @@ impl RecorderService {
             }
             result
         });
+        progress("starting_input_stream");
         if let Err(e) = stream.play() {
             done.store(true, Ordering::Release);
             drop(stream);
@@ -729,6 +802,10 @@ impl RecorderService {
             stream,
             done,
             failed,
+            closing,
+            failure_reason,
+            native_error,
+            sample_format,
             xruns,
             frames,
             peaks,
@@ -993,7 +1070,6 @@ impl RecorderService {
             .is_some_and(|p| p.ended.load(Ordering::Acquire))
         {
             self.stop_playback()?;
-            self.position = 0;
         }
         if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
             return Err(error("transport active"));
@@ -1003,6 +1079,11 @@ impl RecorderService {
         let manifest = read_manifest(&dir)?;
         if !manifest.complete {
             return Err(error("take requires recovery"));
+        }
+        // A stopped/paused helper may already have reaped its ended stream.
+        // Use the actual take length so replay also works after that cleanup.
+        if manifest.frames > 0 && self.position >= manifest.frames {
+            self.position = 0;
         }
         let selected = self
             .selected
@@ -1115,11 +1196,24 @@ impl RecorderService {
         Ok(())
     }
     pub fn stop(&mut self) -> io::Result<()> {
-        self.prepared.take();
+        if let Some(prepared) = self.prepared.take() {
+            prepared.closing.store(true, Ordering::Release);
+            drop(prepared);
+        }
         self.stop_playback()?;
         self.paused = false;
         self.position = 0;
+        let capture_failure = self
+            .capture
+            .as_ref()
+            .filter(|c| {
+                c.failed.load(Ordering::Acquire) && c.failure_reason.load(Ordering::Acquire) != 0
+            })
+            .and_then(|_| self.status().error);
         if let Some(c) = self.capture.take() {
+            // Prevent intentional stream teardown from being reported as a
+            // device fault. The writer drains only after callbacks have ended.
+            c.closing.store(true, Ordering::Release);
             drop(c.stream);
             c.done.store(true, Ordering::Release);
             let result = c
@@ -1129,7 +1223,7 @@ impl RecorderService {
             self.last_frames = c.frames.load(Ordering::Relaxed);
             self.last_xruns = c.xruns.load(Ordering::Relaxed);
             if let Err(e) = result {
-                self.last_error = Some(e.to_string());
+                self.last_error = capture_failure.or_else(|| Some(e.to_string()));
                 return Err(e);
             }
         }

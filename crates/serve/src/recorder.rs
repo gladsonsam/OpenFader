@@ -15,6 +15,68 @@ pub mod soundcheck_backend;
 #[path = "device_scan.rs"]
 mod device_scan;
 
+pub(crate) fn recorder_device_matches(
+    descriptor: &openfader_engine::drivers::RecorderDescriptor,
+    device: &openfader_audio::DeviceInfo,
+) -> bool {
+    let words: Vec<_> = device
+        .name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    device.input_channels == descriptor.capture_channels
+        && device.output_channels >= descriptor.output_channels
+        && device.sample_rate > 0
+        && descriptor.interface_names.iter().any(|name| {
+            let wanted: Vec<_> = name
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .map(str::to_ascii_lowercase)
+                .collect();
+            !wanted.is_empty() && words.windows(wanted.len()).any(|part| part == wanted)
+        })
+}
+
+#[cfg(unix)]
+fn available_storage_bytes(path: &std::path::Path) -> std::io::Result<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+    let mut info = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: path is NUL terminated and info points to valid writable storage.
+    if unsafe { libc::statvfs(path.as_ptr(), info.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: statvfs initialized info on the successful call above.
+    let info = unsafe { info.assume_init() };
+    Ok(u64::try_from(u128::from(info.f_bavail) * u128::from(info.f_frsize)).unwrap_or(u64::MAX))
+}
+#[cfg(windows)]
+fn available_storage_bytes(path: &std::path::Path) -> std::io::Result<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut available = 0u64;
+    // SAFETY: path is NUL terminated; available is writable, other outputs optional.
+    if unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            path.as_ptr(),
+            &mut available,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(available)
+}
+#[cfg(not(any(unix, windows)))]
+fn available_storage_bytes(_: &std::path::Path) -> std::io::Result<u64> {
+    Err(std::io::Error::other(
+        "Available storage is unsupported on this platform",
+    ))
+}
+
 #[derive(Clone)]
 pub struct Recorder {
     tx: tokio::sync::mpsc::UnboundedSender<(Value, oneshot::Sender<Value>)>,
@@ -129,6 +191,20 @@ async fn worker_with_config(
     } else {
         helper
     };
+    let mut recorder_descriptor = None;
+    let mut descriptor_reason =
+        Some("Checking the connected provider's capture mapping".to_owned());
+    let mut descriptor_job: Option<
+        tokio::task::JoinHandle<
+            Result<Option<openfader_engine::drivers::RecorderDescriptor>, String>,
+        >,
+    > = None;
+    let mut descriptor_generation = engine.as_ref().map(|e| e.connection_generation());
+    let mut descriptor_dirty = true;
+    let mut active_capture_names: Vec<String> = Vec::new();
+    let mut disk_checked = Instant::now() - Duration::from_secs(3);
+    let mut disk_free_bytes = None;
+    let mut disk_space_error = None;
     let mut generation = 0u64;
     type Pending = (
         String,
@@ -231,6 +307,92 @@ async fn worker_with_config(
             },
             request = rx.recv(), if rx_open => match request { Some(v) => v, None => { rx_open = false; continue; } },
         };
+        if disk_checked.elapsed() >= Duration::from_secs(2) {
+            disk_checked = Instant::now();
+            match available_storage_bytes(&root) {
+                Ok(bytes) => {
+                    disk_free_bytes = Some(bytes);
+                    disk_space_error = None;
+                }
+                Err(e) => {
+                    disk_free_bytes = None;
+                    disk_space_error = Some(e.to_string());
+                }
+            }
+        }
+        let current_generation = engine.as_ref().map(|e| e.connection_generation());
+        if descriptor_generation != current_generation {
+            if let Some(job) = descriptor_job.take() {
+                job.abort();
+            }
+            recorder_descriptor = None;
+            descriptor_reason = Some("Checking the connected provider's capture mapping".into());
+            descriptor_generation = current_generation;
+            descriptor_dirty = true;
+        }
+        if descriptor_job.as_ref().is_some_and(|job| job.is_finished()) {
+            match descriptor_job.take().unwrap().await {
+                Ok(Ok(Some(descriptor))) => {
+                    recorder_descriptor = Some(descriptor);
+                    descriptor_reason = None;
+                }
+                Ok(Ok(None)) => {
+                    recorder_descriptor = None;
+                    descriptor_reason = Some("The connected provider has no verified capture naming or interface descriptor".into());
+                }
+                other => {
+                    recorder_descriptor = None;
+                    descriptor_reason = Some(format!(
+                        "Capture mapping unavailable: {}",
+                        match other {
+                            Ok(Err(e)) => e,
+                            Err(e) => e.to_string(),
+                            _ => unreachable!(),
+                        }
+                    ));
+                }
+            }
+            if selected.is_none() && client.is_none() && pending.is_none() && backend_task.is_none()
+            {
+                if let (Some(descriptor), Ok(service)) = (&recorder_descriptor, &mut service) {
+                    let matches: Vec<_> = devices
+                        .iter()
+                        .filter(|device| recorder_device_matches(descriptor, device))
+                        .collect();
+                    if matches.len() == 1
+                        && service.select_discovered_device(matches[0].clone()).is_ok()
+                    {
+                        selected = Some(matches[0].clone());
+                        if let Some(backend) = &mut backend {
+                            backend.configure(helper.clone(), selected.clone());
+                            cached_backend = Some((backend.state(), backend.available()));
+                            soundcheck_reason = backend.unavailable_reason();
+                        }
+                    }
+                }
+            }
+        }
+        if descriptor_job.is_none()
+            && descriptor_dirty
+            && client.is_none()
+            && pending.is_none()
+            && backend_task.is_none()
+            && cached_backend
+                .as_ref()
+                .is_none_or(|(state, _)| state.input_mode == "live")
+        {
+            if let Some(engine) = engine.clone() {
+                descriptor_dirty = false;
+                descriptor_job = Some(tokio::spawn(async move {
+                    tokio::time::timeout(Duration::from_secs(3), async move {
+                        engine.selector_session().await?.recorder_descriptor().await
+                    })
+                    .await
+                    .map_err(|_| "provider readback timed out".to_owned())?
+                    .map_err(|e| e.to_string())
+                }));
+            }
+        }
         let result = if shutting_down {
             json!({"error":"host shutting down"})
         } else {
@@ -265,7 +427,34 @@ async fn worker_with_config(
                         }
                         if let Some(c) = &client {
                             match c.status().await {
-                                Ok(v) => capture_status = Some(v["status"].clone()),
+                                Ok(v) => {
+                                    let status = v["status"].clone();
+                                    if status["error"].as_str().is_some()
+                                        && status["transport"] == "recording"
+                                    {
+                                        // Failed capture must release its stream before recovery.
+                                        if let Some(c) = client.take() {
+                                            match c
+                                                .stop(Instant::now() + Duration::from_secs(2))
+                                                .await
+                                            {
+                                                Ok(stopped) => {
+                                                    capture_error = stopped["stop_error"]
+                                                        .as_str()
+                                                        .map(str::to_owned);
+                                                    capture_status =
+                                                        Some(stopped["status"].clone());
+                                                }
+                                                Err(e) => {
+                                                    capture_error = Some(e);
+                                                    capture_status = None;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        capture_status = Some(status);
+                                    }
+                                }
                                 Err(e) => {
                                     client = None;
                                     capture_status = None;
@@ -281,6 +470,35 @@ async fn worker_with_config(
                         }
                         if let Some(o) = v.as_object_mut() {
                             o.insert("available".into(), json!(true));
+                            let names = recorder_descriptor
+                                .as_ref()
+                                .filter(|descriptor| {
+                                    selected.as_ref().is_some_and(|device| {
+                                        recorder_device_matches(descriptor, device)
+                                    })
+                                })
+                                .map(|descriptor| descriptor.channel_names.clone())
+                                .unwrap_or_default();
+                            let names = if client.is_some() {
+                                active_capture_names.clone()
+                            } else {
+                                names
+                            };
+                            o.insert("channel_names".into(), json!(names));
+                            let device_reason = recorder_descriptor.as_ref().map(|descriptor| {
+                                let count = devices.iter().filter(|device| recorder_device_matches(descriptor, device)).count();
+                                if count > 1 {
+                                    "Multiple matching audio interfaces were found; select the intended interface".to_owned()
+                                } else if count == 0 {
+                                    "No audio interface matches the connected provider's model and channel layout".to_owned()
+                                } else if selected.as_ref().is_some_and(|device| recorder_device_matches(descriptor, device)) {
+                                    "The selected interface matches the connected provider's model and channel layout".to_owned()
+                                } else {
+                                    "A matching interface is available; the manually selected interface was preserved".to_owned()
+                                }
+                            }).or_else(|| descriptor_reason.clone());
+                            o.insert("device_match_reason".into(), json!(device_reason));
+                            o.insert("channel_names_reason".into(), if !names.is_empty() { Value::Null } else { json!(descriptor_reason.as_deref().unwrap_or("Select the connected provider's matching audio interface to use its verified capture names")) });
                             o.insert(
                                 "channels".into(),
                                 selected
@@ -343,7 +561,8 @@ async fn worker_with_config(
                             );
                             o.insert("soundcheck_pending".into(), json!(backend_task.is_some()));
                             o.insert("soundcheck_overdue".into(), json!(backend_overdue));
-                            o.insert("disk_free_bytes".into(), Value::Null);
+                            o.insert("disk_free_bytes".into(), json!(disk_free_bytes));
+                            o.insert("disk_space_error".into(), json!(disk_space_error));
                             o.insert(
                                 "capabilities".into(),
                                 json!({"recording":helper.as_ref().is_some_and(|p| p.is_file()),"soundcheck":cached_backend.as_ref().is_some_and(|(_, available)| *available), "play": backend.is_some(), "pause": backend.is_some(), "seek": backend.is_some(), "loop": backend.is_some()}),
@@ -356,6 +575,7 @@ async fn worker_with_config(
                             match rx.try_recv() {
                                 Ok(Ok(found)) => {
                                     devices = found;
+                                    descriptor_dirty = true;
                                     scan = None;
                                     scan_error = (cfg!(windows) && devices.is_empty()).then(||
                                         "No usable ASIO interfaces found. Install the interface manufacturer's 64-bit ASIO driver, connect its USB audio cable, and close other audio applications before refreshing.".into());
@@ -614,6 +834,7 @@ async fn worker_with_config(
                                         s.select_discovered_device(device.clone())
                                             .map_err(|e| e.to_string())?;
                                         selected = Some(device);
+                                        descriptor_dirty = true;
                                         if let Some(backend) = &mut backend {
                                             backend.configure(helper.clone(), selected.clone());
                                             cached_backend =
@@ -644,12 +865,49 @@ async fn worker_with_config(
                                             device,
                                             root.clone(),
                                             gen,
-                                            Instant::now() + Duration::from_secs(10),
+                                            Instant::now() + Duration::from_secs(30),
                                         );
+                                        // Re-read mapping at record start, rather than trusting stale
+                                        // UI channel order or a cached USB patch.
+                                        active_capture_names = if let Some(engine) = engine.clone()
+                                        {
+                                            match tokio::time::timeout(
+                                                Duration::from_secs(3),
+                                                async move {
+                                                    engine
+                                                        .selector_session()
+                                                        .await?
+                                                        .recorder_descriptor()
+                                                        .await
+                                                },
+                                            )
+                                            .await
+                                            {
+                                                Ok(Ok(Some(descriptor)))
+                                                    if selected.as_ref().is_some_and(
+                                                        |device| {
+                                                            recorder_device_matches(
+                                                                &descriptor,
+                                                                device,
+                                                            )
+                                                        },
+                                                    ) =>
+                                                {
+                                                    descriptor.channel_names
+                                                }
+                                                _ => Vec::new(),
+                                            }
+                                        } else {
+                                            Vec::new()
+                                        };
+                                        if active_capture_names.is_empty() {
+                                            descriptor_reason = Some("Fresh capture mapping could not be verified for the selected interface at record start".into());
+                                        }
+                                        let names = active_capture_names.clone();
                                         let take = take.to_owned();
                                         let task = tokio::spawn(async move {
                                             let c = prep.ready().await?;
-                                            let v = c.commit(gen, &take).await?;
+                                            let v = c.commit_named(gen, &take, names).await?;
                                             Ok((c, v["status"].clone()))
                                         });
                                         pending =
@@ -674,12 +932,21 @@ async fn worker_with_config(
                                         }
                                     }
                                     if let Some(c) = client.take() {
-                                        let result = c
-                                            .stop(Instant::now() + Duration::from_secs(2))
-                                            .await
-                                            .map(|_| ());
-                                        capture_status = None;
-                                        result
+                                        match c.stop(Instant::now() + Duration::from_secs(2)).await
+                                        {
+                                            Ok(stopped) => {
+                                                capture_error = stopped["stop_error"]
+                                                    .as_str()
+                                                    .map(str::to_owned);
+                                                capture_status = Some(stopped["status"].clone());
+                                                Ok(())
+                                            }
+                                            Err(e) => {
+                                                capture_status = None;
+                                                capture_error = Some(e.clone());
+                                                Err(e)
+                                            }
+                                        }
                                     } else if !capture_active
                                         && backend
                                             .as_ref()
@@ -879,6 +1146,10 @@ async fn worker_with_config(
                                 }
                                 _ => Err("unknown action".to_string()),
                             };
+                            if result.is_ok() && action == "recover_take" {
+                                capture_status = None;
+                                capture_error = None;
+                            }
                             let response = match result {
                                 Ok(()) => json!({"ok":true,"request_id":id,"error":null}),
                                 Err(e) => json!({"ok":false,"request_id":id,"error":e}),

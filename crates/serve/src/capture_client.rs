@@ -119,13 +119,21 @@ impl CaptureClient {
             .map_err(|_| "capture helper terminated".to_string())?
     }
     pub async fn commit(&self, generation: u64, take_id: &str) -> Result<Value, String> {
+        self.commit_named(generation, take_id, Vec::new()).await
+    }
+    pub async fn commit_named(
+        &self,
+        generation: u64,
+        take_id: &str,
+        names: Vec<String>,
+    ) -> Result<Value, String> {
         if generation != self.generation {
             return Err("stale generation".into());
         }
         self.request(
-            json!({"op":"commit", "generation":generation, "take_id":take_id}),
+            json!({"op":"commit", "generation":generation, "take_id":take_id,"channel_names":names}),
             "RECORDING",
-            Instant::now() + OP_TIMEOUT,
+            Instant::now() + Duration::from_secs(10),
         )
         .await
     }
@@ -186,14 +194,37 @@ fn exchange(
         return Err("capture command exceeds limit".into());
     }
     child.send(value).map_err(|e| e.to_string())?;
+    let mut stage = "waiting_for_helper_response".to_owned();
     let response = child
         .wait_for_ready_cancelled(
             deadline,
             MAX_MESSAGE,
-            |_| true,
+            |value| {
+                if value["state"] == "PROGRESS" {
+                    stage = value["stage"]
+                        .as_str()
+                        .unwrap_or("unknown_stage")
+                        .to_owned();
+                    false
+                } else {
+                    true
+                }
+            },
             || cancelled.load(Ordering::Acquire),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            format!(
+                "capture {} at {stage}: {e}",
+                value["op"].as_str().unwrap_or("operation")
+            )
+        })?;
+    if response["state"] == "ERROR" {
+        return Err(format!(
+            "capture {} at {stage}: {}",
+            value["op"].as_str().unwrap_or("operation"),
+            response["error"].as_str().unwrap_or("helper failed")
+        ));
+    }
     if cancelled.load(Ordering::Acquire) {
         return Err("capture cancelled".into());
     }
