@@ -106,7 +106,7 @@ class MixerBanks extends StatelessWidget {
     final banks = controller.store.banks;
     final layers = PrefsService.instance.mixerLayers;
     final count = controller.muteGroupCount;
-    final status = Text(controller.connectionLabel.toUpperCase(),
+    final status = controller.demo ? const SizedBox.shrink() : Text(controller.connectionLabel.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: mixerType(context, 10,

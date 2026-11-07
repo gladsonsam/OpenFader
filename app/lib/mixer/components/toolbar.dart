@@ -54,7 +54,7 @@ class MixerToolbar extends StatelessWidget {
                                               ? AppDesign.compactParameterValue
                                               : AppDesign.parameterValue,
                                           weight: FontWeight.w600)))),
-                          if (!compact)
+                          if (!compact && !controller.demo)
                             Expanded(
                                 child: Align(
                                     alignment: Alignment.centerRight,
@@ -65,12 +65,9 @@ class MixerToolbar extends StatelessWidget {
                                         onPressed: () => onNavigate(
                                             MixerDestination.connect),
                                         child: Text(
-                                            controller.demo
-                                                ? 'Demo desk'
-                                                : controller.connected
-                                                    ? controller
-                                                        .connectionDisplayName
-                                                    : 'Disconnected',
+                                            controller.connected
+                                                ? controller.connectionDisplayName
+                                                : 'Disconnected',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: mixerType(
@@ -497,7 +494,7 @@ class SelectedControlReadout extends StatelessWidget {
                             style: mixerType(context, 11,
                                 color: ConsolePalette.of(context).mutedText)),
                     ]))))),
-        if (!compact)
+        if (!compact && connectionName.isNotEmpty)
           Expanded(
               child: InkWell(
                   onTap: onConnection,
