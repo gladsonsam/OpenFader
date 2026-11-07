@@ -8,6 +8,8 @@ destination.mkdir(parents=True, exist_ok=True)
 for path in sorted(source.glob('*.png')):
     ui = Image.open(path).convert('RGBA')
     w, h = ui.size
+    if w * 3 != h * 4:
+        continue  # Phone captures stay native; never give them an iPad bezel.
     bezel, margin = 48, 24
     frame = Image.new('RGBA', (w + 2*(bezel+margin), h + 2*(bezel+margin)))
     draw = ImageDraw.Draw(frame)

@@ -1,0 +1,188 @@
+{
+  "start-connections": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/start-connections-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/start-connections-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "connect-add": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/connect-add-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/connect-add-detail.png",
+    "asset_dimensions": [
+      960,
+      880
+    ],
+    "capture_padding": 0
+  },
+  "mixer-banks": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/mixer-banks-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/mixer-banks-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "layers": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/layers-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/layers-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "mixer-sends": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/mixer-sends-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/mixer-sends-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "mixer-phone": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/mixer-phone-raw.png",
+    "raw_dimensions": [
+      1206,
+      2622
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/mixer-phone-detail.png",
+    "asset_dimensions": [
+      1206,
+      2622
+    ],
+    "capture_padding": 0
+  },
+  "meters": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/meters-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/meters-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "channel-input": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/channel-input-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/channel-input-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "channel-gate": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/channel-gate-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/channel-gate-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "channel-compressor": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/channel-compressor-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/channel-compressor-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "channel-phone": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/channel-phone-raw.png",
+    "raw_dimensions": [
+      1206,
+      2622
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/channel-phone-detail.png",
+    "asset_dimensions": [
+      1206,
+      2622
+    ],
+    "capture_padding": 0
+  },
+  "recorder": {
+    "status": "blocked",
+    "reason": "Native offline iOS has no computer HostTransport; recorder route is unavailable."
+  },
+  "settings": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/settings-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/settings-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  },
+  "settings-access": {
+    "status": "captured",
+    "raw": "/screenshots/ipad-2026-11-07/raw/settings-access-raw.png",
+    "raw_dimensions": [
+      2752,
+      2064
+    ],
+    "asset": "/screenshots/ipad-2026-11-07/settings-access-framed.png",
+    "asset_dimensions": [
+      2896,
+      2208
+    ],
+    "capture_padding": 0
+  }
+}
