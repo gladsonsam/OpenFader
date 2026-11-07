@@ -241,3 +241,85 @@ the capture preserves the actual viewport. Scene examples are local simulated
 captures, not native console archives. The simple common bezel is illustrative,
 not an Apple product render. Existing hashed media remain for dev1 to migrate
 references without disturbing uncommitted website work.
+
+## Supporting docs refresh — native captures (2026-11-07)
+
+These replace the supporting docs images from the Linux session. All successful
+captures use the installed badge-free fixture build from this branch, real iPad
+Pro 13-inch (M5) or iPhone 18 Pro simulator UI, and an explicitly selected offline
+session. No labels are painted out. No hardware connection or verification is
+claimed. The previous five feature captures and GIF are preserved unchanged.
+
+Public base: `/screenshots/ipad-2026-11-07/` (repository directory
+`landing/public/screenshots/ipad-2026-11-07/`). Raw files are published in its
+`raw/` child for full-size links. All tablet raw captures are **2752×2064 (4:3)**,
+zero capture padding/cropping, with native OS safe areas retained. The tablet
+frames use the existing **2896×2208 (181:138)** bezel, UI at `(72,72)` without
+resizing. Native phone captures are **1206×2622 (201:437)**; `-detail` copies keep
+all phone pixels and have no tablet bezel. The add dialog detail is the only
+crop: `(896,604,1856,1484)` left/top/right/bottom, **960×880**; full raw retained.
+
+| Old docs basename | Replacement under public base | Dimensions | Full-size raw under public base |
+|---|---|---|---|
+| `start-connections.png` | `start-connections-framed.png` | 2896×2208 | `raw/start-connections-raw.png` (2752×2064) |
+| `connect-add.png` | `connect-add-detail.png` | 960×880 | `raw/connect-add-raw.png` (2752×2064) |
+| `mixer-banks.png` | `mixer-banks-framed.png` | 2896×2208 | `raw/mixer-banks-raw.png` (2752×2064) |
+| `layers.png` | `layers-framed.png` | 2896×2208 | `raw/layers-raw.png` (2752×2064) |
+| `mixer-sends.png` | `mixer-sends-framed.png` | 2896×2208 | `raw/mixer-sends-raw.png` (2752×2064) |
+| `mixer-phone.png` | `mixer-phone-detail.png` | 1206×2622 | `raw/mixer-phone-raw.png` (1206×2622) |
+| `meters.png` | `meters-framed.png` | 2896×2208 | `raw/meters-raw.png` (2752×2064) |
+| `channel-input.png` | `channel-input-framed.png` | 2896×2208 | `raw/channel-input-raw.png` (2752×2064) |
+| `channel-gate.png` | `channel-gate-framed.png` | 2896×2208 | `raw/channel-gate-raw.png` (2752×2064) |
+| `channel-compressor.png` | `channel-compressor-framed.png` | 2896×2208 | `raw/channel-compressor-raw.png` (2752×2064) |
+| `channel-phone.png` | `channel-phone-detail.png` | 1206×2622 | `raw/channel-phone-raw.png` (1206×2622) |
+| `recorder.png` | **BLOCKED — no refreshed asset** | — | — |
+| `settings.png` | `settings-framed.png` | 2896×2208 | `raw/settings-raw.png` (2752×2064) |
+| `settings-access.png` | `settings-access-framed.png` | 2896×2208 | `raw/settings-access-raw.png` (2752×2064) |
+
+Machine-readable mapping: `/screenshots/ipad-2026-11-07/docs-assets.json`.
+`recorder.png` is **blocked**, not refreshed: the native offline iOS build has
+no attached computer `HostTransport`, so its Tools menu omits Recorder & takes.
+The code gates that route on `widget.api is HostTransport`. No old screenshot
+has been copied or relabelled as a new capture. Recorder remains docs-only;
+there is no new marketing panel. A new actual recorder capture needs a connected
+computer host or a separate native desktop capture session.
+
+The screenshots retain actual application states: saved mixers may be scanning
+or unavailable, access limits are unlocked, and some channel sends/processors
+are unavailable. Gate is bypassed in the fixture; its editor is still a real
+view. Layers is the actual sheet, not the bank popup. Meters are live simulated
+levels. The phone views show named instruments from the same opt-in fixture.
+Visual inspection and accessibility checks found no redundant Demo/simulated
+badge in the exported views. The optional local Vision OCR attempt failed;
+it is not used as evidence of a successful check.
+
+### Repeat all supporting docs captures
+
+Use the same fixture build described above on **both** simulators. After
+`device_open` for each device (never borrowing another thread's session), run
+with Python + Pillow using that device's bound command:
+
+```sh
+python landing/screenshots/capture-ipad.py --docs /absolute/ipad/agent-device ipad
+python landing/screenshots/capture-ipad.py --docs /absolute/iphone/agent-device iphone
+```
+
+The `--docs` entry point runs `capture-docs.py` and `export-docs.py`. It captures
+all 14 requested names or reports a real capability block; it does not overwrite
+the five main captures or GIF. Exporting preserves raw pixels, frames only 4:3
+tablet images, crops the add dialog, and writes `docs-assets.json`. Optional
+stages (`channel`, `meters`, `settings`, `recorder`, `banks`, `sends`) support
+resuming from an inspected screen. The bank-menu pan and Layers scrim tap use
+observed 1376×1032-point iPad geometry because AX exposes off-screen menu refs
+and its Dismiss hit point lands inside the sheet; recheck if geometry changes.
+No widget tests or protocol tests were added; no app code changed in this docs
+refresh, so the preceding clean analysis/native gates remain applicable.
+
+Validation: final `--docs … ipad` and `--docs … iphone` runs both completed
+successfully, including export; the iPad run reported only the expected Recorder
+capability block. All 13 raw views were visually inspected. Frame UI regions
+were compared with raw captures and are pixel-identical. Capture scripts passed
+Python syntax compilation. No app source was changed in this follow-up.
+The final bank-stage recheck added a two-second menu settling pause and a
+required `New from template` sheet-content check. That corrected `banks` run
+completed and re-exported FX returns, Layers, and BUS1 sends successfully.

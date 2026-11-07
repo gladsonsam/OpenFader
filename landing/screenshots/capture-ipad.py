@@ -2,6 +2,10 @@
 Requires Python 3. Capture runs exclusively through the owned Device-panel session.
 """
 import pathlib, re, subprocess, sys, time
+if '--docs' in sys.argv:
+    args = [a for a in sys.argv[1:] if a != '--docs']
+    subprocess.check_call([sys.executable, str(pathlib.Path(__file__).with_name('capture-docs.py')), *args])
+    raise SystemExit(0)
 agent = sys.argv[1]
 root = pathlib.Path(__file__).resolve().parents[2]
 out = root / 'app/assets/screenshots/ipad-2026-11-07/raw'
