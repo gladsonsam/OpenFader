@@ -21,7 +21,7 @@ async fn rig_solo_write_path() {
         return;
     }
     let driver = XAirDriver::new();
-    let rig = std::env::var("OPENFADER_RIG_ADDR").unwrap_or_else(|_| "192.168.1.120".to_string());
+    let rig = std::env::var("OPENFADER_RIG_ADDR").expect("Set OPENFADER_RIG_ADDR to the test mixer address");
     driver.connect(&format!("{rig}:10024")).await.unwrap();
     let bank = async || {
         let guard = driver.session().await.unwrap();
