@@ -5,13 +5,22 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 class NativeArchiveFiles {
+  static void _requireLocalStorage() {
+    if (kIsWeb) {
+      throw UnsupportedError(
+          'Native archive storage is unavailable in the browser. Use the desktop app to preserve or export native archives.');
+    }
+  }
+
   static const maxBytes = 32 * 1024 * 1024;
 
   static Future<File?> latest() async {
+    _requireLocalStorage();
     final documents = await getApplicationDocumentsDirectory();
     final directory = Directory('${documents.path}/native_archives');
     if (!await directory.exists()) return null;
@@ -46,6 +55,7 @@ class NativeArchiveFiles {
   }
 
   static Future<File> preserve(List<dynamic> raw, bool Function() valid) async {
+    _requireLocalStorage();
     if (raw.length > maxBytes ||
         raw.any((b) => b is! int || b < 0 || b > 255)) {
       throw StateError('Invalid native archive bytes.');
@@ -80,6 +90,7 @@ class NativeArchiveFiles {
   }
 
   static Future<void> share(File file) async {
+    _requireLocalStorage();
     final view = PlatformDispatcher.instance.views.first;
     final size = view.physicalSize / view.devicePixelRatio;
     final result = await SharePlus.instance.share(

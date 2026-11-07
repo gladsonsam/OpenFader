@@ -34,6 +34,7 @@ pub mod remote_listener;
 pub mod routing_transaction;
 pub mod soundcheck;
 pub mod soundcheck_transport;
+mod web_host;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -74,6 +75,9 @@ pub struct ServeOptions {
     pub preset: Option<String>,
     /// Directory of static UI files. `None` = auto-detect (`ui/`).
     pub static_dir: Option<PathBuf>,
+    pub web_dir: Option<PathBuf>,
+    pub web_port: Option<u16>,
+    pub web_bind: std::net::IpAddr,
     /// R2 poller pipelining: max concurrent driver queries per poll tick
     /// (`--poll-inflight`; `None` = per-driver default: sim 4, xair 1).
     pub poll_inflight: Option<usize>,
@@ -90,6 +94,9 @@ impl Default for ServeOptions {
             addr: None,
             preset: None,
             static_dir: None,
+            web_dir: None,
+            web_port: None,
+            web_bind: std::net::Ipv4Addr::UNSPECIFIED.into(),
             poll_inflight: None,
             data_dir: None,
         }
@@ -111,9 +118,13 @@ async fn ws_handler(
     headers: axum::http::HeaderMap,
 ) -> axum::response::Response {
     let active = if app.remote_audience {
-        bearer(&headers)
-            .and_then(|t| app.remote.access.authenticate_connection(t))
-            .map(|(_, rx)| rx)
+        (if app.web_audience {
+            web_host::authorized_token(&app, &headers)
+        } else {
+            bearer(&headers)
+        })
+        .and_then(|t| app.remote.access.authenticate_connection(t))
+        .map(|(_, rx)| rx)
     } else {
         None
     };
@@ -611,9 +622,13 @@ fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
 }
 fn recorder_authorized(app: &AppState, headers: &axum::http::HeaderMap) -> bool {
     if app.remote_audience {
-        return bearer(headers)
-            .and_then(|t| app.remote.access.authenticate(t))
-            .is_some();
+        return (if app.web_audience {
+            web_host::authorized_token(app, headers)
+        } else {
+            bearer(headers)
+        })
+        .and_then(|t| app.remote.access.authenticate(t))
+        .is_some();
     }
     let Some(expected) = app.recorder_token.as_deref() else {
         return false;
@@ -903,6 +918,10 @@ fn content_type(path: &str) -> &'static str {
         "svg" => "image/svg+xml",
         "ico" => "image/x-icon",
         "wasm" => "application/wasm",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
         _ => "application/octet-stream",
     }
 }
@@ -978,6 +997,7 @@ struct AppState {
     shutdown: Arc<tokio::sync::Notify>,
     remote: Arc<RemoteHost>,
     remote_audience: bool,
+    web_audience: bool,
 }
 
 // In-memory identity is used by tests and platforms without server storage.
@@ -1003,6 +1023,9 @@ type RemoteListener = (
 struct RemoteHost {
     access: remote_access::RemoteAccess,
     listener: tokio::sync::Mutex<Option<RemoteListener>>,
+    web_listener: tokio::sync::Mutex<Option<RemoteListener>>,
+    web_clients: std::sync::Mutex<std::collections::HashSet<String>>,
+    web_dir: Option<PathBuf>,
     microphone_authorized: std::sync::atomic::AtomicBool,
 }
 async fn remote_admin(
@@ -1021,7 +1044,37 @@ async fn remote_admin(
     let mut listener = app.remote.listener.lock().await;
     let result = match (method.as_str(), uri.path()) {
         ("GET", "/api/remote/v1/status") => {
-            serde_json::json!({"enabled":app.remote.access.is_enabled(),"port":listener.as_ref().map(|v| v.0.port()),"fingerprint":app.remote.access.fingerprint(),"password_required":app.remote.access.password_required()})
+            let mut status = web_host::status(&app).await;
+            status.as_object_mut().unwrap().extend(serde_json::json!({"enabled":listener.is_some(),"port":listener.as_ref().map(|v| v.0.port()),"fingerprint":app.remote.access.fingerprint(),"password_required":app.remote.access.password_required()}).as_object().unwrap().clone());
+            status
+        }
+        ("POST", "/api/remote/v1/web_enable") => {
+            let ip = body
+                .as_ref()
+                .and_then(|v| v.0["ip"].as_str())
+                .unwrap_or("0.0.0.0")
+                .parse::<std::net::IpAddr>();
+            let port = body
+                .as_ref()
+                .and_then(|v| v.0["port"].as_u64())
+                .unwrap_or(8846);
+            let (Ok(ip), Ok(port)) = (ip, u16::try_from(port)) else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error":"Invalid browser address or port"})),
+                );
+            };
+            if let Err(error) = web_host::enable(&app, ip, port).await {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({"error":error})),
+                );
+            }
+            web_host::status(&app).await
+        }
+        ("POST", "/api/remote/v1/web_disable") => {
+            web_host::disable(&app, listener.is_some()).await;
+            web_host::status(&app).await
         }
         ("POST", "/api/remote/v1/password") => {
             let Some(password) = body
@@ -1110,7 +1163,16 @@ async fn remote_admin(
             serde_json::json!({"enabled":true,"port":listener.as_ref().unwrap().0.port()})
         }
         ("POST", "/api/remote/v1/disable") => {
-            app.remote.access.set_enabled(false);
+            if app.remote.web_listener.lock().await.is_none() {
+                app.remote.access.set_enabled(false);
+            } else {
+                let web_clients = app.remote.web_clients.lock().unwrap();
+                for id in app.remote.access.clients() {
+                    if !web_clients.contains(&id) {
+                        app.remote.access.revoke(&id);
+                    }
+                }
+            }
             if let Some((_, tx, task)) = listener.take() {
                 let _ = tx.send(());
                 let _ = task.await;
@@ -1335,6 +1397,10 @@ pub async fn run_with_full(
     use openfader_engine::{Engine, EngineConfig};
 
     let local = listener.local_addr()?;
+    anyhow::ensure!(
+        opts.web_port.is_none() || local.ip().is_loopback(),
+        "Browser hosting requires a loopback administration listener"
+    );
     if opts.sim_only
         && (opts.driver != "sim"
             || opts.addr.is_some()
@@ -1383,6 +1449,14 @@ pub async fn run_with_full(
     let token = std::env::var("OPENFADER_RECORDER_TOKEN")
         .ok()
         .filter(|s| s.len() >= 32 && s.is_ascii());
+    let token = if token.is_none() && opts.web_port.is_some() {
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes)
+            .map_err(|e| anyhow::anyhow!("Could not initialize host credential: {e}"))?;
+        Some(bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    } else {
+        token
+    };
     let recorder_token = if local.ip().is_loopback() {
         token.map(Arc::new)
     } else {
@@ -1409,6 +1483,9 @@ pub async fn run_with_full(
             }
         },
         listener: tokio::sync::Mutex::new(None),
+        web_listener: tokio::sync::Mutex::new(None),
+        web_clients: std::sync::Mutex::new(Default::default()),
+        web_dir: web_host::resolve_dir(opts.web_dir.clone()),
         // Only macOS requires authorization relayed from the desktop UI. ASIO
         // reports its own device access failures when the stream is opened.
         microphone_authorized: std::sync::atomic::AtomicBool::new(!cfg!(target_os = "macos")),
@@ -1445,22 +1522,37 @@ pub async fn run_with_full(
             axum::routing::post(recorder_command),
         )
         .route("/", get(static_root))
-        .route("/{*path}", get(static_file))
-        .with_state(AppState {
-            engine,
-            static_dir,
-            sim_only: opts.sim_only,
-            recorder,
-            recorder_token,
-            desktop_instance,
-            shutdown: shutdown.clone(),
-            remote: remote.clone(),
-            remote_audience: false,
-        });
+        .route("/{*path}", get(static_file));
+    let state = AppState {
+        engine,
+        static_dir,
+        sim_only: opts.sim_only,
+        recorder,
+        recorder_token,
+        desktop_instance,
+        shutdown: shutdown.clone(),
+        remote: remote.clone(),
+        remote_audience: false,
+        web_audience: false,
+    };
+    if let Some(password) = std::env::var_os("OPENFADER_SERVER_PASSWORD") {
+        remote.access.set_password(
+            password
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Server password is not valid Unicode"))?,
+        )?;
+    }
+    if let Some(port) = opts.web_port {
+        web_host::enable(&state, opts.web_bind, port)
+            .await
+            .map_err(anyhow::Error::msg)?;
+    }
+    let app = app.with_state(state.clone());
 
     eprintln!("openfader-serve: listening on http://{local} (ws://{local}/ws)");
     let result = serve_loop(listener, app, shutdown).await;
     remote.access.set_enabled(false);
+    web_host::disable(&state, false).await;
     if let Some((_, stop, task)) = remote.listener.lock().await.take() {
         let _ = stop.send(());
         let _ = task.await;
@@ -1749,6 +1841,9 @@ mod remote_router_tests {
         let remote = Arc::new(RemoteHost {
             access: remote_access::RemoteAccess::new(&MemoryIdentity::default()).unwrap(),
             listener: tokio::sync::Mutex::new(None),
+            web_listener: tokio::sync::Mutex::new(None),
+            web_clients: std::sync::Mutex::new(Default::default()),
+            web_dir: None,
             microphone_authorized: std::sync::atomic::AtomicBool::new(false),
         });
         let app = AppState {
@@ -1761,6 +1856,7 @@ mod remote_router_tests {
             shutdown: Arc::new(tokio::sync::Notify::new()),
             remote: remote.clone(),
             remote_audience: false,
+            web_audience: false,
         };
         let router = Router::new()
             .route(

@@ -14,6 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 openfader-engine = { path = "../engine" }
+openfader-transport = { path = "../transport" }
 openfader-sim = { path = "../sim" }
 openfader-audio = { path = "../audio" }
 anyhow = "1"

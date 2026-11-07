@@ -128,3 +128,9 @@ install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/../../target/$<IF:$<CONFIG:Debug>,
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../target/$<IF:$<CONFIG:Debug>,debug,release>/openfader_flutter_bridge.dll"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+
+# Prepared before the desktop build by scripts/ci-build-app.py.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../build/web/flutter_bootstrap.js")
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../build/web/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/web" COMPONENT Runtime)
+endif()

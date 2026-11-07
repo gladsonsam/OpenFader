@@ -27,6 +27,10 @@ Options:
                    (hardware drivers ignore it)
   --addr <ip>      hardware mixer address (sim ignores it)
   --static-dir <d> UI directory (default: auto-detect ui/)
+  --web-port <n>   enable optional HTTP Flutter browser host on this port
+  --web-bind <ip>  browser bind address (default 0.0.0.0)
+  --web-dir <d>    built Flutter web assets (index.html + flutter_bootstrap.js)
+                  shared password: OPENFADER_SERVER_PASSWORD environment variable
   --data-dir <d>   scene library directory (R2: persisted scenes.json;
                    default: in-memory scenes only)
   --poll-ms <ms>   param-plane poll tick in ms (default 50 = 20 queries/s);
@@ -146,6 +150,37 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|_| anyhow::anyhow!("--poll-inflight must be a number"))?,
                 );
             }
+            "--web-port" => {
+                i += 1;
+                opts.web_port = Some(
+                    argv.get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--web-port needs a value"))?
+                        .parse()?,
+                );
+            }
+            v if v.starts_with("--web-port=") => {
+                opts.web_port = Some(v["--web-port=".len()..].parse()?);
+            }
+            "--web-bind" => {
+                i += 1;
+                opts.web_bind = argv
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--web-bind needs a value"))?
+                    .parse()?;
+            }
+            v if v.starts_with("--web-bind=") => {
+                opts.web_bind = v["--web-bind=".len()..].parse()?;
+            }
+            "--web-dir" => {
+                i += 1;
+                opts.web_dir = Some(PathBuf::from(
+                    argv.get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--web-dir needs a value"))?,
+                ));
+            }
+            v if v.starts_with("--web-dir=") => {
+                opts.web_dir = Some(PathBuf::from(&v["--web-dir=".len()..]));
+            }
             "--data-dir" => {
                 i += 1;
                 opts.data_dir =
@@ -165,6 +200,15 @@ async fn main() -> anyhow::Result<()> {
         i += 1;
     }
 
+    if opts.web_port.is_some() {
+        let explicit_bind = argv
+            .iter()
+            .any(|v| v == "--bind" || v.starts_with("--bind="));
+        if !explicit_bind {
+            bind = "127.0.0.1".into();
+        }
+        anyhow::ensure!(bind.parse::<std::net::IpAddr>()?.is_loopback(), "--web-port requires a loopback administration --bind; browser clients use --web-bind instead");
+    }
     let sock: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(sock).await?;
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

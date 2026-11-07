@@ -63,16 +63,18 @@ Export and import only work on the computer itself, not from a phone.
 
 On the computer:
 
-1. Open the recorder settings. Under **Remote pairing**, enter the computer's network address in **LAN IPv4 address** (for example `192.168.1.20`).
-2. Tap **Enable**, then **Create pairing**, then **Copy pairing JSON**. The pairing code is valid for two minutes.
-3. Send the copied text to your phone.
+1. Open **Audio setup** in the recorder and expand **Remote server**.
+2. Set a server password if you want one, then enable access for app clients.
+3. Note the computer's network address and app port.
 
 On the phone or tablet:
 
-1. On the Connections screen, tap **Connect to computer**.
-2. Paste the text into **Paste pairing JSON** and tap **Connect**.
+1. On the Connections screen, add a server using the computer's IP address or hostname and port.
+2. Enter the server password if asked.
 
-The phone can now record, stop, play and run soundchecks. To remove a phone, tap **Revoke** next to it under **Paired clients** on the computer. Pairings do not survive a restart of the computer's recorder, so you pair again after that.
+The phone can now record, stop, play and run soundchecks on the computer. To disconnect a client, use **Revoke** in the server settings.
+
+You can also enable browser hosting in the same section. Open the displayed browser address on another device and enter the same optional password. Recording still runs on the hosting computer; the browser controls its recorder and mixer session.
 
 ## Limits
 

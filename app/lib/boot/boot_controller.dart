@@ -14,7 +14,9 @@ import '../state/app_store.dart';
 import 'fake_sim_engine.dart';
 
 class BootController extends ChangeNotifier {
-  BootController();
+  BootController({EngineApi? api})
+      : _api = api,
+        _isRealEngine = api != null;
 
   // Step labels in run order; the launch screen renders them as a checklist.
   static const steps = <String>[
@@ -24,6 +26,15 @@ class BootController extends ChangeNotifier {
     'Syncing mixer state',
   ];
 
+  List<String> get stageLabels => kIsWeb
+      ? const [
+          'Preparing interface',
+          'Connecting to server',
+          'Starting server session',
+          'Syncing mixer state',
+        ]
+      : steps;
+
   int _step = 0;
   bool _running = false;
   bool _done = false;
@@ -32,7 +43,7 @@ class BootController extends ChangeNotifier {
 
   EngineApi? _api;
   AppStore? _store;
-  bool _isRealEngine = false;
+  bool _isRealEngine;
 
   // Index of the running step, or steps.length once done.
   int get step => _done ? steps.length : _step;
@@ -40,7 +51,7 @@ class BootController extends ChangeNotifier {
   String get status {
     if (_error != null) return 'Boot failed';
     if (_done) return 'Ready';
-    return '${steps[_step.clamp(0, steps.length - 1)]}…';
+    return '${stageLabels[_step.clamp(0, stageLabels.length - 1)]}…';
   }
 
   double get progress => _done ? 1.0 : _step / steps.length;
@@ -58,6 +69,7 @@ class BootController extends ChangeNotifier {
 
   String? get engineLabel {
     if (_api == null) return null;
+    if (kIsWeb) return 'connected server';
     return _isRealEngine ? 'embedded engine' : 'sim fallback';
   }
 
@@ -79,6 +91,10 @@ class BootController extends ChangeNotifier {
       _step = 1;
       notifyListeners();
       if (_api == null) {
+        if (kIsWeb) {
+          throw StateError(
+              'Connect to the hosting server before starting the browser app.');
+        }
         if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
           _api = await DesktopHost.start();
           _isRealEngine = true;

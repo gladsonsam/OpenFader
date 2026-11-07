@@ -52,6 +52,8 @@ jobs:
         working-directory: app
       - run: flutter analyze --no-pub
         working-directory: app
+      - run: flutter build web --release --no-pub --no-web-resources-cdn
+        working-directory: app
 
   windows:
     runs-on: windows-2022
@@ -85,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           $bundle = 'app/build/windows/x64/runner/Release'
-          foreach ($file in @('openfader-serve.exe', 'openfader-capture-helper.exe', 'openfader_flutter_bridge.dll')) {
+          foreach ($file in @('openfader-serve.exe', 'openfader-capture-helper.exe', 'openfader_flutter_bridge.dll', 'web/flutter_bootstrap.js')) {
             if (-not (Test-Path (Join-Path $bundle $file))) { throw "Missing $file in $bundle" }
           }
       - name: Smoke-check packaged ASIO helper

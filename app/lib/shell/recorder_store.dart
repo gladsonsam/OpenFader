@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:async';
 import 'dart:io';
 import '../boot/desktop_host.dart';
@@ -56,7 +57,7 @@ class ShellRecorderStore extends RecorderStore {
   }
 
   @override
-  bool get canAdminRemote => host is DesktopHost;
+  bool get canAdminRemote => !kIsWeb && host is DesktopHost;
   @override
   Map<String, dynamic> get remoteStatus => _remoteStatus;
   @override
@@ -72,7 +73,7 @@ class ShellRecorderStore extends RecorderStore {
   DateTime _remoteLastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
 
   Future<String?> _microphonePermission({bool request = false}) async {
-    if (!Platform.isMacOS || host is! DesktopHost) return null;
+    if (kIsWeb || !Platform.isMacOS || host is! DesktopHost) return null;
     final status = await const MethodChannel('openfader/audio_permission')
         .invokeMethod<String>(
             request ? 'requestMicrophone' : 'microphoneStatus');
@@ -111,7 +112,7 @@ class ShellRecorderStore extends RecorderStore {
     _notify();
     try {
       if (action == 'allowRecording') {
-        if (!Platform.isMacOS) {
+        if (kIsWeb || !Platform.isMacOS) {
           throw StateError(
               'Microphone access is managed by the operating system and audio interface driver.');
         }
@@ -122,14 +123,25 @@ class ShellRecorderStore extends RecorderStore {
         }
         return;
       }
-      await (host as DesktopHost).remoteAdminRequest(action,
-          body: action == 'enable'
-              ? {'ip': '0.0.0.0'}
-              : action == 'password'
-                  ? {'password': value ?? ''}
-                  : action == 'revoke'
-                      ? {'client_id': value}
-                      : {});
+      final Map<String, dynamic> body;
+      switch (action) {
+        case 'enable':
+          body = {'ip': '0.0.0.0'};
+        case 'web_enable':
+          final port = int.tryParse(value ?? '');
+          if (port == null || port < 1 || port > 65535) {
+            throw ArgumentError(
+                'Enter a browser hosting port from 1 to 65535.');
+          }
+          body = {'port': port};
+        case 'password':
+          body = {'password': value ?? ''};
+        case 'revoke':
+          body = {'client_id': value};
+        default:
+          body = {};
+      }
+      await (host as DesktopHost).remoteAdminRequest(action, body: body);
     } catch (e) {
       _remoteError = 'Remote administration: $e';
     } finally {
@@ -272,7 +284,8 @@ class ShellRecorderStore extends RecorderStore {
       final commandInstance =
           host is DesktopHost ? (host as DesktopHost).instanceId : null;
       try {
-        if (action == 'start_recording' &&
+        if (!kIsWeb &&
+            action == 'start_recording' &&
             host?.supportsAdministration == true &&
             Platform.isMacOS) {
           final status = await _microphonePermission(request: true);

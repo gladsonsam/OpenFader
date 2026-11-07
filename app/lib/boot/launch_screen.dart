@@ -119,9 +119,9 @@ class _StepList extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < BootController.steps.length; i++)
+        for (var i = 0; i < controller.stageLabels.length; i++)
           _StepRow(
-            label: BootController.steps[i],
+            label: controller.stageLabels[i],
             state: controller.done || i < controller.step
                 ? _StepState.done
                 : (failed && i == controller.step

@@ -1,9 +1,12 @@
 // BootGate drives staged boot behind the launch screen, then swaps in
 // the full-port shell. Desk discovery lives in the Link tab.
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'boot/boot_controller.dart';
+import 'boot/browser_connection_gate.dart';
+import 'engine_protocol.dart';
 import 'boot/launch_screen.dart';
 import 'boot/host_transport.dart';
 import 'desktop/desktop_integration.dart';
@@ -82,7 +85,9 @@ class OpenfaderApp extends StatelessWidget {
                           onPointerUp: desktop?.pointerEnded,
                           onPointerCancel: desktop?.pointerEnded,
                           child: child!)))),
-          home: BootGate(desktop: desktop),
+          home: kIsWeb
+              ? BrowserConnectionGate(connected: (host) => BootGate(api: host))
+              : BootGate(desktop: desktop),
         );
       },
     );
@@ -93,7 +98,8 @@ class OpenfaderApp extends StatelessWidget {
 /// once the store is synced.
 class BootGate extends StatefulWidget {
   final DesktopIntegration? desktop;
-  const BootGate({super.key, this.desktop});
+  final EngineApi? api;
+  const BootGate({super.key, this.desktop, this.api});
 
   @override
   State<BootGate> createState() => _BootGateState();
@@ -106,7 +112,7 @@ class _BootGateState extends State<BootGate> {
   @override
   void initState() {
     super.initState();
-    _boot = BootController();
+    _boot = BootController(api: widget.api);
     widget.desktop?.attach(this, () async {
       if (_boot.running) {
         throw StateError(

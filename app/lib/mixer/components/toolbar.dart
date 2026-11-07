@@ -70,7 +70,8 @@ class MixerToolbar extends StatelessWidget {
                                             MixerDestination.connect),
                                         child: Text(
                                             controller.connected
-                                                ? controller.connectionDisplayName
+                                                ? controller
+                                                    .connectionDisplayName
                                                 : 'Disconnected',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
@@ -264,7 +265,7 @@ String _targetLabel(MixerChannel channel) =>
 String _controlLabel(MixerReadoutControl control, {String? sendMix}) =>
     switch (control) {
       MixerReadoutControl.volume =>
-        sendMix == null ? 'Volume' : 'Send → $sendMix',
+        sendMix == null ? 'Volume' : 'Send to $sendMix',
       MixerReadoutControl.pan => 'Pan',
       MixerReadoutControl.gain => 'Gain',
     };
@@ -375,8 +376,11 @@ class _SelectedLevelState extends State<_SelectedLevel> {
       setState(() => _error = 'Enter a number');
       return;
     }
-    final range =
-        control == MixerReadoutControl.gain ? controller.gainRangeOf(ch) : null;
+    final range = switch (control) {
+      MixerReadoutControl.volume => controller.store.faderEntryRange,
+      MixerReadoutControl.gain => controller.gainRangeOf(ch),
+      MixerReadoutControl.pan => null,
+    };
     if (control != MixerReadoutControl.pan && range == null) {
       _cancel();
       return;

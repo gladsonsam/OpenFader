@@ -1,6 +1,7 @@
 // Shell-owned connection discovery, intent and recovery adapter.
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../core/wifi_net.dart';
 import '../connection/recovery.dart';
 import '../settings/prefs.dart';
@@ -362,7 +363,8 @@ class ShellConnectionStore extends ShellStoreAdapter
     notifyListeners();
     try {
       if (cancelled()) return;
-      if (InternetAddress.tryParse(addr) == null) {
+      // Browser clients delegate network addressing to the host engine.
+      if (!kIsWeb && InternetAddress.tryParse(addr) == null) {
         try {
           final resolved = await InternetAddress.lookup(addr)
               .timeout(const Duration(seconds: 5));
