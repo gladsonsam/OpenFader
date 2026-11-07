@@ -121,6 +121,7 @@ class _EqTabState extends State<_EqTab> {
         value != null && widget.store.supports('eq${band.band}_type');
     if (band.typeChoices.length > 2) {
       return DropdownButton<int>(
+        itemHeight: null,
         isExpanded: true,
         value: band.typeChoices.any((choice) => choice.value == value)
             ? value
@@ -138,12 +139,12 @@ class _EqTabState extends State<_EqTab> {
             : null,
       );
     }
-    return Wrap(spacing: 2, runSpacing: 2, children: [
+    return ConsoleActionGroup(children: [
       for (final choice in band.typeChoices)
         _ProcessingButton(
           label: choice.label,
           semanticsLabel: 'Band ${band.band} ${choice.label}',
-          fontSize: compact ? 12 : 14,
+          fontSize: AppDesign.body,
           active: value == choice.value,
           onTap: enabled
               ? () =>
@@ -167,8 +168,8 @@ class _EqTabState extends State<_EqTab> {
       );
     }
     // Unsupported native bypass is not an action on this provider.
-    return SizedBox(
-      height: AppDesign.touchTarget,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: AppDesign.touchTarget),
       child: Center(
           child: Text('Band ${band.band}',
               style: AppDesign.type(16,
@@ -215,16 +216,11 @@ class _EqTabState extends State<_EqTab> {
             compact: !wide,
             onToggle: () => store.setEqOn(!eq.on)),
         const SizedBox(height: 12),
-        Row(children: [
-          if (wide)
-            SizedBox(
-                width: 460 * scale,
-                child: _PresetsButton(
-                    store: store, compact: false, kind: ProcessorPresetKind.eq))
-          else
-            Expanded(
-                child: _PresetsButton(
-                    store: store, compact: true, kind: ProcessorPresetKind.eq)),
+        ConsoleActionGroup(children: [
+          SizedBox(
+              width: math.min(bounds.maxWidth, wide ? 460 * scale : 220),
+              child: _PresetsButton(
+                  store: store, compact: !wide, kind: ProcessorPresetKind.eq)),
           ListenableBuilder(
               listenable:
                   Listenable.merge([store.spectrum, store.audioSpectrum]),
@@ -232,13 +228,9 @@ class _EqTabState extends State<_EqTab> {
                 final available = store.audioSpectrum.value != null ||
                     store.spectrum.value.isNotEmpty;
                 if (!available) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: SizedBox(
-                    width: wide ? 248 * scale : null,
-                    child: Semantics(
-                      toggled: _showRta,
-                      child: _ProcessingButton(
+                return Semantics(
+                    toggled: _showRta,
+                    child: _ProcessingButton(
                         label: store.audioSpectrum.value?.isShared == true
                             ? 'RTA · shared'
                             : 'RTA',
@@ -246,16 +238,13 @@ class _EqTabState extends State<_EqTab> {
                         onTap: () {
                           store.resetAudioSpectrumPeaks();
                           setState(() => _showRta = !_showRta);
-                        },
-                      ),
-                    ),
-                  ),
-                );
+                        }));
               }),
-          if (wide) const Spacer(),
         ]),
-        if (_showRta && store.rtaSettings.isNotEmpty)
+        if (_showRta && store.rtaSettings.isNotEmpty) ...[
+          const SizedBox(height: 12),
           _RtaSettings(store: store),
+        ],
         const SizedBox(height: 8),
         if (eq.responseNote != null)
           Padding(
@@ -317,7 +306,7 @@ class _EqTabState extends State<_EqTab> {
           Row(children: [
             Expanded(
                 child: Container(
-                    height: 44,
+                    constraints: const BoxConstraints(minHeight: 44),
                     decoration: BoxDecoration(
                         color: ConsolePalette.of(context).chip,
                         borderRadius: U4.rBtn),
@@ -332,6 +321,10 @@ class _EqTabState extends State<_EqTab> {
                                 child: InkWell(
                                     onTap: () => _pick(band.band),
                                     child: Container(
+                                        constraints: const BoxConstraints(
+                                            minHeight: AppDesign.touchTarget),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 10),
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
                                             color: eq.selectedBand == band.band
@@ -345,10 +338,8 @@ class _EqTabState extends State<_EqTab> {
                                                 : 'Band ${band.band}',
                                             style: AppDesign.type(15,
                                                 color: eq.selectedBand == band.band
-                                                    ? ConsolePalette.of(context)
-                                                        .cyan
-                                                    : ConsolePalette.of(context)
-                                                        .text7,
+                                                    ? ConsolePalette.of(context).cyan
+                                                    : ConsolePalette.of(context).text7,
                                                 weight: FontWeight.w600)))))),
                     ]))),
             if (showMobileShapes) ...[
@@ -453,7 +444,7 @@ class _RtaSettings extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
-    return Wrap(spacing: 8, runSpacing: 8, children: [
+    return ConsoleActionGroup(children: [
       for (final row in store.rtaSettings)
         if (row.choices.isNotEmpty)
           PopupMenuButton<double>(
@@ -471,12 +462,14 @@ class _RtaSettings extends StatelessWidget {
               for (final choice in row.choices)
                 PopupMenuItem(value: choice.value, child: Text(choice.label)),
             ],
-            child: Chip(label: Text('${row.label}: ${row.valueLabel ?? '-'}')),
+            child: _ProcessingButton(
+                label: '${row.label}: ${row.valueLabel ?? '-'}',
+                enabled: store.destinationControlIsCurrent(row)),
           )
         else if (row.numeric)
-          ActionChip(
-            label: Text('${row.label}: ${row.valueLabel ?? '-'}'),
-            onPressed: !store.destinationControlIsCurrent(row)
+          _ProcessingButton(
+            label: '${row.label}: ${row.valueLabel ?? '-'}',
+            onTap: !store.destinationControlIsCurrent(row)
                 ? null
                 : () async {
                     var value = row.value!;
@@ -484,7 +477,8 @@ class _RtaSettings extends StatelessWidget {
                       animationStyle: AnimationStyle.noAnimation,
                       context: context,
                       builder: (dialogContext) => StatefulBuilder(
-                          builder: (dialogContext, setState) => AlertDialog(
+                          builder: (dialogContext, setState) =>
+                              ConsoleAlertDialog(
                                 title: Text('Shared RTA ${row.label}'),
                                 content: Slider(
                                   value: value.clamp(row.min!, row.max!),

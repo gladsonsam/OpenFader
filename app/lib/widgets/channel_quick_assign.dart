@@ -1,3 +1,4 @@
+import '../ui/overlays/console_dialogs.dart';
 import 'package:flutter/material.dart';
 import '../core/channel_name.dart';
 import '../design.dart';
@@ -49,7 +50,7 @@ class _QuickAssignState extends State<_QuickAssign> {
         final choices = widget.store.assignmentsForChannel(widget.target);
         return PopScope(
           canPop: !_pending,
-          child: AlertDialog(
+          child: ConsoleAlertDialog(
             backgroundColor: p.panel,
             title: Text('Channel ${widget.target.channel + 1} · Quick Assign',
                 style: AppDesign.type(18, color: p.text7)),

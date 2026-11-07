@@ -1,3 +1,4 @@
+import '../ui/console.dart';
 import 'package:flutter/material.dart';
 
 import '../core/channel_clipboard.dart';
@@ -45,7 +46,7 @@ class _ChannelClipboardActionsState extends State<ChannelClipboardActions> {
       final confirmed = await showDialog<bool>(
         animationStyle: AnimationStyle.noAnimation,
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
           title: Text('Paste Processing to ${proposal.destination}?'),
           content: SingleChildScrollView(
             child: Text(
@@ -107,7 +108,8 @@ class _ChannelClipboardActionsState extends State<ChannelClipboardActions> {
               const Text('Channel clipboard · DSP only'),
               const SizedBox(height: 8),
               const Text(channelProcessingScope),
-              Wrap(
+              const SizedBox(height: AppDesign.spaceSm),
+              ConsoleActionGroup(
                 spacing: 8,
                 children: [
                   TextButton(

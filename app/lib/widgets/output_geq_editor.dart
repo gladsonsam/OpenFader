@@ -7,7 +7,7 @@ import '../core/control_reset.dart';
 import '../core/output_geq.dart';
 import '../core/output_presets.dart';
 import '../core/output_processing.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 
 /// Draw and Flat both open a captured local draft. Only Apply can send writes.
 class OutputGeqDraftActions extends StatelessWidget {
@@ -36,8 +36,7 @@ class OutputGeqDraftActions extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Wrap(
-        spacing: 8,
+  Widget build(BuildContext context) => ConsoleActionGroup(
         children: [
           TextButton.icon(
             onPressed: () => _open(context, false),
@@ -167,7 +166,7 @@ class _OutputGeqEditorState extends State<_OutputGeqEditor> {
     final band = _bands[_selected];
     return PopScope(
       canPop: !_applying,
-      child: AlertDialog(
+      child: ConsoleAlertDialog(
         backgroundColor: palette.panel,
         title: Text('${widget.target.name} · Graphic EQ draft'),
         content: SizedBox(
@@ -237,6 +236,7 @@ class _OutputGeqEditorState extends State<_OutputGeqEditor> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
+                  itemHeight: null,
                   initialValue: _selected,
                   key: ValueKey(_selected),
                   decoration: const InputDecoration(labelText: 'Band'),

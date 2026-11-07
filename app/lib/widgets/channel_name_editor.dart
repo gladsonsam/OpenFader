@@ -10,6 +10,7 @@ import '../core/channel_name.dart';
 import '../core/processor_presets.dart';
 import '../design.dart';
 import '../palette.dart';
+import '../ui/controls/console_action_group.dart';
 import '../ui/overlays/anchored_menu.dart';
 import 'channel_symbol.dart';
 
@@ -552,11 +553,13 @@ class _NameEditorState extends State<_NameEditor> {
                     if (reason == null && navigates)
                       const Icon(Icons.chevron_right, size: AppDesign.iconSize),
                   ]))),
-          if (reason != null)
+          if (reason != null) ...[
+            const SizedBox(width: AppDesign.spaceSm),
             IconButton(
                 tooltip: 'Why is $label unavailable?',
                 onPressed: _pending ? null : () => _info(label, reason),
                 icon: const Icon(Icons.info_outline)),
+          ],
         ]));
   }
 
@@ -750,34 +753,29 @@ class _NameEditorState extends State<_NameEditor> {
         padding: const EdgeInsets.only(right: AppDesign.spaceSm),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Wrap(
-              spacing: AppDesign.spaceSm,
-              runSpacing: AppDesign.spaceSm,
-              children: [
-                ChoiceChip(
-                    label: const Text('Automatic'),
-                    tooltip: 'Use the mixer icon when available',
-                    selected:
-                        _iconSelection.kind == ChannelIconKind.followProvider,
-                    onSelected: _pending || error != null
-                        ? null
-                        : (_) => _selectIcon(
-                            const ChannelIconSelection.followProvider())),
-                ChoiceChip(
-                    label: const Text('None'),
-                    tooltip: 'Hide the channel icon',
-                    selected: _iconSelection.kind == ChannelIconKind.none,
-                    onSelected: _pending || error != null
-                        ? null
-                        : (_) =>
-                            _selectIcon(const ChannelIconSelection.none())),
-                ActionChip(
-                    avatar: const Icon(Icons.add_photo_alternate_outlined,
-                        size: AppDesign.iconSize),
-                    label: const Text('Import'),
-                    tooltip: 'Import PNG, JPEG or WebP, up to 8 MB',
-                    onPressed: _pending || error != null ? null : _importIcon),
-              ]),
+          ConsoleActionGroup(children: [
+            ChoiceChip(
+                label: const Text('Automatic'),
+                tooltip: 'Use the mixer icon when available',
+                selected: _iconSelection.kind == ChannelIconKind.followProvider,
+                onSelected: _pending || error != null
+                    ? null
+                    : (_) => _selectIcon(
+                        const ChannelIconSelection.followProvider())),
+            ChoiceChip(
+                label: const Text('None'),
+                tooltip: 'Hide the channel icon',
+                selected: _iconSelection.kind == ChannelIconKind.none,
+                onSelected: _pending || error != null
+                    ? null
+                    : (_) => _selectIcon(const ChannelIconSelection.none())),
+            ActionChip(
+                avatar: const Icon(Icons.add_photo_alternate_outlined,
+                    size: AppDesign.iconSize),
+                label: const Text('Import'),
+                tooltip: 'Import PNG, JPEG or WebP, up to 8 MB',
+                onPressed: _pending || error != null ? null : _importIcon),
+          ]),
           if (error != null || missing) ...[
             const SizedBox(height: AppDesign.spaceSm),
             Text(error ?? resolved.reason!,
@@ -841,6 +839,7 @@ class _NameEditorState extends State<_NameEditor> {
                   for (var index = 0; index < imported.length; index++)
                     Row(mainAxisSize: MainAxisSize.min, children: [
                       _iconTile(imported[index], 'Imported image ${index + 1}'),
+                      const SizedBox(width: AppDesign.spaceSm),
                       IconButton(
                           tooltip: 'Remove imported image ${index + 1}',
                           onPressed: _pending || error != null

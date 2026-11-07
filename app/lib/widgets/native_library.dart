@@ -56,7 +56,7 @@ class NativeLibrarySection extends StatelessWidget {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
-          return AlertDialog(
+          return ConsoleAlertDialog(
             title: Text('Recall scope · ${slot['slot']}'),
             content: SizedBox(
               width: 560,
@@ -83,6 +83,7 @@ class NativeLibrarySection extends StatelessWidget {
                       ))
                         CheckboxListTile(
                           dense: true,
+                          minTileHeight: AppDesign.touchTarget,
                           contentPadding: EdgeInsets.zero,
                           title: Text(field['label'] as String),
                           value: draft[field['index'] as int] == '+',
@@ -146,7 +147,7 @@ class NativeLibrarySection extends StatelessWidget {
       final result = await showDialog<Map<String, dynamic>>(
         animationStyle: AnimationStyle.noAnimation,
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
           title: Text(title),
           content: SizedBox(
             width: 400,
@@ -169,6 +170,7 @@ class NativeLibrarySection extends StatelessWidget {
                       hintText: '$min',
                     ),
                   ),
+                  const SizedBox(height: AppDesign.spaceSm),
                   TextFormField(
                     controller: nameCtl,
                     validator: (text) {
@@ -221,7 +223,7 @@ class NativeLibrarySection extends StatelessWidget {
       return await showDialog<String>(
         animationStyle: AnimationStyle.noAnimation,
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
           title: const Text('Rename desk slot'),
           content: TextField(
             controller: ctl,
@@ -257,7 +259,7 @@ class NativeLibrarySection extends StatelessWidget {
       final text = await showDialog<String>(
         animationStyle: AnimationStyle.noAnimation,
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
           title: Text(title),
           content: SizedBox(
             width: 480,
@@ -303,12 +305,12 @@ class NativeLibrarySection extends StatelessWidget {
       return await showDialog<Map<String, int>>(
         animationStyle: AnimationStyle.noAnimation,
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => ConsoleAlertDialog(
           title: Text(form.title),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final field in form.fields)
+              for (final field in form.fields) ...[
                 TextField(
                   controller: ctls[field.key],
                   keyboardType: TextInputType.number,
@@ -316,6 +318,8 @@ class NativeLibrarySection extends StatelessWidget {
                     labelText: '${field.label} (${field.min}-${field.max})',
                   ),
                 ),
+                const SizedBox(height: AppDesign.spaceSm),
+              ],
             ],
           ),
           actions: [
@@ -374,7 +378,7 @@ class NativeLibrarySection extends StatelessWidget {
             style: TextStyle(color: palette.text7),
           ),
           const SizedBox(height: 8),
-          Wrap(
+          ConsoleActionGroup(
             spacing: 8,
             runSpacing: 8,
             children: [
@@ -501,33 +505,37 @@ class NativeLibrarySection extends StatelessWidget {
                   style: TextStyle(color: palette.text7),
                 ),
               for (final slot in view.slots)
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  children: [
-                    Text(
-                      '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
-                      '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
-                      style: TextStyle(color: palette.text1),
-                    ),
-                    if (view.supports('set_scope'))
-                      if (view.scopeFields != null && view.hasScope(slot))
-                        TextButton(
-                          onPressed:
-                              enabled && view.connected && store.nativeWritable
+                Padding(
+                    padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
+                    child: ConsoleActionGroup(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        Text(
+                          '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
+                          '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
+                          style: TextStyle(color: palette.text1),
+                        ),
+                        if (view.supports('set_scope'))
+                          if (view.scopeFields != null && view.hasScope(slot))
+                            TextButton(
+                              onPressed: enabled &&
+                                      view.connected &&
+                                      store.nativeWritable
                                   ? () => _scope(context, view, slot)
                                   : null,
-                          child: const Text('Recall scope'),
-                        )
-                      else
-                        Text(
-                          'Recall scope unavailable',
-                          style: TextStyle(color: palette.text7),
-                        ),
-                    if (view.supports('recall'))
-                      TextButton(
-                        onPressed:
-                            enabled && view.connected && store.nativeWritable
+                              child: const Text('Recall scope'),
+                            )
+                          else
+                            Text(
+                              'Recall scope unavailable',
+                              style: TextStyle(color: palette.text7),
+                            ),
+                        if (view.supports('recall'))
+                          TextButton(
+                            onPressed: enabled &&
+                                    view.connected &&
+                                    store.nativeWritable
                                 ? () => _confirm(
                                       context,
                                       {'op': 'recall', 'slot': slot['slot']},
@@ -536,12 +544,13 @@ class NativeLibrarySection extends StatelessWidget {
                                           'Safe behavior and audio state are not verified here. No automatic retry.',
                                     )
                                 : null,
-                        child: const Text('Recall'),
-                      ),
-                    if (view.supports('replace'))
-                      TextButton(
-                        onPressed:
-                            enabled && view.connected && store.nativeWritable
+                            child: const Text('Recall'),
+                          ),
+                        if (view.supports('replace'))
+                          TextButton(
+                            onPressed: enabled &&
+                                    view.connected &&
+                                    store.nativeWritable
                                 ? () => _confirm(
                                       context,
                                       {'op': 'replace', 'slot': slot['slot']},
@@ -552,20 +561,22 @@ class NativeLibrarySection extends StatelessWidget {
                                           view.authority == 'mixer'),
                                     )
                                 : null,
-                        child: Text(policy.replaceLabel),
-                      ),
-                    if (view.supports('rename'))
-                      TextButton(
-                        onPressed:
-                            enabled && view.connected && store.nativeWritable
+                            child: Text(policy.replaceLabel),
+                          ),
+                        if (view.supports('rename'))
+                          TextButton(
+                            onPressed: enabled &&
+                                    view.connected &&
+                                    store.nativeWritable
                                 ? () => _name(context, slot)
                                 : null,
-                        child: const Text('Rename'),
-                      ),
-                    if (view.supports('delete'))
-                      TextButton(
-                        onPressed:
-                            enabled && view.connected && store.nativeWritable
+                            child: const Text('Rename'),
+                          ),
+                        if (view.supports('delete'))
+                          TextButton(
+                            onPressed: enabled &&
+                                    view.connected &&
+                                    store.nativeWritable
                                 ? () => _confirm(
                                       context,
                                       {'op': 'delete', 'slot': slot['slot']},
@@ -576,10 +587,10 @@ class NativeLibrarySection extends StatelessWidget {
                                           view.authority == 'mixer'),
                                     )
                                 : null,
-                        child: const Text('Delete'),
-                      ),
-                  ],
-                ),
+                            child: const Text('Delete'),
+                          ),
+                      ],
+                    )),
             ],
             if (view.banks.isNotEmpty)
               _DescriptorBanks(
@@ -676,13 +687,12 @@ class _DescriptorBanks extends StatelessWidget {
           padding: const EdgeInsets.only(top: 10),
           child: Text(extra == null ? t : '$t · $extra', style: head),
         );
-    Wrap bankRow(String label, List<Widget> buttons) => Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          children: [
+    Widget bankRow(String label, List<Widget> buttons) => Padding(
+          padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
+          child: ConsoleActionGroup(children: [
             Text(label, style: TextStyle(color: palette.text1)),
             ...buttons,
-          ],
+          ]),
         );
     TextButton btn(String label, VoidCallback? onPressed) => TextButton(
           onPressed: onPressed,
@@ -763,23 +773,30 @@ class _DescriptorBanks extends StatelessWidget {
         if (view.banksNote != null) Text(view.banksNote!, style: sub),
         for (final bank in view.banks) ...[
           bankTitle(bank.title, '${bank.rows.length} observed'),
-          if (bank.save != null && view.supports(bank.save!.op))
-            btn('Save', guard(() => _save(context, bank, bank.save!))),
-          if (bank.add != null && view.supports(bank.add!.op))
-            btn('Add', guard(() async {
-              final add = bank.add!;
-              final input = await onSlotName(
-                  add.promptTitle ?? 'Add ${bank.title}',
-                  bank.slotMin,
-                  bank.slotMax);
-              if (input == null || !context.mounted) return;
-              await act({
-                'op': add.op,
-                if (bank.bank != null) 'bank': bank.bank,
-                add.numberArg ?? 'number': input['slot'],
-                'name': input['name'],
-              });
-            })),
+          if ((bank.save != null && view.supports(bank.save!.op)) ||
+              (bank.add != null && view.supports(bank.add!.op)))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppDesign.spaceSm),
+              child: ConsoleActionGroup(children: [
+                if (bank.save != null && view.supports(bank.save!.op))
+                  btn('Save', guard(() => _save(context, bank, bank.save!))),
+                if (bank.add != null && view.supports(bank.add!.op))
+                  btn('Add', guard(() async {
+                    final add = bank.add!;
+                    final input = await onSlotName(
+                        add.promptTitle ?? 'Add ${bank.title}',
+                        bank.slotMin,
+                        bank.slotMax);
+                    if (input == null || !context.mounted) return;
+                    await act({
+                      'op': add.op,
+                      if (bank.bank != null) 'bank': bank.bank,
+                      add.numberArg ?? 'number': input['slot'],
+                      'name': input['name'],
+                    });
+                  })),
+              ]),
+            ),
           for (final row in bank.rows) ...[
             if (rowButtons(bank, row).isEmpty)
               Text(rowLabel(bank, row), style: sub)
@@ -787,16 +804,19 @@ class _DescriptorBanks extends StatelessWidget {
               bankRow(rowLabel(bank, row), rowButtons(bank, row)),
           ],
         ],
-        for (final form in view.copyForms)
-          if (view.supports(form.op))
-            btn(form.title, guard(() async {
-              final args = await onCopy(form);
-              if (args == null || !context.mounted) return;
-              await act({'op': form.op, ...args});
-            })),
+        if (view.copyForms.any((form) => view.supports(form.op)))
+          ConsoleActionGroup(children: [
+            for (final form in view.copyForms)
+              if (view.supports(form.op))
+                btn(form.title, guard(() async {
+                  final args = await onCopy(form);
+                  if (args == null || !context.mounted) return;
+                  await act({'op': form.op, ...args});
+                })),
+          ]),
         if (archive != null) ...[
           bankTitle('Local archives (JSON)', null),
-          Wrap(spacing: 8, children: [
+          ConsoleActionGroup(spacing: 8, children: [
             for (final kind in archive.kinds)
               if (kind.slotMin != null && kind.slotMax != null)
                 btn('Export ${kind.label}', guard(() async {

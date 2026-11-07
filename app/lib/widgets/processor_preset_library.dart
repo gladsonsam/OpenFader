@@ -180,7 +180,7 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
         final enabled = !_busy && unavailable == null;
         return PopScope(
             canPop: !_busy,
-            child: AlertDialog(
+            child: ConsoleAlertDialog(
                 backgroundColor: p.panel,
                 title: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,8 +211,10 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                               icon: const Icon(Icons.add),
                               label: const Text('Save current')),
                           if (widget.store
-                              case final InputProcessorPresetStore clipboard)
-                            Wrap(spacing: 8, children: [
+                              case final InputProcessorPresetStore
+                                  clipboard) ...[
+                            const SizedBox(height: AppDesign.spaceSm),
+                            ConsoleActionGroup(spacing: 8, children: [
                               TextButton.icon(
                                   onPressed: enabled ? _copy : null,
                                   icon: const Icon(Icons.copy),
@@ -232,6 +234,7 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                                       icon: const Icon(Icons.paste),
                                       label: const Text('Paste processor'))),
                             ]),
+                          ],
                           const SizedBox(height: 8),
                           Expanded(
                               child: _presets.isEmpty
@@ -259,7 +262,9 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                                                   'User preset · ${preset.values.length} settings',
                                                   style: AppDesign.type(13,
                                                       color: p.mutedText)),
-                                              Wrap(spacing: 8, children: [
+                                              const SizedBox(
+                                                  height: AppDesign.spaceSm),
+                                              ConsoleActionGroup(children: [
                                                 TextButton(
                                                     onPressed: enabled
                                                         ? () => _recall(preset)
@@ -385,7 +390,7 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
         final unavailable = widget.store.presetTargetError(widget.target);
         return PopScope(
             canPop: !_busy,
-            child: AlertDialog(
+            child: ConsoleAlertDialog(
                 backgroundColor: p.panel,
                 title: Text(widget.title,
                     style: AppDesign.type(20, color: p.text1)),

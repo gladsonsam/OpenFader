@@ -303,7 +303,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 8),
                       _Btn(
                         label: store.probing ? 'Connecting…' : 'Connect',
                         enabled: !store.probing,
@@ -376,28 +376,16 @@ class _ErrorBanner extends StatelessWidget {
                   fontSize: 12,
                   color: ConsolePalette.of(context).onErrorContainer)),
           const SizedBox(height: AppDesign.spaceSm),
-          Row(
-            children: [
-              if (canRetry)
-                Expanded(
-                  child: _Btn(
-                    label:
-                        'Retry ${store.lastMixerType.label} · ${store.lastProbe}',
-                    primary: true,
-                    onTap: store.retryProbe,
-                  ),
-                ),
-              if (canRetry) const SizedBox(width: 6),
-              Expanded(
-                child: _Btn(
-                  label: 'Rescan',
-                  onTap: store.scan,
-                ),
-              ),
-              const SizedBox(width: 6),
-              _Btn(label: 'Dismiss', onTap: store.clearError),
-            ],
-          ),
+          ConsoleActionGroup(children: [
+            if (canRetry)
+              _Btn(
+                  label:
+                      'Retry ${store.lastMixerType.label} · ${store.lastProbe}',
+                  primary: true,
+                  onTap: store.retryProbe),
+            _Btn(label: 'Rescan', onTap: store.scan),
+            _Btn(label: 'Dismiss', onTap: store.clearError),
+          ]),
         ],
       ),
     );

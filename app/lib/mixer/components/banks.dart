@@ -106,14 +106,16 @@ class MixerBanks extends StatelessWidget {
     final banks = controller.store.banks;
     final layers = PrefsService.instance.mixerLayers;
     final count = controller.muteGroupCount;
-    final status = controller.demo ? const SizedBox.shrink() : Text(controller.connectionLabel.toUpperCase(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: mixerType(context, 10,
-            color: controller.demo
-                ? ConsolePalette.of(context).amber
-                : ConsolePalette.of(context).lime,
-            weight: FontWeight.w600));
+    final status = controller.demo
+        ? const SizedBox.shrink()
+        : Text(controller.connectionLabel.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: mixerType(context, 10,
+                color: controller.demo
+                    ? ConsolePalette.of(context).amber
+                    : ConsolePalette.of(context).lime,
+                weight: FontWeight.w600));
     return Material(
         color: ConsolePalette.of(context).panel,
         child: vertical
@@ -344,7 +346,7 @@ Future<void> showMixerMuteGroups(
                               showMixerGroupMembership(context, controller),
                           child: const Text('Edit group members')),
                       const SizedBox(height: 16),
-                      Wrap(spacing: 8, runSpacing: 8, children: [
+                      ConsoleActionGroup(children: [
                         for (var g = 0; g < controller.muteGroupCount; g++)
                           SizedBox(
                               width: 88,
@@ -454,7 +456,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
       animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
+          builder: (context, setDialogState) => ConsoleAlertDialog(
                 backgroundColor: ConsolePalette.of(context).background,
                 title: Text(existing == null ? 'Create view' : 'Edit view'),
                 content: SizedBox(
@@ -585,7 +587,7 @@ class _GroupMembershipState extends State<_GroupMembership> {
               : choices.keys.firstOrNull;
           return PopScope(
               canPop: !pending,
-              child: AlertDialog(
+              child: ConsoleAlertDialog(
                 backgroundColor: ConsolePalette.of(context).panel,
                 title: const Text('Group members'),
                 content: SizedBox(

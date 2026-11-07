@@ -13,7 +13,7 @@ class OutputProcessorPresetActions extends StatelessWidget {
       {super.key, required this.store, required this.surface});
 
   @override
-  Widget build(BuildContext context) => Wrap(spacing: 8, children: [
+  Widget build(BuildContext context) => ConsoleActionGroup(children: [
         TextButton.icon(
             icon: const Icon(Icons.folder_open),
             label: const Text('Presets / Paste'),
@@ -171,7 +171,7 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                 : widget.store
                     .outputPresetTargetError(_completedTarget ?? widget.target);
             final enabled = !_busy && !_recallSucceeded && error == null;
-            return AlertDialog(
+            return ConsoleAlertDialog(
                 backgroundColor: ConsolePalette.of(context).panel,
                 title: Text(
                     '${widget.target.kind!.label} · ${widget.target.name}'),
@@ -197,7 +197,7 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                               maxLength: kProcessorPresetMaxNameLength,
                               decoration: const InputDecoration(
                                   labelText: 'Preset name')),
-                          Wrap(spacing: 8, children: [
+                          ConsoleActionGroup(children: [
                             TextButton(
                                 onPressed: enabled ? _save : null,
                                 child: const Text('Save current')),
@@ -212,33 +212,38 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                             const Text(
                                 'No local presets saved for this processor.'),
                           for (final preset in _presets)
-                            ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(preset.name),
-                                subtitle:
-                                    Text('${preset.values.length} settings'),
-                                trailing: Wrap(children: [
-                                  TextButton(
-                                      onPressed: enabled
-                                          ? () => _recall(preset.id)
-                                          : null,
-                                      child: const Text('Recall')),
-                                  PopupMenuButton<String>(
-                                      popUpAnimationStyle:
-                                          AnimationStyle.noAnimation,
-                                      enabled: enabled,
-                                      onSelected: (action) => action == 'rename'
-                                          ? _rename(preset)
-                                          : _delete(preset),
-                                      itemBuilder: (_) => const [
-                                            PopupMenuItem(
-                                                value: 'rename',
-                                                child: Text('Rename')),
-                                            PopupMenuItem(
-                                                value: 'delete',
-                                                child: Text('Delete'))
-                                          ]),
-                                ])),
+                            Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(preset.name),
+                                      subtitle: Text(
+                                          '${preset.values.length} settings')),
+                                  ConsoleActionGroup(children: [
+                                    TextButton(
+                                        onPressed: enabled
+                                            ? () => _recall(preset.id)
+                                            : null,
+                                        child: const Text('Recall')),
+                                    PopupMenuButton<String>(
+                                        popUpAnimationStyle:
+                                            AnimationStyle.noAnimation,
+                                        enabled: enabled,
+                                        onSelected: (action) =>
+                                            action == 'rename'
+                                                ? _rename(preset)
+                                                : _delete(preset),
+                                        itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                  value: 'rename',
+                                                  child: Text('Rename')),
+                                              PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Text('Delete'))
+                                            ]),
+                                  ]),
+                                ]),
                         ]))),
                 actions: [
                   if (_recalling)

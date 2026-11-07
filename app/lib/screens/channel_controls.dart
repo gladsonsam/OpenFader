@@ -140,13 +140,15 @@ class _ProcessorHeader extends StatelessWidget {
         onTap: onToggle,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: compact ? 44 : (56 * scale).clamp(44, 68),
-          padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 16),
+          constraints: BoxConstraints(
+              minHeight: compact ? 44 : (56 * scale).clamp(44, 68)),
+          padding:
+              EdgeInsets.symmetric(horizontal: compact ? 12 : 16, vertical: 10),
           decoration: BoxDecoration(
             color: on
                 ? ConsolePalette.of(context).processingSelected
                 : ConsolePalette.of(context).control,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: U4.rBtn,
             border: Border.all(
                 color: on
                     ? ConsolePalette.of(context).cyan.withValues(alpha: 0.27)
@@ -155,16 +157,16 @@ class _ProcessorHeader extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontFamily: U4.font,
-                      fontSize: compact ? 18 : 28 * scale,
-                      fontWeight: FontWeight.w600,
-                      color: on
-                          ? ConsolePalette.of(context).cyan
-                          : ConsolePalette.of(context).mutedText)),
+              Expanded(
+                  child: Text(title,
+                      style: TextStyle(
+                          fontFamily: U4.font,
+                          fontSize: compact ? 18 : 28 * scale,
+                          fontWeight: FontWeight.w600,
+                          color: on
+                              ? ConsolePalette.of(context).cyan
+                              : ConsolePalette.of(context).mutedText))),
+              const SizedBox(width: 8),
               Icon(Icons.power_settings_new,
                   size: compact ? 22 : 24,
                   color: on
@@ -201,13 +203,12 @@ class _PresetsButton extends StatelessWidget {
           foregroundColor: ConsolePalette.of(context).text1,
           backgroundColor: ConsolePalette.of(context).control,
           minimumSize: const Size(64, 44),
-          padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 18),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: AppDesign.controlPadding,
+          shape: RoundedRectangleBorder(borderRadius: U4.rBtn),
           textStyle: TextStyle(
               fontFamily: U4.font,
-              fontSize: compact ? 14 : 22,
-              fontWeight: FontWeight.w500)),
+              fontSize: AppDesign.body,
+              fontWeight: FontWeight.w600)),
       child: const Row(children: [
         Expanded(child: Text('Presets')),
         Icon(Icons.arrow_drop_down, size: 20)

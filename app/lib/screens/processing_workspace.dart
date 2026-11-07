@@ -4,6 +4,7 @@ class _ProcessingButton extends StatelessWidget {
   final String label;
   final String? detail, semanticsLabel;
   final bool active;
+  final bool? enabled;
   final double fontSize;
   final VoidCallback? onTap;
   const _ProcessingButton(
@@ -11,12 +12,13 @@ class _ProcessingButton extends StatelessWidget {
       this.detail,
       this.semanticsLabel,
       this.active = false,
-      this.fontSize = 16,
+      this.enabled,
+      this.fontSize = AppDesign.body,
       this.onTap});
   @override
   Widget build(BuildContext context) => Semantics(
       button: true,
-      enabled: onTap != null,
+      enabled: enabled ?? onTap != null,
       selected: active,
       label: semanticsLabel ?? label,
       child: InkWell(
@@ -24,8 +26,7 @@ class _ProcessingButton extends StatelessWidget {
           borderRadius: U4.rBtn,
           child: Container(
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.all(10),
+              padding: AppDesign.controlPadding,
               decoration: BoxDecoration(
                   color: active
                       ? ConsolePalette.of(context).processingSelected
@@ -38,26 +39,23 @@ class _ProcessingButton extends StatelessWidget {
                               .withValues(alpha: .27)
                           : ConsolePalette.of(context).linePanel)),
               child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: detail == null
                       ? CrossAxisAlignment.center
                       : CrossAxisAlignment.start,
                   children: [
                     Text(label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: AppDesign.type(fontSize,
                             color: active
                                 ? ConsolePalette.of(context).cyan
-                                : onTap == null
+                                : !(enabled ?? onTap != null)
                                     ? ConsolePalette.of(context).text7
                                     : ConsolePalette.of(context).text1,
                             weight: FontWeight.w600)),
                     if (detail != null) ...[
                       const SizedBox(height: 3),
                       Text(detail!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                           style: AppDesign.type(14,
                               color: active
                                   ? ConsolePalette.of(context).cyan
@@ -214,7 +212,9 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                                   pan: widget.pan))))))),
       if (widget.trailing != null) ...[
         const SizedBox(width: 6),
-        SizedBox(width: 44, child: widget.trailing)
+        ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 44),
+            child: widget.trailing)
       ],
     ]);
     final label = InkWell(
@@ -236,11 +236,11 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
             ])));
     if (!widget.showLabel) return track;
     if (widget.inlineLabel) {
-      return SizedBox(
-          height: 46,
+      return ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
           child: Row(children: [
-            SizedBox(
-                width: 20,
+            ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 20),
                 child: InkWell(
                     onTap: widget.enabled ? _focusControl : null,
                     child: Text(widget.label,
@@ -250,19 +250,12 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
             Expanded(child: track),
           ]));
     }
-    // Label and track share one tap action, so the visual gap stays small
-    // while both keep full-height touch targets.
-    return SizedBox(
-        height: widget.compact ? 64 : 88,
-        child: Stack(children: [
-          Positioned(left: 0, right: 0, top: 0, height: 44, child: label),
-          Positioned(
-              left: 0,
-              right: 0,
-              top: widget.compact ? 20 : 44,
-              height: 44,
-              child: track),
-        ]));
+    // Let scaled labels occupy their own space rather than overlapping the track.
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44), child: label),
+      track,
+    ]);
   }
 }
 

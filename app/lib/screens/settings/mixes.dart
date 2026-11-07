@@ -91,7 +91,7 @@ class _MixesDetail extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.only(top: wide ? 20 : 16),
-          child: Wrap(
+          child: ConsoleActionGroup(
             spacing: wide ? 14 : 10,
             runSpacing: wide ? 14 : 10,
             children: [
@@ -147,7 +147,7 @@ class _MixesDetail extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.only(top: wide ? 20 : 16),
-          child: Wrap(
+          child: ConsoleActionGroup(
             spacing: wide ? 14 : 10,
             runSpacing: wide ? 14 : 10,
             children: [

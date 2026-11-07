@@ -6,6 +6,7 @@ export '../design.dart';
 export '../palette.dart';
 export 'motion.dart';
 export 'controls/console_button.dart';
+export 'controls/console_action_group.dart';
 export 'controls/console_icon_button.dart';
 export 'controls/console_select.dart';
 export 'controls/console_toggle.dart';

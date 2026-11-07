@@ -1,4 +1,4 @@
-import '../../palette.dart';
+import '../../ui/console.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../settings/prefs.dart';
@@ -9,8 +9,7 @@ import 'banks.dart' show showCustomMixerViews;
 
 /// Channel catalog for the layer editor, from live surface strips. The
 /// master strip is never part of a layer - it stays fixed on the mixer page.
-List<LayerChannelOption> layerChannelOptionsOf(MixerController controller) =>
-    [
+List<LayerChannelOption> layerChannelOptionsOf(MixerController controller) => [
       for (final s in controller.store.engine.strips)
         if (s.key != 'main')
           (
@@ -60,8 +59,7 @@ Future<void> deleteMixerLayer(
   if (prefs.activeMixerLayerId == id) {
     await activate(MixerLayer.allLayerId);
   }
-  await prefs.setMixerLayers(
-      [...prefs.mixerLayers.where((l) => l.id != id)]);
+  await prefs.setMixerLayers([...prefs.mixerLayers.where((l) => l.id != id)]);
 }
 
 /// Copies the layers list JSON to the clipboard (export).
@@ -83,7 +81,7 @@ Future<void> showMixerLayerImport(BuildContext context) async {
   final pasted = await showDialog<String>(
     animationStyle: AnimationStyle.noAnimation,
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => ConsoleAlertDialog(
       backgroundColor: ConsolePalette.of(context).chip,
       title: Text('Import layers', style: mixerType(context, 18)),
       content: TextField(
@@ -111,8 +109,7 @@ Future<void> showMixerLayerImport(BuildContext context) async {
   final decoded = MixerLayer.tryDecodeList(pasted.trim());
   if (decoded == null) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Invalid layers JSON - nothing imported')),
+      const SnackBar(content: Text('Invalid layers JSON - nothing imported')),
     );
     return;
   }
@@ -125,11 +122,12 @@ Future<void> showMixerLayerImport(BuildContext context) async {
 }
 
 Future<void> showMixerLayerRename(
-    BuildContext context, MixerLayer layer) async {  final editing = TextEditingController(text: layer.name);
+    BuildContext context, MixerLayer layer) async {
+  final editing = TextEditingController(text: layer.name);
   final name = await showDialog<String>(
     animationStyle: AnimationStyle.noAnimation,
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => ConsoleAlertDialog(
       backgroundColor: ConsolePalette.of(context).chip,
       title: Text('Rename layer', style: mixerType(context, 18)),
       content: TextField(
@@ -160,8 +158,7 @@ Future<void> showMixerLayerRename(
 
 /// Layer list sheet (mixer entry point): pick the active layer, or
 /// create/rename/duplicate/delete and open the per-layer editor.
-Future<void> showMixerLayers(
-    BuildContext context, MixerController controller) {
+Future<void> showMixerLayers(BuildContext context, MixerController controller) {
   final channels = layerChannelOptionsOf(controller);
   return showModalBottomSheet<void>(
     sheetAnimationStyle: AnimationStyle.noAnimation,
@@ -180,17 +177,16 @@ Future<void> showMixerLayers(
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text('Layers',
-                    style: mixerType(context, 20,
-                        weight: FontWeight.w600)),
+                    style: mixerType(context, 20, weight: FontWeight.w600)),
               ),
               ListTile(
                 title: Text('All', style: mixerType(context, 17)),
                 subtitle: Text('Follows bank paging',
                     style: mixerType(context, 13,
                         color: ConsolePalette.of(context).mutedText)),
-                trailing: state.activeLayer.isAll && controller.store.bank == 'view:all'
-                    ? Icon(Icons.check,
-                        color: ConsolePalette.of(context).lime)
+                trailing: state.activeLayer.isAll &&
+                        controller.store.bank == 'view:all'
+                    ? Icon(Icons.check, color: ConsolePalette.of(context).lime)
                     : null,
                 onTap: () {
                   Navigator.pop(context);
@@ -201,9 +197,12 @@ Future<void> showMixerLayers(
                 ListTile(
                   title: Text(view.name, style: mixerType(context, 17)),
                   subtitle: Text('${view.stripKeys.length} channels',
-                      style: mixerType(context, 13, color: ConsolePalette.of(context).mutedText)),
-                  trailing: state.activeLayer.isAll && controller.store.bank == 'custom:${view.id}'
-                      ? Icon(Icons.check, color: ConsolePalette.of(context).lime)
+                      style: mixerType(context, 13,
+                          color: ConsolePalette.of(context).mutedText)),
+                  trailing: state.activeLayer.isAll &&
+                          controller.store.bank == 'custom:${view.id}'
+                      ? Icon(Icons.check,
+                          color: ConsolePalette.of(context).lime)
                       : null,
                   onTap: () {
                     Navigator.pop(context);
@@ -212,7 +211,8 @@ Future<void> showMixerLayers(
                 ),
               if (controller.store.customMixerViews.isNotEmpty)
                 ListTile(
-                  title: Text('Edit existing views', style: mixerType(context, 15)),
+                  title: Text('Edit existing views',
+                      style: mixerType(context, 15)),
                   onTap: () {
                     Navigator.pop(context);
                     showCustomMixerViews(context, controller);
@@ -255,15 +255,11 @@ Future<void> showMixerLayers(
                           }
                         },
                         itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                          PopupMenuItem(value: 'rename', child: Text('Rename')),
                           PopupMenuItem(
-                              value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(
-                              value: 'rename', child: Text('Rename')),
-                          PopupMenuItem(
-                              value: 'duplicate',
-                              child: Text('Duplicate')),
-                          PopupMenuItem(
-                              value: 'delete', child: Text('Delete')),
+                              value: 'duplicate', child: Text('Duplicate')),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
                         ],
                       ),
                     ],
@@ -275,23 +271,19 @@ Future<void> showMixerLayers(
                 ),
               Divider(color: ConsolePalette.of(context).line),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: Text('New from template',
                     style: mixerType(context, 15,
-                        color:
-                            ConsolePalette.of(context).mutedText)),
+                        color: ConsolePalette.of(context).mutedText)),
               ),
               for (final template in MixerLayerTemplate.all)
                 ListTile(
                   leading: Icon(Icons.auto_awesome,
                       color: ConsolePalette.of(context).mutedText),
-                  title: Text(template.name,
-                      style: mixerType(context, 17)),
+                  title: Text(template.name, style: mixerType(context, 17)),
                   subtitle: Text('Tap to create',
                       style: mixerType(context, 13,
-                          color:
-                              ConsolePalette.of(context).mutedText)),
+                          color: ConsolePalette.of(context).mutedText)),
                   onTap: () async {
                     final layer = template.resolve(channels);
                     await saveMixerLayer(layer);
@@ -305,29 +297,25 @@ Future<void> showMixerLayers(
               ListTile(
                 leading: Icon(Icons.ios_share,
                     color: ConsolePalette.of(context).mutedText),
-                title: Text('Share layers',
-                    style: mixerType(context, 17)),
+                title: Text('Share layers', style: mixerType(context, 17)),
                 subtitle: Text('Copy layers JSON to clipboard',
                     style: mixerType(context, 13,
-                        color:
-                            ConsolePalette.of(context).mutedText)),
+                        color: ConsolePalette.of(context).mutedText)),
                 onTap: () => shareMixerLayers(context),
               ),
               ListTile(
                 leading: Icon(Icons.file_download_outlined,
                     color: ConsolePalette.of(context).mutedText),
-                title: Text('Import layers',
-                    style: mixerType(context, 17)),
+                title: Text('Import layers', style: mixerType(context, 17)),
                 subtitle: Text('Paste layers JSON',
                     style: mixerType(context, 13,
-                        color:
-                            ConsolePalette.of(context).mutedText)),
+                        color: ConsolePalette.of(context).mutedText)),
                 onTap: () => showMixerLayerImport(context),
               ),
               Divider(color: ConsolePalette.of(context).line),
               ListTile(
-                leading: Icon(Icons.add,
-                    color: ConsolePalette.of(context).lime),
+                leading:
+                    Icon(Icons.add, color: ConsolePalette.of(context).lime),
                 title: Text('New layer', style: mixerType(context, 17)),
                 onTap: () async {
                   final layer = MixerLayer(
@@ -398,8 +386,7 @@ class _LayerEditorState extends State<_LayerEditor> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: _layer?.name ?? '');
-    _deviceHint =
-        TextEditingController(text: _layer?.deviceHint ?? '');
+    _deviceHint = TextEditingController(text: _layer?.deviceHint ?? '');
   }
 
   @override
@@ -424,8 +411,7 @@ class _LayerEditorState extends State<_LayerEditor> {
           if (layer == null) {
             return const Center(child: Text('Layer deleted'));
           }
-          if (_name.text != layer.name &&
-              _name.selection.baseOffset < 0) {
+          if (_name.text != layer.name && _name.selection.baseOffset < 0) {
             _name.text = layer.name;
           }
           final hintText = layer.deviceHint ?? '';
@@ -440,17 +426,14 @@ class _LayerEditorState extends State<_LayerEditor> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text('Edit layer',
-                    style: mixerType(context, 20,
-                        weight: FontWeight.w600)),
+                    style: mixerType(context, 20, weight: FontWeight.w600)),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: TextField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
-                  decoration:
-                      const InputDecoration(labelText: 'Name'),
+                  decoration: const InputDecoration(labelText: 'Name'),
                   onChanged: (value) {
                     final trimmed = value.trim();
                     if (trimmed.isNotEmpty && trimmed != layer.name) {
@@ -460,8 +443,7 @@ class _LayerEditorState extends State<_LayerEditor> {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: TextField(
                   controller: _deviceHint,
                   textCapitalization: TextCapitalization.none,
@@ -482,24 +464,19 @@ class _LayerEditorState extends State<_LayerEditor> {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
                 child: Text('Strips per page',
                     style: mixerType(context, 15,
-                        color:
-                            ConsolePalette.of(context).mutedText)),
+                        color: ConsolePalette.of(context).mutedText)),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 8,
+                child: ConsoleActionGroup(
                   children: [
-                    for (final option
-                        in MixerLayer.stripsPerPageOptions)
+                    for (final option in MixerLayer.stripsPerPageOptions)
                       ChoiceChip(
                         label: Text('$option'),
-                        selected: layer.effectiveStripsPerPage ==
-                            option,
+                        selected: layer.effectiveStripsPerPage == option,
                         onSelected: (_) => saveMixerLayer(
                             layer.copyWith(stripsPerPage: option)),
                       ),
@@ -507,8 +484,7 @@ class _LayerEditorState extends State<_LayerEditor> {
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16, 18, 16, 6),
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
                 child: Text(
                   'Channels (${inLayer.length} of ${widget.channels.length})',
                   style: mixerType(context, 15,
@@ -518,12 +494,10 @@ class _LayerEditorState extends State<_LayerEditor> {
               for (final option in widget.channels)
                 CheckboxListTile(
                   dense: true,
-                  title: Text(option.name,
-                      style: mixerType(context, 16)),
+                  title: Text(option.name, style: mixerType(context, 16)),
                   subtitle: Text(option.key,
                       style: mixerType(context, 12,
-                          color:
-                              ConsolePalette.of(context).mutedText)),
+                          color: ConsolePalette.of(context).mutedText)),
                   value: inLayer.contains(option.key),
                   onChanged: (on) async {
                     final keys = [...layer.channelKeys];
@@ -534,18 +508,15 @@ class _LayerEditorState extends State<_LayerEditor> {
                     } else {
                       keys.remove(option.key);
                     }
-                    await saveMixerLayer(
-                        layer.copyWith(channelKeys: keys));
+                    await saveMixerLayer(layer.copyWith(channelKeys: keys));
                   },
                 ),
               if (layer.channelKeys.isNotEmpty) ...[
                 Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(16, 18, 16, 6),
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
                   child: Text('Order (drag to reorder)',
                       style: mixerType(context, 15,
-                          color:
-                              ConsolePalette.of(context).mutedText)),
+                          color: ConsolePalette.of(context).mutedText)),
                 ),
                 ReorderableListView.builder(
                   shrinkWrap: true,
@@ -563,21 +534,17 @@ class _LayerEditorState extends State<_LayerEditor> {
                         children: [
                           IconButton(
                             tooltip: 'Remove from layer',
-                            icon: const Icon(
-                                Icons.remove_circle_outline,
+                            icon: const Icon(Icons.remove_circle_outline,
                                 size: 20),
                             onPressed: () {
-                              final keys = [...layer.channelKeys]
-                                ..remove(key);
-                              saveMixerLayer(layer.copyWith(
-                                  channelKeys: keys));
+                              final keys = [...layer.channelKeys]..remove(key);
+                              saveMixerLayer(layer.copyWith(channelKeys: keys));
                             },
                           ),
                           ReorderableDragStartListener(
                             index: i,
                             child: Icon(Icons.drag_handle,
-                                color: ConsolePalette.of(context)
-                                    .mutedText),
+                                color: ConsolePalette.of(context).mutedText),
                           ),
                         ],
                       ),
@@ -587,8 +554,7 @@ class _LayerEditorState extends State<_LayerEditor> {
                     final keys = [...layer.channelKeys];
                     final key = keys.removeAt(oldIndex);
                     keys.insert(newIndex, key);
-                    await saveMixerLayer(
-                        layer.copyWith(channelKeys: keys));
+                    await saveMixerLayer(layer.copyWith(channelKeys: keys));
                   },
                 ),
                 const SizedBox(height: 16),

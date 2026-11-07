@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 import 'recorder.dart';
 
 /// A shared time axis for all capture channels. No page-owned ticker: the
@@ -258,7 +258,8 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                     final manifest = data['manifest'] as Map;
                                     await showDialog<void>(
                                         context: context,
-                                        builder: (context) => AlertDialog(
+                                        builder: (context) =>
+                                            ConsoleAlertDialog(
                                               title: Text(
                                                   'Take details · ${take['id']}'),
                                               content: SizedBox(

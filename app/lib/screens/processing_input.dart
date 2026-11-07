@@ -50,7 +50,7 @@ class _InputTab extends StatelessWidget {
             listenable: store,
             builder: (context, _) {
               final palette = ConsolePalette.of(context);
-              return AlertDialog(
+              return ConsoleAlertDialog(
                   backgroundColor: palette.panel,
                   title: Text(current ? 'Turn off 48V?' : 'Turn on 48V?',
                       style: AppDesign.type(18, color: palette.text1)),
@@ -90,7 +90,7 @@ class _InputTab extends StatelessWidget {
                 listenable: store,
                 builder: (context, _) {
                   final palette = ConsolePalette.of(context);
-                  return AlertDialog(
+                  return ConsoleAlertDialog(
                       backgroundColor: palette.panel,
                       title: Text('Source mode',
                           style: AppDesign.type(18, color: palette.text1)),
@@ -143,7 +143,7 @@ class _InputTab extends StatelessWidget {
             builder: (context, _) {
               final current = store.inputSource?.context == snapshot.context &&
                   store.inputSource?.editable == true;
-              return AlertDialog(
+              return ConsoleAlertDialog(
                   title: const Text('Input patch'),
                   scrollable: true,
                   content: SizedBox(
@@ -190,7 +190,7 @@ class _InputTab extends StatelessWidget {
                   final current =
                       store.inputInsert?.context == snapshot.context &&
                           store.inputInsert?.editable == true;
-                  return AlertDialog(
+                  return ConsoleAlertDialog(
                       title: const Text('Insert'),
                       scrollable: true,
                       content: SizedBox(
@@ -675,8 +675,8 @@ class _InputToggleRow extends StatelessWidget {
             style: AppDesign.type(12, color: palette.text7)),
       ])),
       const SizedBox(width: 10),
-      SizedBox(
-          width: 64,
+      ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 64),
           child: _ProcessingButton(
               label: buttonLabel,
               active: active,

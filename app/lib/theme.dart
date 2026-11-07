@@ -110,12 +110,17 @@ ThemeData u4Theme(
             bodyLarge: AppDesign.type(AppDesign.controlLabel, color: p.text),
             titleSmall: AppDesign.type(AppDesign.controlLabel,
                 color: p.text, weight: FontWeight.w600)),
+    // Keep painted and tappable bounds aligned across Material/custom controls.
+    // Compact page density must not shrink buttons below the 44-point target.
     textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.text1,
       backgroundColor: p.control,
       minimumSize: AppDesign.controlSize,
+      padding: AppDesign.controlPadding,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       shape: shape,
       textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
     ).copyWith(
@@ -130,6 +135,10 @@ ThemeData u4Theme(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.cyan,
       minimumSize: AppDesign.controlSize,
+      padding: AppDesign.controlPadding,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
       side: BorderSide(color: p.lineCtl),
       shape: shape,
     )),
@@ -139,6 +148,20 @@ ThemeData u4Theme(
       foregroundColor: p.onAccent,
       backgroundColor: p.cyan,
       minimumSize: AppDesign.controlSize,
+      padding: AppDesign.controlPadding,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
+      shape: shape,
+    )),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+      animationDuration: AppDesign.feedbackDuration,
+      minimumSize: AppDesign.controlSize,
+      padding: AppDesign.controlPadding,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
       shape: shape,
     )),
     iconButtonTheme: IconButtonThemeData(
@@ -147,6 +170,8 @@ ThemeData u4Theme(
       foregroundColor: p.text7,
       iconSize: AppDesign.iconSize,
       minimumSize: AppDesign.controlSize,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       shape: shape,
     )),
     inputDecorationTheme: InputDecorationThemeData(

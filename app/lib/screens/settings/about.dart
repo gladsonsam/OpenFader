@@ -97,7 +97,7 @@ class _AboutDetail extends StatelessWidget {
               onTap: () => showDialog<void>(
                 animationStyle: AnimationStyle.noAnimation,
                 context: context,
-                builder: (context) => AlertDialog(
+                builder: (context) => ConsoleAlertDialog(
                   backgroundColor: ConsolePalette.of(context).chip,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),

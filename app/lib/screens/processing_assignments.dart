@@ -12,7 +12,7 @@ class _InputAssignments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
+    const assignmentFont = AppDesign.body;
     final controlGroup = store.dcaCount > 0 &&
             store.dcaGroupLabel(0).toUpperCase().startsWith('DCA')
         ? 'DCA'

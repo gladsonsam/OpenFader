@@ -4,6 +4,42 @@ import '../../design.dart';
 import '../../palette.dart';
 import '../controls/console_button.dart';
 
+/// Standard dialog action spacing, including when the action bar stacks on
+/// narrow screens. Material's default overflow spacing is zero.
+class ConsoleAlertDialog extends AlertDialog {
+  const ConsoleAlertDialog({
+    super.key,
+    super.icon,
+    super.iconPadding,
+    super.iconColor,
+    super.title,
+    super.titlePadding,
+    super.titleTextStyle,
+    super.content,
+    super.contentPadding,
+    super.contentTextStyle,
+    super.actions,
+    super.actionsPadding,
+    super.actionsAlignment,
+    super.actionsOverflowAlignment,
+    super.actionsOverflowDirection,
+    super.actionsOverflowButtonSpacing = AppDesign.spaceSm,
+    super.buttonPadding =
+        const EdgeInsets.symmetric(horizontal: AppDesign.spaceXs),
+    super.backgroundColor,
+    super.elevation,
+    super.shadowColor,
+    super.surfaceTintColor,
+    super.semanticLabel,
+    super.insetPadding,
+    super.clipBehavior,
+    super.shape,
+    super.alignment,
+    super.constraints,
+    super.scrollable = false,
+  });
+}
+
 /// Collects a decision only. Callers retain captured-target/access validation
 /// and perform the action after the dialog closes.
 Future<bool> showConsoleConfirmation(
@@ -16,7 +52,7 @@ Future<bool> showConsoleConfirmation(
     await showDialog<bool>(
       context: context,
       animationStyle: AnimationStyle.noAnimation,
-      builder: (context) => AlertDialog(
+      builder: (context) => ConsoleAlertDialog(
         backgroundColor: ConsolePalette.of(context).panel,
         scrollable: true,
         constraints: const BoxConstraints(maxWidth: AppDesign.dialogMaxWidth),
@@ -57,7 +93,7 @@ Future<String?> showConsoleNameDialog(
   return showDialog<String>(
     context: context,
     animationStyle: AnimationStyle.noAnimation,
-    builder: (context) => AlertDialog(
+    builder: (context) => ConsoleAlertDialog(
       backgroundColor: ConsolePalette.of(context).panel,
       scrollable: true,
       constraints: const BoxConstraints(maxWidth: AppDesign.dialogMaxWidth),

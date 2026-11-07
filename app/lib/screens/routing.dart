@@ -601,7 +601,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                           Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 12),
-                              child: Wrap(spacing: 8, children: [
+                              child: ConsoleActionGroup(children: [
                                 if (store.canClear)
                                   TextButton(
                                       onPressed: valid ? _confirmClear : null,

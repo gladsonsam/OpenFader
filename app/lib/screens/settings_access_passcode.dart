@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/access_limits.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 
 enum AccessPasscodeAction { set, unlock, change, remove }
 
@@ -69,7 +69,7 @@ class _AccessPasscodeDialogState extends State<_AccessPasscodeDialog> {
       AccessPasscodeAction.remove => 'Remove passcode',
     };
     final palette = ConsolePalette.of(context);
-    return AlertDialog(
+    return ConsoleAlertDialog(
       backgroundColor: palette.background,
       title: Text(title),
       content: SingleChildScrollView(
@@ -81,7 +81,8 @@ class _AccessPasscodeDialogState extends State<_AccessPasscodeDialog> {
             ),
             if (needsNext) ...[
               const SizedBox(height: 12),
-              const Text('If you forget it, resetting requires reinstalling the app and may delete local data.'),
+              const Text(
+                  'If you forget it, resetting requires reinstalling the app and may delete local data.'),
             ],
             if (needsCurrent)
               TextField(

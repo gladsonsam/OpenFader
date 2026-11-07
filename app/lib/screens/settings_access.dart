@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/access_limits.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 import '../theme.dart';
 import 'settings_access_passcode.dart';
 
@@ -91,7 +91,7 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
                 style: detailStyle),
             if (!locked && widget.store.accessHasPasscode) ...[
               const SizedBox(height: 8),
-              Wrap(spacing: 8, children: [
+              ConsoleActionGroup(children: [
                 TextButton(
                     onPressed: _saving
                         ? null
@@ -114,7 +114,7 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
             runSpacing: 8,
             children: [
               Text('Restrict controls', style: titleStyle),
-              Wrap(spacing: 8, children: [
+              ConsoleActionGroup(children: [
                 OutlinedButton(
                     onPressed: _saving || locked
                         ? null

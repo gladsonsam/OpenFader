@@ -298,7 +298,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (mounted) {
         await showDialog<void>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => ConsoleAlertDialog(
                   title: const Text('OpenFader is still running'),
                   content: Text('$error'),
                   actions: [
@@ -470,7 +470,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (server.identityChanged) {
         final trust = await showDialog<bool>(
             context: context,
-            builder: (context) => AlertDialog(
+            builder: (context) => ConsoleAlertDialog(
                   title: const Text('Server identity changed'),
                   content: SelectableText(
                       'The server at ${server.endpoint.host} has a different TLS identity. Verify that you are connecting to the intended server before continuing.\n\nPrevious: ${server.previousFingerprint}\n\nCurrent: ${server.fingerprint}'),
@@ -572,7 +572,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
                 return PopScope(
                     canPop: !pending,
-                    child: AlertDialog(
+                    child: ConsoleAlertDialog(
                       title: const Text('Server password'),
                       content:
                           Column(mainAxisSize: MainAxisSize.min, children: [
