@@ -27,6 +27,8 @@ Options:
                    (hardware drivers ignore it)
   --addr <ip>      hardware mixer address (sim ignores it)
   --static-dir <d> UI directory (default: auto-detect ui/)
+  --app-port <n>   enable native app TLS server on this port (app default 8845)
+  --app-bind <ip>  native app bind address (default 0.0.0.0)
   --web-port <n>   enable optional HTTP Flutter browser host on this port
   --web-bind <ip>  browser bind address (default 0.0.0.0)
   --web-dir <d>    built Flutter web assets (index.html + flutter_bootstrap.js)
@@ -150,6 +152,27 @@ async fn main() -> anyhow::Result<()> {
                         .map_err(|_| anyhow::anyhow!("--poll-inflight must be a number"))?,
                 );
             }
+            "--app-port" => {
+                i += 1;
+                opts.app_port = Some(
+                    argv.get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--app-port needs a value"))?
+                        .parse()?,
+                );
+            }
+            v if v.starts_with("--app-port=") => {
+                opts.app_port = Some(v["--app-port=".len()..].parse()?);
+            }
+            "--app-bind" => {
+                i += 1;
+                opts.app_bind = argv
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--app-bind needs a value"))?
+                    .parse()?;
+            }
+            v if v.starts_with("--app-bind=") => {
+                opts.app_bind = v["--app-bind=".len()..].parse()?;
+            }
             "--web-port" => {
                 i += 1;
                 opts.web_port = Some(
@@ -200,14 +223,14 @@ async fn main() -> anyhow::Result<()> {
         i += 1;
     }
 
-    if opts.web_port.is_some() {
+    if opts.web_port.is_some() || opts.app_port.is_some() {
         let explicit_bind = argv
             .iter()
             .any(|v| v == "--bind" || v.starts_with("--bind="));
         if !explicit_bind {
             bind = "127.0.0.1".into();
         }
-        anyhow::ensure!(bind.parse::<std::net::IpAddr>()?.is_loopback(), "--web-port requires a loopback administration --bind; browser clients use --web-bind instead");
+        anyhow::ensure!(bind.parse::<std::net::IpAddr>()?.is_loopback(), "Remote hosting requires a loopback administration --bind; clients use --app-bind or --web-bind instead");
     }
     let sock: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(sock).await?;

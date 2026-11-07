@@ -65,6 +65,24 @@ The browser loads the same OpenFader app and connects to the server's current mi
 If the server has a password, enter it before connecting. With no password set, it connects directly.
 Keep the hosting computer running and both devices on the same network.
 
+### Run the same server in Docker
+
+The Docker image bundles the same Flutter web app and uses the same server connection and optional password. Browser hosting is enabled when the container starts.
+
+```sh
+docker build -t openfader-serve .
+docker run --rm -p 8080:8080 -p 8845:8845 -v openfader-data:/data openfader-serve
+```
+
+Open `http://localhost:8080` on the host, or use the host's address from another device. Native OpenFader clients connect to the host on port `8845`. Both control the same server session. Use **Connections** in the browser to select a mixer reachable from the container. You can also append the server's `--driver` and `--addr` flags to the run command.
+
+- Set `OPENFADER_SERVER_PASSWORD` in the container environment to require a password. It is saved in `/data`; leaving the variable unset on a later run keeps the saved password. Setting it to an empty string removes the saved password.
+- To change the browser port, set `PORT=9090` and publish `-p 9090:9090`.
+- To change the native app port, set `APP_PORT=9190` and publish `-p 9190:9190`.
+- Keep the `/data` volume to preserve takes, scenes and server settings.
+- Mixer discovery broadcasts may need host networking on Linux. Directed connections use the container's route to the mixer.
+- Recording uses the container's Linux audio devices. Give it access to the intended device and its host audio group if you want to record; the image cannot create an audio interface.
+
 ## Next time
 
 Mixers you connect to are saved and listed on the Connections screen. With **Reconnect to the last mixer** turned on, which is the default, the app reconnects at launch.
