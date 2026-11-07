@@ -6,8 +6,29 @@ import Footer from '../components/Footer.astro';
 interface Props {
   title: string;
   description: string;
+  canonical?: string;
+  ogImage?: string;
+  noindex?: boolean;
 }
-const { title, description } = Astro.props;
+const { title, description, ogImage = '/brand/open-fader-logo-512.png', noindex = false } = Astro.props;
+const site = Astro.site?.toString().replace(/\/$/, '') ?? 'https://openfader.app';
+const canonicalURL = Astro.props.canonical ?? new URL(Astro.url.pathname, `${site}/`).toString();
+const ogImageURL = new URL(ogImage, `${site}/`).toString();
+
+const appSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'OpenFader',
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: ['iOS', 'iPadOS', 'Android', 'macOS', 'Windows', 'Linux'],
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+  description,
+  url: site,
+  downloadUrl: 'https://github.com/gladsonsam/OpenFader/releases/latest',
+  softwareHelp: `${site}/docs`,
+  author: { '@type': 'Organization', name: 'OpenFader', url: site },
+};
 ---
 <!doctype html>
 <html lang="en">
@@ -16,9 +37,29 @@ const { title, description } = Astro.props;
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{title}</title>
   <meta name="description" content={description} />
+  {noindex
+    ? <meta name="robots" content="noindex, nofollow" />
+    : <meta name="robots" content="index, follow" />}
+  <link rel="canonical" href={canonicalURL} />
   <meta name="theme-color" content="#151515" />
+  <meta name="author" content="OpenFader" />
   <link rel="icon" type="image/png" href="/brand/open-fader-logo-32.png" />
+  <link rel="apple-touch-icon" href="/brand/open-fader-logo-512.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="OpenFader" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:url" content={canonicalURL} />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content={ogImageURL} />
+  <meta property="og:image:alt" content="OpenFader mixer control app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  <meta name="twitter:image" content={ogImageURL} />
+  <link rel="sitemap" href="/sitemap.xml" />
   <link rel="preload" href="/fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin />
+  <script type="application/ld+json" set:html={JSON.stringify(appSchema)} />
 </head>
 <body>
   <Nav />

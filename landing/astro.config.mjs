@@ -1,7 +1,7 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://openfader.example.com',
+  site: 'https://openfader.app',
   outDir: './dist',
   trailingSlash: 'never',
   vite: {

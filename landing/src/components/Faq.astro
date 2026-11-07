@@ -1,0 +1,35 @@
+---
+const faqs = [
+  {
+    q: 'What mixers does OpenFader support?',
+    a: 'Behringer X Air series and Mackie DL32S are supported today. Behringer X32 / Midas M32 and Behringer WING are in testing.',
+  },
+  {
+    q: 'Which devices can run OpenFader?',
+    a: 'iPhone, iPad, Android, Mac, Windows and Linux. It connects to your mixer over the network.',
+  },
+  {
+    q: 'Is OpenFader free?',
+    a: 'Yes. OpenFader is free and open source under the GPL-3.0 license. Downloads are on the GitHub releases page.',
+  },
+  {
+    q: 'Can I try OpenFader without a mixer?',
+    a: 'Yes. Choose Work offline on the start screen to explore the full mixer with a simulated desk.',
+  },
+  {
+    q: 'Does OpenFader do recording and virtual soundcheck?',
+    a: 'Yes. Record every channel to your computer, then play the recording back through the mixer for a virtual soundcheck.',
+  },
+];
+---
+<section class="wrap section faq" aria-labelledby="faq-heading">
+  <h2 id="faq-heading">Frequently asked questions</h2>
+  <dl>
+    {faqs.map(({ q, a }) => (
+      <div class="faq-item">
+        <dt>{q}</dt>
+        <dd>{a}</dd>
+      </div>
+    ))}
+  </dl>
+</section>
