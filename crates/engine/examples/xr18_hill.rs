@@ -1,7 +1,7 @@
 //! Hill-climb harness: time a real-desk connect + hydration over the engine.
 //!
 //! ```sh
-//! cargo run --quiet --example xr18_hill -- 192.168.50.123
+//! cargo run --quiet --example xr18_hill -- <MIXER-IP>
 //! ```
 //!
 //! Reports milestone timings (link/caps/state/first-params/names/fx/routing)
@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 async fn main() -> anyhow::Result<()> {
     let addr = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "192.168.50.123".to_string());
+        .expect("Pass the mixer IP address as the first argument");
     let engine = Engine::new(EngineConfig::default());
     let mut client = engine.attach(Some("hill".to_string())).await;
 
