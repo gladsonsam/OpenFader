@@ -1,3 +1,4 @@
+import 'inline_feedback.dart';
 import 'dart:convert';
 
 import '../core/native_library_store.dart';
@@ -116,12 +117,8 @@ class NativeLibrarySection extends StatelessWidget {
         !store.nativeWritable ||
         store.nativeContext != captured ||
         store.nativeLibrary?.connected != true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Mixer or access changed. Reopen recall scope to edit.'),
-        ),
-      );
+      InlineFeedbackScope.show(
+          context, 'Mixer or access changed. Reopen recall scope to edit.');
       return;
     }
     await store.nativeAction({
@@ -353,7 +350,9 @@ class NativeLibrarySection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => InlineFeedbackScope(builder: _build);
+
+  Widget _build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     final view = store.nativeLibrary;
     final policy = nativeLibraryPolicy(view?.guard['provider']);

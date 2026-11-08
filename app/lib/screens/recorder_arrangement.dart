@@ -19,6 +19,7 @@ class RecorderArrangement extends StatefulWidget {
 }
 
 class _RecorderArrangementState extends State<RecorderArrangement> {
+  String? _inspectionError;
   double _zoom = 1;
   bool _followRecording = true;
   double? _loopStart;
@@ -218,6 +219,10 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
           border: Border.all(color: p.linePanel),
           borderRadius: BorderRadius.zero),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (_inspectionError != null)
+          Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(_inspectionError!)),
         Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -249,8 +254,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                           if (take != null)
                             TextButton(
                                 onPressed: () async {
-                                  final messenger =
-                                      ScaffoldMessenger.of(context);
+                                  setState(() => _inspectionError = null);
                                   try {
                                     final data = await widget.store
                                         .inspectTake(take['id'] as String);
@@ -293,9 +297,10 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                               ],
                                             ));
                                   } catch (e) {
-                                    messenger.showSnackBar(SnackBar(
-                                        content:
-                                            Text('Inspection failed: $e')));
+                                    if (mounted) {
+                                      setState(() => _inspectionError =
+                                          'Inspection failed: $e');
+                                    }
                                   }
                                 },
                                 child: const Text('Take details')),

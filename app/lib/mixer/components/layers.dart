@@ -1,3 +1,4 @@
+import '../../widgets/inline_feedback.dart';
 import '../../ui/console.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -67,15 +68,13 @@ Future<void> shareMixerLayers(BuildContext context) async {
   final text = MixerLayer.encodeList(PrefsService.instance.mixerLayers);
   await Clipboard.setData(ClipboardData(text: text));
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Layers copied to clipboard')),
-    );
+    InlineFeedbackScope.show(context, 'Layers copied to clipboard');
   }
 }
 
 /// Pastes a layers JSON payload from a dialog text field, validates it via
 /// [MixerLayer.tryDecodeList], and persists it on success. Invalid payloads
-/// show an error SnackBar and change nothing.
+/// show inline error feedback and change nothing.
 Future<void> showMixerLayerImport(BuildContext context) async {
   final editing = TextEditingController();
   final pasted = await showDialog<String>(
@@ -108,16 +107,12 @@ Future<void> showMixerLayerImport(BuildContext context) async {
   if (pasted == null || !context.mounted) return;
   final decoded = MixerLayer.tryDecodeList(pasted.trim());
   if (decoded == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Invalid layers JSON - nothing imported')),
-    );
+    InlineFeedbackScope.show(context, 'Invalid layers JSON - nothing imported');
     return;
   }
   await PrefsService.instance.setMixerLayers(decoded);
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Imported ${decoded.length} layers')),
-    );
+    InlineFeedbackScope.show(context, 'Imported ${decoded.length} layers');
   }
 }
 
@@ -161,181 +156,195 @@ Future<void> showMixerLayerRename(
 Future<void> showMixerLayers(BuildContext context, MixerController controller) {
   final channels = layerChannelOptionsOf(controller);
   return showModalBottomSheet<void>(
-    sheetAnimationStyle: AnimationStyle.noAnimation,
-    context: context,
-    backgroundColor: ConsolePalette.of(context).background,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: ListenableBuilder(
-        listenable: PrefsService.instance,
-        builder: (context, _) {
-          final prefs = PrefsService.instance;
-          final state = prefs.mixerLayersState;
-          return ListView(
-            shrinkWrap: true,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text('Layers',
-                    style: mixerType(context, 20, weight: FontWeight.w600)),
-              ),
-              ListTile(
-                title: Text('All', style: mixerType(context, 17)),
-                subtitle: Text('Follows bank paging',
-                    style: mixerType(context, 13,
-                        color: ConsolePalette.of(context).mutedText)),
-                trailing: state.activeLayer.isAll &&
-                        controller.store.bank == 'view:all'
-                    ? Icon(Icons.check, color: ConsolePalette.of(context).lime)
-                    : null,
-                onTap: () {
-                  Navigator.pop(context);
-                  controller.setBank('view:all');
-                },
-              ),
-              for (final view in controller.store.customMixerViews)
-                ListTile(
-                  title: Text(view.name, style: mixerType(context, 17)),
-                  subtitle: Text('${view.stripKeys.length} channels',
-                      style: mixerType(context, 13,
-                          color: ConsolePalette.of(context).mutedText)),
-                  trailing: state.activeLayer.isAll &&
-                          controller.store.bank == 'custom:${view.id}'
-                      ? Icon(Icons.check,
-                          color: ConsolePalette.of(context).lime)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(context);
-                    controller.setBank('custom:${view.id}');
-                  },
-                ),
-              if (controller.store.customMixerViews.isNotEmpty)
-                ListTile(
-                  title: Text('Edit existing views',
-                      style: mixerType(context, 15)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    showCustomMixerViews(context, controller);
-                  },
-                ),
-              for (final layer in state.layers)
-                ListTile(
-                  title: Text(layer.name, style: mixerType(context, 17)),
-                  subtitle: Text(
-                    '${layer.channelKeys.length} channels · '
-                    '${layer.effectiveStripsPerPage} per page'
-                    '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
-                    style: mixerType(context, 13,
-                        color: ConsolePalette.of(context).mutedText),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+      sheetAnimationStyle: AnimationStyle.noAnimation,
+      context: context,
+      backgroundColor: ConsolePalette.of(context).background,
+      showDragHandle: true,
+      builder: (context) => InlineFeedbackScope(
+            expand: true,
+            builder: (context) => SafeArea(
+              child: ListenableBuilder(
+                listenable: PrefsService.instance,
+                builder: (context, _) {
+                  final prefs = PrefsService.instance;
+                  final state = prefs.mixerLayersState;
+                  return ListView(
+                    shrinkWrap: true,
                     children: [
-                      if (layer.id == state.activeLayerId)
-                        Icon(Icons.check,
-                            color: ConsolePalette.of(context).lime),
-                      PopupMenuButton<String>(
-                        popUpAnimationStyle: AnimationStyle.noAnimation,
-                        tooltip: 'Layer actions',
-                        icon: Icon(Icons.more_vert,
-                            color: ConsolePalette.of(context).mutedText),
-                        color: ConsolePalette.of(context).chip,
-                        onSelected: (action) async {
-                          switch (action) {
-                            case 'edit':
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Layers',
+                            style: mixerType(context, 20,
+                                weight: FontWeight.w600)),
+                      ),
+                      ListTile(
+                        title: Text('All', style: mixerType(context, 17)),
+                        subtitle: Text('Follows bank paging',
+                            style: mixerType(context, 13,
+                                color: ConsolePalette.of(context).mutedText)),
+                        trailing: state.activeLayer.isAll &&
+                                controller.store.bank == 'view:all'
+                            ? Icon(Icons.check,
+                                color: ConsolePalette.of(context).lime)
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          controller.setBank('view:all');
+                        },
+                      ),
+                      for (final view in controller.store.customMixerViews)
+                        ListTile(
+                          title: Text(view.name, style: mixerType(context, 17)),
+                          subtitle: Text('${view.stripKeys.length} channels',
+                              style: mixerType(context, 13,
+                                  color: ConsolePalette.of(context).mutedText)),
+                          trailing: state.activeLayer.isAll &&
+                                  controller.store.bank == 'custom:${view.id}'
+                              ? Icon(Icons.check,
+                                  color: ConsolePalette.of(context).lime)
+                              : null,
+                          onTap: () {
+                            Navigator.pop(context);
+                            controller.setBank('custom:${view.id}');
+                          },
+                        ),
+                      if (controller.store.customMixerViews.isNotEmpty)
+                        ListTile(
+                          title: Text('Edit existing views',
+                              style: mixerType(context, 15)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            showCustomMixerViews(context, controller);
+                          },
+                        ),
+                      for (final layer in state.layers)
+                        ListTile(
+                          title:
+                              Text(layer.name, style: mixerType(context, 17)),
+                          subtitle: Text(
+                            '${layer.channelKeys.length} channels · '
+                            '${layer.effectiveStripsPerPage} per page'
+                            '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
+                            style: mixerType(context, 13,
+                                color: ConsolePalette.of(context).mutedText),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (layer.id == state.activeLayerId)
+                                Icon(Icons.check,
+                                    color: ConsolePalette.of(context).lime),
+                              PopupMenuButton<String>(
+                                popUpAnimationStyle: AnimationStyle.noAnimation,
+                                tooltip: 'Layer actions',
+                                icon: Icon(Icons.more_vert,
+                                    color:
+                                        ConsolePalette.of(context).mutedText),
+                                color: ConsolePalette.of(context).chip,
+                                onSelected: (action) async {
+                                  switch (action) {
+                                    case 'edit':
+                                      await showMixerLayerEditor(context,
+                                          layer: layer, channels: channels);
+                                    case 'rename':
+                                      await showMixerLayerRename(
+                                          context, layer);
+                                    case 'duplicate':
+                                      await duplicateMixerLayer(layer);
+                                    case 'delete':
+                                      await deleteMixerLayer(layer.id,
+                                          activate: controller.setActiveLayer);
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                      value: 'edit', child: Text('Edit')),
+                                  PopupMenuItem(
+                                      value: 'rename', child: Text('Rename')),
+                                  PopupMenuItem(
+                                      value: 'duplicate',
+                                      child: Text('Duplicate')),
+                                  PopupMenuItem(
+                                      value: 'delete', child: Text('Delete')),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            controller.setActiveLayer(layer.id);
+                          },
+                        ),
+                      Divider(color: ConsolePalette.of(context).line),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                        child: Text('New from template',
+                            style: mixerType(context, 15,
+                                color: ConsolePalette.of(context).mutedText)),
+                      ),
+                      for (final template in MixerLayerTemplate.all)
+                        ListTile(
+                          leading: Icon(Icons.auto_awesome,
+                              color: ConsolePalette.of(context).mutedText),
+                          title: Text(template.name,
+                              style: mixerType(context, 17)),
+                          subtitle: Text('Tap to create',
+                              style: mixerType(context, 13,
+                                  color: ConsolePalette.of(context).mutedText)),
+                          onTap: () async {
+                            final layer = template.resolve(channels);
+                            await saveMixerLayer(layer);
+                            if (context.mounted) {
                               await showMixerLayerEditor(context,
                                   layer: layer, channels: channels);
-                            case 'rename':
-                              await showMixerLayerRename(context, layer);
-                            case 'duplicate':
-                              await duplicateMixerLayer(layer);
-                            case 'delete':
-                              await deleteMixerLayer(layer.id,
-                                  activate: controller.setActiveLayer);
+                            }
+                          },
+                        ),
+                      Divider(color: ConsolePalette.of(context).line),
+                      ListTile(
+                        leading: Icon(Icons.ios_share,
+                            color: ConsolePalette.of(context).mutedText),
+                        title:
+                            Text('Share layers', style: mixerType(context, 17)),
+                        subtitle: Text('Copy layers JSON to clipboard',
+                            style: mixerType(context, 13,
+                                color: ConsolePalette.of(context).mutedText)),
+                        onTap: () => shareMixerLayers(context),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.file_download_outlined,
+                            color: ConsolePalette.of(context).mutedText),
+                        title: Text('Import layers',
+                            style: mixerType(context, 17)),
+                        subtitle: Text('Paste layers JSON',
+                            style: mixerType(context, 13,
+                                color: ConsolePalette.of(context).mutedText)),
+                        onTap: () => showMixerLayerImport(context),
+                      ),
+                      Divider(color: ConsolePalette.of(context).line),
+                      ListTile(
+                        leading: Icon(Icons.add,
+                            color: ConsolePalette.of(context).lime),
+                        title: Text('New layer', style: mixerType(context, 17)),
+                        onTap: () async {
+                          final layer = MixerLayer(
+                            id: MixerLayer.newId(),
+                            name: 'Layer ${state.layers.length + 1}',
+                            channelKeys: const [],
+                          );
+                          await saveMixerLayer(layer);
+                          if (context.mounted) {
+                            await showMixerLayerEditor(context,
+                                layer: layer, channels: channels);
                           }
                         },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(value: 'rename', child: Text('Rename')),
-                          PopupMenuItem(
-                              value: 'duplicate', child: Text('Duplicate')),
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
                       ),
                     ],
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    controller.setActiveLayer(layer.id);
-                  },
-                ),
-              Divider(color: ConsolePalette.of(context).line),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text('New from template',
-                    style: mixerType(context, 15,
-                        color: ConsolePalette.of(context).mutedText)),
-              ),
-              for (final template in MixerLayerTemplate.all)
-                ListTile(
-                  leading: Icon(Icons.auto_awesome,
-                      color: ConsolePalette.of(context).mutedText),
-                  title: Text(template.name, style: mixerType(context, 17)),
-                  subtitle: Text('Tap to create',
-                      style: mixerType(context, 13,
-                          color: ConsolePalette.of(context).mutedText)),
-                  onTap: () async {
-                    final layer = template.resolve(channels);
-                    await saveMixerLayer(layer);
-                    if (context.mounted) {
-                      await showMixerLayerEditor(context,
-                          layer: layer, channels: channels);
-                    }
-                  },
-                ),
-              Divider(color: ConsolePalette.of(context).line),
-              ListTile(
-                leading: Icon(Icons.ios_share,
-                    color: ConsolePalette.of(context).mutedText),
-                title: Text('Share layers', style: mixerType(context, 17)),
-                subtitle: Text('Copy layers JSON to clipboard',
-                    style: mixerType(context, 13,
-                        color: ConsolePalette.of(context).mutedText)),
-                onTap: () => shareMixerLayers(context),
-              ),
-              ListTile(
-                leading: Icon(Icons.file_download_outlined,
-                    color: ConsolePalette.of(context).mutedText),
-                title: Text('Import layers', style: mixerType(context, 17)),
-                subtitle: Text('Paste layers JSON',
-                    style: mixerType(context, 13,
-                        color: ConsolePalette.of(context).mutedText)),
-                onTap: () => showMixerLayerImport(context),
-              ),
-              Divider(color: ConsolePalette.of(context).line),
-              ListTile(
-                leading:
-                    Icon(Icons.add, color: ConsolePalette.of(context).lime),
-                title: Text('New layer', style: mixerType(context, 17)),
-                onTap: () async {
-                  final layer = MixerLayer(
-                    id: MixerLayer.newId(),
-                    name: 'Layer ${state.layers.length + 1}',
-                    channelKeys: const [],
                   );
-                  await saveMixerLayer(layer);
-                  if (context.mounted) {
-                    await showMixerLayerEditor(context,
-                        layer: layer, channels: channels);
-                  }
                 },
               ),
-            ],
-          );
-        },
-      ),
-    ),
-  );
+            ),
+          ));
 }
 
 /// Per-layer editor sheet: name, density stepper, channel membership, and

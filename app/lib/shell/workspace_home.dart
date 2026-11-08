@@ -10,6 +10,10 @@ class WorkspaceHome extends StatelessWidget {
   final VoidCallback onConnections;
   final VoidCallback? onRecorder;
   final VoidCallback? onQuit;
+  final VoidCallback? onLeaveServer;
+  final String leaveServerLabel;
+  final String serverError;
+  final VoidCallback? onReloadServer;
   final ValueChanged<MixerDestination> onNavigate;
   final ValueChanged<BuildContext> onLayout;
   const WorkspaceHome(
@@ -18,6 +22,10 @@ class WorkspaceHome extends StatelessWidget {
       required this.onConnections,
       this.onRecorder,
       this.onQuit,
+      this.onLeaveServer,
+      this.leaveServerLabel = 'Disconnect server',
+      this.serverError = '',
+      this.onReloadServer,
       required this.onNavigate,
       required this.onLayout});
 
@@ -123,6 +131,17 @@ class WorkspaceHome extends StatelessWidget {
                                 () => onNavigate(MixerDestination.settings)),
                           ]),
                       const SizedBox(height: AppDesign.spaceLg),
+                      if (serverError.isNotEmpty) ...[
+                        Text('Server connection: $serverError',
+                            style: TextStyle(color: palette.text1)),
+                        if (onReloadServer != null)
+                          Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton(
+                                  onPressed: onReloadServer,
+                                  child: const Text('Reload / sign in'))),
+                        const SizedBox(height: AppDesign.spaceSm),
+                      ],
                       Row(children: [
                         Expanded(
                             child: Align(
@@ -134,6 +153,10 @@ class WorkspaceHome extends StatelessWidget {
                                         backgroundColor: Colors.transparent,
                                         foregroundColor: palette.mutedText),
                                     child: const Text('Diagnostics')))),
+                        if (onLeaveServer != null)
+                          TextButton(
+                              onPressed: onLeaveServer,
+                              child: Text(leaveServerLabel)),
                         if (onQuit != null)
                           TextButton(
                               onPressed: onQuit,

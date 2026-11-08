@@ -1,3 +1,4 @@
+import '../../widgets/inline_feedback.dart';
 import '../../palette.dart';
 import '../../design.dart';
 import '../../settings/prefs.dart';
@@ -21,11 +22,11 @@ import 'toggle.dart';
 /// [ValueListenableBuilder] so a fader drag wakes one strip, never the
 /// shell or sibling strips. The [MixerChannel] snapshot still carries
 /// structural identity (key/name/artwork/selection/meter/params).
-class MixerStrip extends StatelessWidget {
+class MixerStrip extends StatefulWidget {
   final MixerChannel channel;
   final MixerController controller;
   final VoidCallback onOpen;
-  final VoidCallback? onOpenProcessing;
+  final String? Function()? onOpenProcessing;
   final ValueChanged<BuildContext>? onOpenAt;
   final int? identityChannel;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
@@ -48,20 +49,52 @@ class MixerStrip extends StatelessWidget {
       this.onOpenAt,
       this.identityChannel});
   @override
+  State<MixerStrip> createState() => _MixerStripState();
+}
+
+class _MixerStripState extends State<MixerStrip> {
+  MixerChannel get channel => widget.channel;
+  MixerController get controller => widget.controller;
+  VoidCallback get onOpen => widget.onOpen;
+  ValueChanged<BuildContext>? get onOpenAt => widget.onOpenAt;
+  int? get identityChannel => widget.identityChannel;
+  ValueChanged<MixerReadoutControl>? get onControlFocus =>
+      widget.onControlFocus;
+  bool get compact => widget.compact;
+  bool? get reserveArtwork => widget.reserveArtwork;
+  double get bottomInset => widget.bottomInset;
+  final _feedback = InlineFeedbackController();
+  @override
+  void dispose() {
+    _feedback.dispose();
+    super.dispose();
+  }
+
+  void _openProcessing() {
+    final open = widget.onOpenProcessing;
+    if (open == null) {
+      widget.onOpen();
+    } else {
+      final error = open();
+      if (error != null) _feedback.show(error);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final g = MixerGeometry(
             phone: compact, width: box.maxWidth, height: box.maxHeight);
         final layout = PrefsService.instance.stripLayout;
         final ch = channel;
         final hasArtwork = ch.showsArtwork;
-        final showArtwork =
+        var showArtwork =
             (reserveArtwork ?? hasArtwork) && box.maxHeight >= 480;
-        final identityHeight = showArtwork
+        var identityHeight = showArtwork
             ? AppDesign.spaceXl + math.min(64.0, box.maxWidth * .55)
             : AppDesign.spaceXl;
         const nameHeight = AppDesign.touchTarget;
         const gap = AppDesign.spaceSm;
-        final compactRack =
+        var compactRack =
             compact || layout.compactProcessing || box.maxHeight < 520;
         final heights = <StripElement, double>{
           StripElement.processing: compactRack
@@ -73,24 +106,42 @@ class MixerStrip extends StatelessWidget {
           StripElement.solo: AppDesign.controlHeight,
           StripElement.nameplate: identityHeight + nameHeight,
         };
-        final visible = layout.visibleOrder;
-        final fixed =
+        final visible = [...layout.visibleOrder];
+        // Budget the fader first in logical pixels, never as a fraction of the
+        // authored portrait mock. Its cell includes the cap and level readout,
+        // so a 240-point cell leaves useful travel on short landscape screens.
+        const minimumFaderHeight = 240.0;
+        final hasFader = visible.contains(StripElement.fader);
+        double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
-        // The final nameplate tape meets the bottom edge of the strip.
-        // Other layouts retain clearance below their last control.
-        final bottomGap = visible.lastOrNull == StripElement.nameplate
-            ? 0.0
-            : AppDesign.spaceSm;
-        final spacing = gap * math.max(0, visible.length - 1) +
+        double rowSpacing() =>
+            gap * math.max(0, visible.length - 1) +
             AppDesign.spaceSm +
-            bottomGap;
-        final contentHeight = math.max(
-            box.maxHeight,
-            fixed +
-                spacing +
-                (visible.contains(StripElement.fader)
-                    ? AppDesign.touchTarget * 3
-                    : 0));
+            (visible.lastOrNull == StripElement.nameplate
+                ? 0.0
+                : AppDesign.spaceSm);
+        bool faderNeedsSpace() =>
+            hasFader &&
+            box.maxHeight - fixedHeight() - rowSpacing() < minimumFaderHeight;
+        // Processing stays available from the channel screen. Prefer a small
+        // EQ preview, then remove the preview entirely before reducing travel.
+        if (faderNeedsSpace() && visible.contains(StripElement.processing)) {
+          compactRack = true;
+          heights[StripElement.processing] = AppDesign.touchTarget;
+        }
+        if (faderNeedsSpace() && showArtwork) {
+          showArtwork = false;
+          identityHeight = AppDesign.spaceXl;
+          heights[StripElement.nameplate] = identityHeight + nameHeight;
+        }
+        if (faderNeedsSpace()) visible.remove(StripElement.processing);
+        // Pan is secondary to level control on the shortest surfaces; it is
+        // still accessible by opening the channel. Mute and Solo stay at hand.
+        if (faderNeedsSpace()) visible.remove(StripElement.pan);
+        final fixed = fixedHeight();
+        final spacing = rowSpacing();
+        final contentHeight = math.max(box.maxHeight,
+            fixed + spacing + (hasFader ? minimumFaderHeight : 0));
         final positions = <StripElement, Rect>{};
         var y = AppDesign.spaceSm;
         for (final element in visible) {
@@ -103,7 +154,7 @@ class MixerStrip extends StatelessWidget {
         double allocated(StripElement element) =>
             positions[element]?.height ?? 0;
         Widget place(StripElement element, Widget child) {
-          if (!layout.visible.contains(element)) return const SizedBox.shrink();
+          if (!visible.contains(element)) return const SizedBox.shrink();
           final rect = positions[element];
           if (rect == null) return const SizedBox.shrink();
           // Rows already reserve their full touch targets. Expanding them
@@ -140,13 +191,13 @@ class MixerStrip extends StatelessWidget {
                                   channel: ch,
                                   compact: true,
                                   showPhantom: controller.hasPhantomOf(ch),
-                                  onOpen: onOpenProcessing ?? onOpen)
+                                  onOpen: _openProcessing)
                               : MixerProcessingRack(
                                   channel: ch,
                                   gainRange: controller.gainRangeOf(ch),
                                   showPhantom: controller.hasPhantomOf(ch),
                                   demo: controller.demo,
-                                  onOpen: onOpenProcessing ?? onOpen,
+                                  onOpen: _openProcessing,
                                   onGain: (v) => controller.setGain(ch, v))),
                       place(
                         StripElement.pan,
@@ -317,17 +368,37 @@ class MixerStrip extends StatelessWidget {
                                               anchor, controller.store, target,
                                               anchorBounds: bounds);
                                         } else {
-                                          ScaffoldMessenger.of(anchor)
-                                              .showSnackBar(const SnackBar(
-                                                  content: Text(
-                                                      'This output has no channel identity controls on this connection.')));
+                                          _feedback.show(
+                                              'This output has no channel identity controls on this connection.');
                                         }
                                       })),
                     ]))));
-        return contentHeight > box.maxHeight
-            ? SingleChildScrollView(
-                child: SizedBox(height: contentHeight, child: content))
-            : content;
+        // Feedback scrolls after the strip instead of taking fader travel.
+        return ValueListenableBuilder<String?>(
+            valueListenable: _feedback,
+            child: content,
+            builder: (context, message, content) =>
+                contentHeight > box.maxHeight || message != null
+                    ? SingleChildScrollView(
+                        child: Column(children: [
+                        SizedBox(height: contentHeight, child: content),
+                        if (message != null)
+                          Padding(
+                              padding: const EdgeInsets.all(AppDesign.spaceXs),
+                              child: Column(children: [
+                                Semantics(
+                                    liveRegion: true,
+                                    child: Text(message,
+                                        style: TextStyle(
+                                            color: ConsolePalette.of(context)
+                                                .text1,
+                                            fontSize: 12))),
+                                TextButton(
+                                    onPressed: _feedback.clear,
+                                    child: const Text('Dismiss')),
+                              ])),
+                      ]))
+                    : content!);
       });
 
   /// Snapshot copy carrying the live fader value for [MixerFader] (level

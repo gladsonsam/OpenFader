@@ -672,13 +672,13 @@ async fn recorder_request(
         && request["op"] == "command"
         && matches!(
             request["command"]["action"].as_str(),
-            Some("import_take" | "export_take" | "recover_take")
+            Some("import_take" | "export_take" | "recover_take" | "delete_take")
         )
     {
         return (
             StatusCode::FORBIDDEN,
             Json(
-                serde_json::json!({"ok":false,"error":"take transfer and recovery require local administrator"}),
+                serde_json::json!({"ok":false,"error":"take transfer, recovery and deletion require local administrator"}),
             ),
         );
     }

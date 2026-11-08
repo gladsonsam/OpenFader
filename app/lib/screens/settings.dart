@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import '../widgets/inline_feedback.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -106,6 +107,12 @@ class U4SettingsPage extends StatefulWidget {
 class _U4SettingsPageState extends State<U4SettingsPage> {
   SettingsSection _sel = SettingsSection.connections;
   SettingsSection? _page;
+  final _feedback = InlineFeedbackController();
+  @override
+  void dispose() {
+    _feedback.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -114,20 +121,9 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     _sel = widget.initialSection ?? SettingsSection.connections;
   }
 
-  void _toast(String msg) {
+  void _showFeedback(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          msg,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontFamily: U4.font, fontSize: 17),
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    _feedback.show(msg);
   }
 
   Future<void> _confirm({
@@ -147,7 +143,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
         await onConfirm();
         if (mounted) setState(() {});
       } catch (error) {
-        _toast('Could not complete the action: $error');
+        _showFeedback('Could not complete the action: $error');
       }
     }
   }
@@ -161,15 +157,22 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       // Dialogs handle their own keyboard insets; keep navigation at full height.
       resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: widget.store,
-          builder: (context, _) {
-            if (wide) return _tablet();
-            return ConsolePageReveal(
-                token: _page ?? 'overview',
-                child: _page == null ? _overviewList() : _subpage(_page!));
-          },
-        ),
+        child: InlineFeedbackScope(
+            expand: true,
+            controller: _feedback,
+            builder: (context) => ListenableBuilder(
+                  listenable: widget.store,
+                  builder: (context, _) {
+                    final page = wide
+                        ? _tablet()
+                        : ConsolePageReveal(
+                            token: _page ?? 'overview',
+                            child: _page == null
+                                ? _overviewList()
+                                : _subpage(_page!));
+                    return page;
+                  },
+                )),
       ),
     );
   }
@@ -375,12 +378,12 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           SettingsSection.mixer => _MixerSetupDetail(store: widget.store),
           SettingsSection.connections => _ConnectionsDetail(
               store: widget.store,
-              toast: _toast,
+              toast: _showFeedback,
               confirm: _confirm,
             ),
           SettingsSection.mixes => _MixesDetail(
               store: widget.store,
-              toast: _toast,
+              toast: _showFeedback,
               confirm: _confirm,
               onOpenMixer: widget.onOpenMixer,
             ),
@@ -389,15 +392,15 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             ),
           SettingsSection.data => _DataDetail(
               store: widget.store,
-              toast: _toast,
+              toast: _showFeedback,
               confirm: _confirm,
             ),
           SettingsSection.appearance => _AppearanceDetail(
               store: widget.store,
-              toast: _toast,
+              toast: _showFeedback,
             ),
           SettingsSection.about => Expanded(
-              child: _AboutDetail(store: widget.store, toast: _toast),
+              child: _AboutDetail(store: widget.store, toast: _showFeedback),
             ),
         },
       ],

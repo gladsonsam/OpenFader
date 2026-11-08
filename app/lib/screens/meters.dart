@@ -2,6 +2,7 @@
 // Offline ladders read -inf and render dark because levels come only from the live engine.
 // Freshness comes from the single shell-owned 80 ms loop; this page sends
 // spectrum_target for the visible strip while visible and clears it on dispose.
+import '../widgets/inline_feedback.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -104,6 +105,7 @@ class U4MetersPage extends StatefulWidget {
 }
 
 class _U4MetersPageState extends State<U4MetersPage> {
+  final _feedback = InlineFeedbackController();
   int? _target;
   DestinationControlVm? _focused;
 
@@ -168,8 +170,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
     }
     final error = await widget.store.setMonitorControl(row, selected);
     if (mounted && error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      _feedback.show(error);
     }
   }
 
@@ -215,114 +216,121 @@ class _U4MetersPageState extends State<U4MetersPage> {
   void dispose() {
     widget.store.removeListener(_retarget);
     widget.store.setSpectrumTarget(null);
+    _feedback.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: ConsolePalette.of(context).page,
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: widget.store,
-          builder: (context, _) {
-            final store = widget.store;
-            final focused = _currentFocus;
-            return Column(
-              children: [
-                if (focused != null)
-                  Container(
-                    width: double.infinity,
-                    color: ConsolePalette.of(context).panel,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: () => _editFocus(focused),
-                        child: Text(
-                          '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: AppDesign.pagePadding,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return InlineFeedbackScope(
+        expand: true,
+        controller: _feedback,
+        builder: (context) => Scaffold(
+              backgroundColor: ConsolePalette.of(context).page,
+              body: SafeArea(
+                child: ListenableBuilder(
+                  listenable: widget.store,
+                  builder: (context, _) {
+                    final store = widget.store;
+                    final focused = _currentFocus;
+                    return Column(
                       children: [
-                        if (!store.online)
+                        if (focused != null)
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            margin: const EdgeInsets.only(bottom: 14),
-                            decoration: BoxDecoration(
-                              color: ConsolePalette.of(context).panel,
-                              border: Border.all(
-                                color: ConsolePalette.of(context).divider,
-                              ),
-                              borderRadius: const BorderRadius.all(
-                                Radius.circular(4),
-                              ),
-                            ),
-                            child: Text(
-                              'Offline - ladders are dark until a live link is up. Connect for live meters.',
-                              style: TextStyle(
-                                fontFamily: U4.font,
-                                fontSize: AppDesign.caption,
-                                color: ConsolePalette.of(context).text7,
+                            width: double.infinity,
+                            color: ConsolePalette.of(context).panel,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton(
+                                onPressed: () => _editFocus(focused),
+                                child: Text(
+                                  '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ),
                           ),
-                        for (final g in store.groups) ...[
-                          if (g.ladders.isNotEmpty)
-                            _LadderGroup(
-                              group: g,
-                              online: store.online,
-                              tapOf: store.tapOf,
-                            )
-                          else
-                            _CollapsedGroup(group: g),
-                          const SizedBox(height: 14),
-                        ],
-                        for (final g in store.physicalOutputGroups) ...[
-                          _PhysicalOutputs(
-                            group: g,
-                            meterOf: store.outputMeterFor,
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: AppDesign.pagePadding,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (!store.online)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    margin: const EdgeInsets.only(bottom: 14),
+                                    decoration: BoxDecoration(
+                                      color: ConsolePalette.of(context).panel,
+                                      border: Border.all(
+                                        color:
+                                            ConsolePalette.of(context).divider,
+                                      ),
+                                      borderRadius: const BorderRadius.all(
+                                        Radius.circular(4),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Offline - ladders are dark until a live link is up. Connect for live meters.',
+                                      style: TextStyle(
+                                        fontFamily: U4.font,
+                                        fontSize: AppDesign.caption,
+                                        color: ConsolePalette.of(context).text7,
+                                      ),
+                                    ),
+                                  ),
+                                for (final g in store.groups) ...[
+                                  if (g.ladders.isNotEmpty)
+                                    _LadderGroup(
+                                      group: g,
+                                      online: store.online,
+                                      tapOf: store.tapOf,
+                                    )
+                                  else
+                                    _CollapsedGroup(group: g),
+                                  const SizedBox(height: 14),
+                                ],
+                                for (final g in store.physicalOutputGroups) ...[
+                                  _PhysicalOutputs(
+                                    group: g,
+                                    meterOf: store.outputMeterFor,
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                                if (store.monitorControls.isNotEmpty) ...[
+                                  ExpansionTile(
+                                    expansionAnimationStyle:
+                                        AnimationStyle.noAnimation,
+                                    tilePadding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    title: const Text('Monitor controls',
+                                        style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600)),
+                                    children: [
+                                      _MonitorControls(
+                                          store: store,
+                                          focused: focused,
+                                          onSelect: (row) =>
+                                              setState(() => _focused = row))
+                                    ],
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 14),
-                        ],
-                        if (store.monitorControls.isNotEmpty) ...[
-                          ExpansionTile(
-                            expansionAnimationStyle: AnimationStyle.noAnimation,
-                            tilePadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                            title: const Text('Monitor controls',
-                                style: TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w600)),
-                            children: [
-                              _MonitorControls(
-                                  store: store,
-                                  focused: focused,
-                                  onSelect: (row) =>
-                                      setState(() => _focused = row))
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                        ],
+                        ),
                       ],
-                    ),
-                  ),
+                    );
+                  },
                 ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
+              ),
+            ));
   }
 }
 
@@ -750,8 +758,7 @@ class _MonitorControls extends StatelessWidget {
     }
     final error = await store.setMonitorControl(row, value);
     if (context.mounted && error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      InlineFeedbackScope.show(context, error);
     }
   }
 
