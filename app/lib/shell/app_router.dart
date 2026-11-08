@@ -854,9 +854,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     ? 'Output processing'
                     : _tab.label,
             onNavigate: _navigateMixer,
-            onHome: () =>
-                _go(_tab == AppTab.mixer ? AppTab.home : AppTab.mixer),
-            homeLabel: _tab == AppTab.mixer ? 'Home' : 'Mixer',
+            onHome: () => _tab == AppTab.mixer
+                ? _openConnectionsHome()
+                : _go(AppTab.mixer),
+            homeLabel:
+                _tab == AppTab.mixer ? 'Back to Connections' : 'Back to Mixer',
             onOpenTools: () => _go(AppTab.home),
             readoutContent: readout);
       });
@@ -864,7 +866,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget _mixerPage() => MixerPage(
       controller: _mixer,
       embedded: true,
-      onHome: () => _go(AppTab.mixer),
+      onHome: () => _openConnectionsHome(),
       onNavigate: _navigateMixer);
 
   Widget _pageFor(AppTab t, AppStore store) =>

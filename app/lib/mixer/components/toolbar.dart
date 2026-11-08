@@ -11,7 +11,7 @@ class MixerToolbar extends StatelessWidget {
   final MixerController controller;
   final ValueChanged<MixerDestination> onNavigate;
 
-  /// Persistent workspace home (top-left brand button).
+  /// Back navigation through the top-left brand button.
   final VoidCallback? onHome;
   final String homeLabel;
   final VoidCallback? onOpenTools;
