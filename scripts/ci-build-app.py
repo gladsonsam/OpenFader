@@ -33,6 +33,41 @@ def zip_tree(source, destination, prefix=None):
                     archive.write(path, Path(prefix or source.name) / path.relative_to(source))
 
 
+def linux_appimage(bundle, destination):
+    # Preserve Flutter's executable-relative lib/data layout, including the
+    # recorder host and capture helper alongside the runner.
+    appdir = APP / 'build/ci-appimage/OpenFader.AppDir'
+    shutil.rmtree(appdir.parent, ignore_errors=True)
+    binaries = appdir / 'usr/bin'
+    shutil.copytree(bundle, binaries, symlinks=True)
+    desktop = appdir.parent / 'openfader.desktop'
+    desktop.write_text('[Desktop Entry]\nType=Application\nName=OpenFader\n'
+                       'Exec=openfader\nIcon=openfader\nCategories=AudioVideo;Audio;Mixer;\n')
+    icon = appdir.parent / 'openfader.png'
+    shutil.copy2(APP / 'assets/brand/open-fader-logo-256.png', icon)
+    launcher = appdir.parent / 'AppRun'
+    launcher.write_text('#!/bin/sh\nset -eu\n'
+                        'APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\n'
+                        'export LD_LIBRARY_PATH="$APPDIR/usr/bin/lib:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n'
+                        'exec "$APPDIR/usr/bin/openfader" "$@"\n')
+    launcher.chmod(0o755)
+    tool = os.environ.get('LINUXDEPLOY') or shutil.which('linuxdeploy')
+    if not tool:
+        raise RuntimeError('linuxdeploy is required to package the Linux AppImage.')
+    command = [tool, '--appdir', str(appdir), '--desktop-file', str(desktop),
+               '--icon-file', str(icon), '--custom-apprun', str(launcher)]
+    for name in ('openfader', 'openfader-serve', 'openfader-capture-helper'):
+        executable = binaries / name
+        if not executable.is_file():
+            raise RuntimeError(f'Missing Linux bundle component: {name}')
+        command.extend(['--executable', str(executable)])
+    # linuxdeploy scans shared libraries in the AppDir too, including dlopen'd
+    # Flutter plugins and the Rust bridge. Bundle their dependencies as well.
+    env = dict(os.environ, LDAI_OUTPUT=str(destination), ARCH='x86_64')
+    subprocess.run([*command, '--output', 'appimage'], cwd=appdir.parent,
+                   env=env, check=True)
+
+
 def android_signer(apk):
     sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
     candidates = sorted((Path(sdk) / 'build-tools').glob('*/apksigner')) if sdk else []
@@ -76,10 +111,14 @@ def main():
     parser.add_argument('platform', choices=['ios', 'macos', 'linux', 'windows', 'android'])
     parser.add_argument('--portable-only', action='store_true',
                         help='Package Windows ZIP without requiring Inno Setup')
+    parser.add_argument('--release-only', action='store_true',
+                        help='Package only EXE, APK or AppImage, plus verification metadata')
     args = parser.parse_args()
     platform = args.platform
     if args.portable_only and platform != 'windows':
         parser.error('--portable-only is available for Windows')
+    if args.release_only and (args.portable_only or platform not in ('windows', 'android', 'linux')):
+        parser.error('--release-only requires Windows, Android or Linux without --portable-only')
     expected = {'ios': 'darwin', 'macos': 'darwin', 'linux': 'linux',
                 'windows': 'win32', 'android': 'linux'}[platform]
     if sys.platform != expected and not (platform == 'android' and sys.platform == 'darwin'):
@@ -147,8 +186,11 @@ def main():
             if not (bundle / 'web/flutter_bootstrap.js').is_file():
                 raise RuntimeError('Linux bundle is missing the browser app.')
             shutil.copy2(ROOT / 'target/release/libopenfader_flutter_bridge.so', bundle / 'lib')
-            with tarfile.open(output('openfader-linux-x64.tar.gz'), 'w:gz') as archive:
-                archive.add(bundle, arcname='openfader')
+            if args.release_only:
+                linux_appimage(bundle, output(f'OpenFader-{version}-linux-x64.AppImage'))
+            else:
+                with tarfile.open(output('openfader-linux-x64.tar.gz'), 'w:gz') as archive:
+                    archive.add(bundle, arcname='openfader')
         else:
             bundle = APP / 'build/windows/x64/runner/Release'
             if not (bundle / 'web/flutter_bootstrap.js').is_file():
@@ -176,7 +218,8 @@ def main():
                     raise RuntimeError('Inno Setup 6 compiler not found on runner')
                 run(iscc, f'/DAppVersion={version}', ROOT / 'scripts/windows-installer.iss', cwd=ROOT)
                 output(f'OpenFader-{version}-windows-x64-setup.exe')
-            zip_tree(bundle, output('openfader-windows-x64.zip'), prefix='openfader')
+            if not args.release_only:
+                zip_tree(bundle, output('openfader-windows-x64.zip'), prefix='openfader')
     else:
         # Gradle builds the Rust bridge for every packaged ABI, including local
         # Flutter builds. One path prevents missing or stale native engines.
@@ -189,10 +232,11 @@ def main():
                 if name not in archive.namelist() or archive.getinfo(name).file_size == 0:
                     raise RuntimeError(f'APK missing native bridge: {name}')
         shutil.copy2(apk, output(f'OpenFader-{version}-android.apk'))
-        run(flutter, 'build', 'appbundle', '--release', *flags)
-        bundle = APP / 'build/app/outputs/bundle/release/app-release.aab'
-        signing['bundle_certificate_sha256'] = verify_android_bundle(bundle, signing['certificate_sha256'])
-        shutil.copy2(bundle, output('openfader-android-dev-signed.aab'))
+        if not args.release_only:
+            run(flutter, 'build', 'appbundle', '--release', *flags)
+            bundle = APP / 'build/app/outputs/bundle/release/app-release.aab'
+            signing['bundle_certificate_sha256'] = verify_android_bundle(bundle, signing['certificate_sha256'])
+            shutil.copy2(bundle, output('openfader-android-dev-signed.aab'))
 
     if (source_commit != subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             or source_patch != subprocess.check_output(['git', 'diff', '--binary', '--full-index', 'HEAD'], cwd=ROOT)):

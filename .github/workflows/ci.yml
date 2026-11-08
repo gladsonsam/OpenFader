@@ -3,6 +3,11 @@ name: Release checks (manual)
 # Run explicitly before a release; ordinary pushes and PRs do not trigger CI.
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      skip-windows:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,6 +61,8 @@ jobs:
         working-directory: app
 
   windows:
+    # Release builds already compile and package Windows.
+    if: inputs.skip-windows != true
     runs-on: windows-2022
     timeout-minutes: 60
     env:
