@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/native_library_store.dart';
 
 import '../ui/console.dart';
+import '../widgets/inline_feedback.dart';
 import 'recorder_arrangement.dart';
 
 /// Recorder data and commands are supplied by the shell's host adapter.
@@ -255,6 +256,13 @@ class RecorderPage extends StatefulWidget {
 }
 
 class _RecorderPageState extends State<RecorderPage> {
+  final _feedback = InlineFeedbackController();
+  @override
+  void dispose() {
+    _feedback.dispose();
+    super.dispose();
+  }
+
   RecorderStore get store => widget.store;
   bool _showTakes = true;
   int? _loopStart, _loopEnd, _loopTotal;
@@ -339,7 +347,7 @@ class _RecorderPageState extends State<RecorderPage> {
 
   void _snapshotMessage(String text) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      _feedback.show(text);
     }
   }
 
@@ -745,8 +753,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (_startingPlay || store.pending) return;
     void message(String text) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(text)));
+        _feedback.show(text);
       }
     }
 
@@ -886,6 +893,7 @@ class _RecorderPageState extends State<RecorderPage> {
               'Could not read the previous mapping. Review the outputs before playing.');
         }
         if (!mounted) return;
+        String? mappingError;
         final chosen = await showDialog<List<int?>>(
             context: context,
             builder: (context) => StatefulBuilder(
@@ -895,6 +903,7 @@ class _RecorderPageState extends State<RecorderPage> {
                           width: 420,
                           child:
                               Column(mainAxisSize: MainAxisSize.min, children: [
+                            if (mappingError != null) Text(mappingError!),
                             Text(
                                 '${selected['name']} · ${selected['sample_rate']} Hz · $outputs outputs'),
                             if (caps['soundcheck'] != true)
@@ -943,7 +952,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                   mapping.whereType<int>().toList();
                               if (assigned.isEmpty ||
                                   assigned.toSet().length != assigned.length) {
-                                message(
+                                update(() => mappingError =
                                     'Assign at least one track and use each output only once.');
                                 return;
                               }
@@ -1620,6 +1629,7 @@ class _RecorderPageState extends State<RecorderPage> {
                         : 'Audio setup')),
               ]),
             ),
+            InlineFeedbackView(controller: _feedback),
             if (!store.connected || store.error != null || s['error'] != null)
               Padding(
                   padding: const EdgeInsets.all(8),
@@ -1793,6 +1803,37 @@ class _RecorderPageState extends State<RecorderPage> {
           ]);
         },
       );
+  Future<void> _deleteTake(RecorderStore store, String id, String name) async {
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => ConsoleAlertDialog(
+              title: const Text('Delete take?'),
+              content: Text(
+                  'Permanently delete “$name” and its recorded audio from the recorder computer? This cannot be undone.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete take')),
+              ],
+            ));
+    if (confirmed != true || !mounted) return;
+    await store.command('delete_take', {'take_id': id, 'confirm': true});
+    if (!mounted || store.takes.any((take) => take['id'] == id)) return;
+    setState(() {
+      if (_previewTakeId == id) _previewTakeId = null;
+      if (_capturePreviewId == id) _capturePreviewId = null;
+      if (_importedTakeId == id) _importedTakeId = null;
+      if (_loopTake == id) {
+        _loopTake = null;
+        _loopStart = null;
+        _loopEnd = null;
+      }
+    });
+  }
+
   Widget _takesBrowser(BuildContext context, RecorderStore store) {
     return ListenableBuilder(
         listenable: store,
@@ -2006,7 +2047,37 @@ class _RecorderPageState extends State<RecorderPage> {
                                                             fontSize: 18,
                                                             fontWeight:
                                                                 FontWeight
-                                                                    .w600))))
+                                                                    .w600)))),
+                                            IconButton(
+                                              tooltip: !store.canAdminRemote
+                                                  ? 'Delete this take on the recorder computer'
+                                                  : recording ||
+                                                          soundcheck ||
+                                                          '${s['transport']}'
+                                                                  .toLowerCase() !=
+                                                              'stopped'
+                                                      ? 'Stop transport and return to live to delete takes'
+                                                      : 'Delete take',
+                                              onPressed: enabled &&
+                                                      store.canAdminRemote &&
+                                                      !recording &&
+                                                      !soundcheck &&
+                                                      '${s['transport']}'
+                                                              .toLowerCase() ==
+                                                          'stopped' &&
+                                                      take['id'] is String
+                                                  ? () => _deleteTake(
+                                                      store,
+                                                      take['id'] as String,
+                                                      (take['name']
+                                                              as String?) ??
+                                                          _importNames[
+                                                              take['id']] ??
+                                                          'Take ${index + 1}')
+                                                  : null,
+                                              icon: const Icon(
+                                                  Icons.delete_outline),
+                                            ),
                                           ]),
                                           const SizedBox(height: 6),
                                           Text(
@@ -2322,11 +2393,13 @@ class _WebHostingSettings extends StatefulWidget {
 }
 
 class _WebHostingSettingsState extends State<_WebHostingSettings> {
+  final _feedback = InlineFeedbackController();
   final _port = TextEditingController(text: '8846');
   bool _portDirty = false;
 
   @override
   void dispose() {
+    _feedback.dispose();
     _port.dispose();
     super.dispose();
   }
@@ -2354,6 +2427,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
             .toList()
         : const <String>[];
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      InlineFeedbackView(controller: _feedback),
       SwitchListTile.adaptive(
         contentPadding: EdgeInsets.zero,
         title: const Text('Host browser app'),
@@ -2419,8 +2493,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: url));
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Browser address copied')));
+                    _feedback.show('Browser address copied');
                   }
                 },
                 icon: const Icon(Icons.copy, size: 18)),

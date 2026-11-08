@@ -1,5 +1,6 @@
 // FX rack: slot cards, type choices and rotary parameter controls.
 // Screens stay constructor-injected so Area A can implement the store.
+import '../widgets/inline_feedback.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -114,127 +115,137 @@ class _U4FxPageState extends State<U4FxPage> {
   Object? _focusContext;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-      backgroundColor: ConsolePalette.of(context).page,
-      body: SafeArea(
-          child: ListenableBuilder(
-              listenable: widget.store,
-              builder: (context, _) {
-                final store = widget.store;
-                final groups = <String, List<DestinationControlVm>>{};
-                for (final control in store.destinationControls) {
-                  groups.putIfAbsent(control.target, () => []).add(control);
-                }
-                final targets = [
-                  for (final entry in groups.entries)
-                    _FxTarget('destination:${entry.key}',
-                        controls: entry.value),
-                  for (final slot in store.slots)
-                    _FxTarget('slot:${slot.slot}', slot: slot),
-                ];
-                final fallback = groups.isNotEmpty || store.slots.isEmpty
-                    ? targets.firstOrNull
-                    : targets[store.selected.clamp(0, targets.length - 1)];
-                final selected =
-                    targets.where((t) => t.key == _selection).firstOrNull ??
-                        fallback;
-                final focusContext = (
-                  store.controlSession,
-                  store.controlAccessEpoch,
-                  selected?.key,
-                  selected?.slot?.type ??
-                      selected?.controls.firstOrNull?.targetName
-                );
-                if (_focusContext != focusContext) {
-                  _focusContext = focusContext;
-                  _focusedTarget = null;
-                  _focusedId = null;
-                }
-                final readout = selected == null
-                    ? null
-                    : _selectedReadout(context, selected);
-                final readoutSession = store.controlSession;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && readoutSession == store.controlSession) {
-                    widget.onReadout(readout);
-                  }
-                });
-                return LayoutBuilder(builder: (context, bounds) {
-                  final palette = ConsolePalette.of(context);
-                  final width = math.max(0.0, bounds.maxWidth - 32);
-                  final cardWidth = targets.isEmpty
-                      ? 180.0
-                      : ((width - 6 * (targets.length - 1)) / targets.length)
-                          .clamp(112.0, double.infinity);
-                  return Column(children: [
-                    Expanded(
-                        child: SingleChildScrollView(
-                            padding: AppDesign.pagePadding,
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (targets.isEmpty)
-                                    Text(
-                                        'No FX controls are available for this mixer.',
-                                        style: TextStyle(color: palette.text4)),
-                                  if (targets.isNotEmpty)
-                                    SizedBox(
-                                        height: 112,
-                                        child: ListView.separated(
-                                            scrollDirection: Axis.horizontal,
-                                            itemCount: targets.length,
-                                            separatorBuilder:
-                                                (context, index) =>
+  Widget build(BuildContext context) => InlineFeedbackScope(
+      expand: true,
+      builder: (context) => Scaffold(
+          backgroundColor: ConsolePalette.of(context).page,
+          body: SafeArea(
+              child: ListenableBuilder(
+                  listenable: widget.store,
+                  builder: (context, _) {
+                    final store = widget.store;
+                    final groups = <String, List<DestinationControlVm>>{};
+                    for (final control in store.destinationControls) {
+                      groups.putIfAbsent(control.target, () => []).add(control);
+                    }
+                    final targets = [
+                      for (final entry in groups.entries)
+                        _FxTarget('destination:${entry.key}',
+                            controls: entry.value),
+                      for (final slot in store.slots)
+                        _FxTarget('slot:${slot.slot}', slot: slot),
+                    ];
+                    final fallback = groups.isNotEmpty || store.slots.isEmpty
+                        ? targets.firstOrNull
+                        : targets[store.selected.clamp(0, targets.length - 1)];
+                    final selected =
+                        targets.where((t) => t.key == _selection).firstOrNull ??
+                            fallback;
+                    final focusContext = (
+                      store.controlSession,
+                      store.controlAccessEpoch,
+                      selected?.key,
+                      selected?.slot?.type ??
+                          selected?.controls.firstOrNull?.targetName
+                    );
+                    if (_focusContext != focusContext) {
+                      _focusContext = focusContext;
+                      _focusedTarget = null;
+                      _focusedId = null;
+                    }
+                    final readout = selected == null
+                        ? null
+                        : _selectedReadout(context, selected);
+                    final readoutSession = store.controlSession;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && readoutSession == store.controlSession) {
+                        widget.onReadout(readout);
+                      }
+                    });
+                    return LayoutBuilder(builder: (context, bounds) {
+                      final palette = ConsolePalette.of(context);
+                      final width = math.max(0.0, bounds.maxWidth - 32);
+                      final cardWidth = targets.isEmpty
+                          ? 180.0
+                          : ((width - 6 * (targets.length - 1)) /
+                                  targets.length)
+                              .clamp(112.0, double.infinity);
+                      return Column(children: [
+                        Expanded(
+                            child: SingleChildScrollView(
+                                padding: AppDesign.pagePadding,
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (targets.isEmpty)
+                                        Text(
+                                            'No FX controls are available for this mixer.',
+                                            style: TextStyle(
+                                                color: palette.text4)),
+                                      if (targets.isNotEmpty)
+                                        SizedBox(
+                                            height: 112,
+                                            child: ListView.separated(
+                                                scrollDirection:
+                                                    Axis.horizontal,
+                                                itemCount: targets.length,
+                                                separatorBuilder: (context,
+                                                        index) =>
                                                     const SizedBox(width: 6),
-                                            itemBuilder: (context, index) {
-                                              final target = targets[index];
-                                              return SizedBox(
-                                                  width: cardWidth,
-                                                  child: _FxCard(
-                                                      store: store,
-                                                      target: target,
-                                                      selected:
-                                                          target == selected,
-                                                      onSelect: () {
-                                                        setState(() =>
-                                                            _selection =
-                                                                target.key);
-                                                        _focusedId = null;
-                                                        _focusedTarget = null;
-                                                        if (target.slot
-                                                            case final slot?) {
-                                                          store.selectSlot(
-                                                              slot.slot);
-                                                        }
-                                                      }));
-                                            })),
-                                  if (selected != null) ...[
-                                    const SizedBox(height: AppDesign.spaceSm),
-                                    if (selected.slot case final slot?)
-                                      _LegacyFxDetail(
-                                          store: store,
-                                          slot: slot,
-                                          onFocus: (id) => setState(() {
-                                                _focusedTarget = selected.key;
-                                                _focusedId = id;
-                                              }))
-                                    else
-                                      _NativeFxDetail(
-                                          store: store,
-                                          controls: selected.controls,
-                                          focusedId:
-                                              _focusedTarget == selected.key
-                                                  ? _focusedId
-                                                  : null,
-                                          onFocus: (id) => setState(() {
-                                                _focusedTarget = selected.key;
-                                                _focusedId = id;
-                                              })),
-                                  ],
-                                ]))),
-                  ]);
-                });
-              })));
+                                                itemBuilder: (context, index) {
+                                                  final target = targets[index];
+                                                  return SizedBox(
+                                                      width: cardWidth,
+                                                      child: _FxCard(
+                                                          store: store,
+                                                          target: target,
+                                                          selected: target ==
+                                                              selected,
+                                                          onSelect: () {
+                                                            setState(() =>
+                                                                _selection =
+                                                                    target.key);
+                                                            _focusedId = null;
+                                                            _focusedTarget =
+                                                                null;
+                                                            if (target.slot
+                                                                case final slot?) {
+                                                              store.selectSlot(
+                                                                  slot.slot);
+                                                            }
+                                                          }));
+                                                })),
+                                      if (selected != null) ...[
+                                        const SizedBox(
+                                            height: AppDesign.spaceSm),
+                                        if (selected.slot case final slot?)
+                                          _LegacyFxDetail(
+                                              store: store,
+                                              slot: slot,
+                                              onFocus: (id) => setState(() {
+                                                    _focusedTarget =
+                                                        selected.key;
+                                                    _focusedId = id;
+                                                  }))
+                                        else
+                                          _NativeFxDetail(
+                                              store: store,
+                                              controls: selected.controls,
+                                              focusedId:
+                                                  _focusedTarget == selected.key
+                                                      ? _focusedId
+                                                      : null,
+                                              onFocus: (id) => setState(() {
+                                                    _focusedTarget =
+                                                        selected.key;
+                                                    _focusedId = id;
+                                                  })),
+                                      ],
+                                    ]))),
+                      ]);
+                    });
+                  }))));
 
   SelectedControlReadoutData _selectedReadout(
       BuildContext context, _FxTarget target) {
@@ -448,8 +459,7 @@ class _NativeFxDetail extends StatelessWidget {
     if (value == null) return;
     final error = await store.setDestinationControl(control, value);
     if (context.mounted && error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      InlineFeedbackScope.show(context, error);
     }
   }
 
@@ -532,8 +542,7 @@ class _NativeFxDetail extends StatelessWidget {
                                 final error = await store.setDestinationControl(
                                     control, next);
                                 if (context.mounted && error != null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(error)));
+                                  InlineFeedbackScope.show(context, error);
                                 }
                               }
                             : null)),
@@ -594,8 +603,7 @@ class _NativeFxDetail extends StatelessWidget {
                                 final error =
                                     await store.tapDestinationControl(control);
                                 if (context.mounted && error != null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(error)));
+                                  InlineFeedbackScope.show(context, error);
                                 }
                               }
                             : null)))),

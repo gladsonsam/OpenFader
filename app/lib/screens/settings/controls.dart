@@ -122,19 +122,7 @@ Future<void> _runSettingsAction(
     return;
   } catch (error) {
     if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Could not complete the action: $error',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontFamily: U4.font, fontSize: 17),
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    InlineFeedbackScope.show(context, 'Could not complete the action: $error');
   }
 }
 

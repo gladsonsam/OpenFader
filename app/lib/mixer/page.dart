@@ -124,11 +124,10 @@ class _MixerPageState extends State<MixerPage> {
                               if (controller.openMasterProcessing()) {
                                 widget.onNavigate(MixerDestination.channel);
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                        content: Text(controller
-                                            .masterProcessingUnavailableReason)));
+                                return controller
+                                    .masterProcessingUnavailableReason;
                               }
+                              return null;
                             }
                           : null,
                       onOpenAt: ch.master

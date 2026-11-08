@@ -455,10 +455,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   bool _serverConnecting = false;
+  String? _serverConnectionError;
 
   Future<void> _connectServer(String address) async {
     if (_serverConnecting) return;
-    _serverConnecting = true;
+    setState(() {
+      _serverConnecting = true;
+      _serverConnectionError = null;
+    });
     RemoteHost? host;
     AppStore? remoteStore;
     try {
@@ -520,8 +524,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               AppShell(api: host!, store: remoteStore!, isRealEngine: true)));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not connect to server: $error')));
+        setState(() =>
+            _serverConnectionError = 'Could not connect to server: $error');
       }
     } finally {
       remoteStore?.dispose();
@@ -633,6 +637,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _leaveServer() async {
+    if (widget.api case final RemoteHost remote) {
+      if (kIsWeb) {
+        try {
+          await remote.disconnect();
+        } catch (_) {
+          // Reload still provides sign-in when the server is unreachable.
+        }
+        reloadBrowserSession();
+      } else if (mounted) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
   SettingsSection? _settingsSection;
 
   void _openSettings(SettingsSection? section) {
@@ -650,6 +669,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         listenable: store,
         builder: (context, _) => ConnectionsStartScreen(
           store: _conn,
+          serverError: _serverConnectionError,
           onConnectServer: widget.api is RemoteHost ? null : _connectServer,
           onSettings: () => _openSettings(null),
           onHelp: () => _openSettings(SettingsSection.about),
@@ -677,75 +697,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
         return U4Shell(
           header: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (widget.api case final RemoteHost remote)
-              Material(
-                  color: ConsolePalette.of(context).panel,
-                  child: SafeArea(
-                      bottom: false,
-                      child: Row(children: [
-                        Expanded(
-                            child: Padding(
-                                padding: const EdgeInsets.only(left: 12),
-                                child: Text(
-                                    'Server ${remote.endpoint.host}:${remote.endpoint.port} · ${store.transportError.isEmpty ? 'Connected' : 'Connection lost'}',
-                                    overflow: TextOverflow.ellipsis))),
-                        if (kIsWeb && store.transportError.isNotEmpty)
-                          TextButton(
-                              onPressed: reloadBrowserSession,
-                              child: const Text('Reload / sign in')),
-                        TextButton(
-                            onPressed: () async {
-                              if (kIsWeb) {
-                                try {
-                                  await remote.disconnect();
-                                } catch (_) {
-                                  // Reload still provides a way back to sign-in if the server is unreachable.
-                                }
-                                reloadBrowserSession();
-                              } else if (context.mounted) {
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            child: Text(kIsWeb ? 'Sign out' : 'Disconnect')),
-                      ]))),
             if (_tab != AppTab.recorder) _workspaceToolbar(),
-            if (widget.api is HostTransport && _tab != AppTab.recorder)
-              ListenableBuilder(
-                listenable: _recorder,
-                builder: (context, _) {
-                  final state = _recorder.state;
-                  final mode = state['input_mode'];
-                  final transport = state['transport'];
-                  if (transport != 'recording' &&
-                      mode != 'soundcheck' &&
-                      mode != 'recovery_required' &&
-                      mode != 'manual_recovery_required') {
-                    return const SizedBox.shrink();
-                  }
-                  return Material(
-                    color: ConsolePalette.of(context).panel,
-                    child: Row(children: [
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: Text(
-                              'Recorder: ${transport ?? 'unknown'} · ${mode ?? 'unknown'} · dropouts ${state['xruns'] ?? '-'}',
-                              style: TextStyle(
-                                  color: ConsolePalette.of(context).text1))),
-                      if ((mode == 'soundcheck' ||
-                              mode == 'recovery_required') &&
-                          state['manual_routing'] != true)
-                        TextButton(
-                            onPressed: _recorder.pending
-                                ? null
-                                : () => _recorder.command('return_live'),
-                            child: const Text('Return to live')),
-                      TextButton(
-                          onPressed: () => _go(AppTab.recorder),
-                          child: const Text('Recorder')),
-                    ]),
-                  );
-                },
-              ),
             if (_tab != AppTab.recorder)
               Container(
                   height: narrow ? 6 : 8,
@@ -897,6 +849,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
     return switch (t) {
       AppTab.home => WorkspaceHome(
+          serverError: widget.api is RemoteHost ? store.transportError : '',
+          onReloadServer:
+              widget.api is RemoteHost && kIsWeb ? reloadBrowserSession : null,
+          onLeaveServer: widget.api is RemoteHost ? _leaveServer : null,
+          leaveServerLabel: kIsWeb ? 'Sign out' : 'Disconnect server',
           onQuit: widget.desktop?.requestQuit,
           onMixer: () => _go(AppTab.mixer),
           onConnections: () => _openConnectionsHome(),

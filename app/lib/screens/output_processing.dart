@@ -1,3 +1,4 @@
+import '../widgets/inline_feedback.dart';
 import '../core/control_reset.dart';
 import '../ui/console.dart';
 import 'dart:math' as math;
@@ -105,203 +106,219 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
             _focusDraft = null;
           }
           final focused = processor.where((c) => c.id == _focusId).firstOrNull;
-          return Scaffold(
-            backgroundColor: palette.page,
-            appBar: widget.embedded && focused == null
-                ? null
-                : AppBar(
-                    toolbarHeight: widget.embedded ? 48 : null,
-                    automaticallyImplyLeading: false,
-                    backgroundColor: palette.panel,
-                    leading: widget.embedded
+          return InlineFeedbackScope(
+              expand: true,
+              builder: (context) => Scaffold(
+                    backgroundColor: palette.page,
+                    appBar: widget.embedded && focused == null
                         ? null
-                        : IconButton(
-                            onPressed: widget.onClose,
-                            tooltip: 'Mixer',
-                            icon: const Icon(Icons.arrow_back),
+                        : AppBar(
+                            toolbarHeight: widget.embedded ? 48 : null,
+                            automaticallyImplyLeading: false,
+                            backgroundColor: palette.panel,
+                            leading: widget.embedded
+                                ? null
+                                : IconButton(
+                                    onPressed: widget.onClose,
+                                    tooltip: 'Mixer',
+                                    icon: const Icon(Icons.arrow_back),
+                                  ),
+                            title: focused == null
+                                ? const Text('Output processing')
+                                : TextButton(
+                                    onPressed: !_focusPending &&
+                                            store.destinationControlIsCurrent(
+                                                focused)
+                                        ? () {
+                                            final captured = focused;
+                                            showDialog<void>(
+                                                animationStyle:
+                                                    AnimationStyle.noAnimation,
+                                                context: context,
+                                                builder: (_) =>
+                                                    DestinationControlEditor(
+                                                      accessEpoch: () => store
+                                                          .controlAccessEpoch,
+                                                      control: captured,
+                                                      changes: store,
+                                                      isCurrent: (control) =>
+                                                          mounted &&
+                                                          _focusTarget ==
+                                                              control.target &&
+                                                          _focusSurface ==
+                                                              control.surface &&
+                                                          _focusId ==
+                                                              control.id &&
+                                                          store.outputProcessingTarget ==
+                                                              control.target &&
+                                                          store
+                                                              .destinationControlIsCurrent(
+                                                                  control),
+                                                      apply: store
+                                                          .setDestinationControl,
+                                                    ));
+                                          }
+                                        : null,
+                                    child: Text(
+                                        '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                                        overflow: TextOverflow.ellipsis),
+                                  ),
                           ),
-                    title: focused == null
-                        ? const Text('Output processing')
-                        : TextButton(
-                            onPressed: !_focusPending &&
-                                    store.destinationControlIsCurrent(focused)
-                                ? () {
-                                    final captured = focused;
-                                    showDialog<void>(
-                                        animationStyle:
-                                            AnimationStyle.noAnimation,
-                                        context: context,
-                                        builder: (_) =>
-                                            DestinationControlEditor(
-                                              accessEpoch: () =>
-                                                  store.controlAccessEpoch,
-                                              control: captured,
-                                              changes: store,
-                                              isCurrent: (control) =>
-                                                  mounted &&
-                                                  _focusTarget ==
-                                                      control.target &&
-                                                  _focusSurface ==
-                                                      control.surface &&
-                                                  _focusId == control.id &&
-                                                  store.outputProcessingTarget ==
-                                                      control.target &&
-                                                  store
-                                                      .destinationControlIsCurrent(
-                                                          control),
-                                              apply:
-                                                  store.setDestinationControl,
-                                            ));
-                                  }
-                                : null,
-                            child: Text(
-                                '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                                overflow: TextOverflow.ellipsis),
-                          ),
-                  ),
-            body: SafeArea(
-              top: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(AppDesign.spaceLg),
-                    child: DropdownButtonFormField<String>(
-                      itemHeight: null,
-                      key: ValueKey((target, targets.length)),
-                      initialValue: targets.containsKey(target) ? target : null,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Output'),
-                      items: [
-                        for (final entry in targets.entries)
-                          DropdownMenuItem(
-                            value: entry.key,
-                            child: Padding(
-                                padding: const EdgeInsets.only(right: 12),
-                                child: Text(
-                                  entry.value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                )),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(_clearFocus);
-                          store.openOutputProcessing(value);
-                        }
-                      },
-                    ),
-                  ),
-                  if (target != null)
-                    OutputLevelMeter(
-                      meter: store.outputMeterFor(target),
-                      showCompressorGr: surface == 'output_comp',
-                    ),
-                  if (surfaces.isNotEmpty)
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: ConsoleActionGroup(
+                    body: SafeArea(
+                      top: false,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          for (final item in surfaces)
-                            ChoiceChip(
-                              label: Text(labels[item] ?? item),
-                              selected: item == surface,
-                              onSelected: (_) => setState(() {
-                                _clearFocus();
-                                _surface = item;
-                              }),
+                          Padding(
+                            padding: const EdgeInsets.all(AppDesign.spaceLg),
+                            child: DropdownButtonFormField<String>(
+                              itemHeight: null,
+                              key: ValueKey((target, targets.length)),
+                              initialValue:
+                                  targets.containsKey(target) ? target : null,
+                              isExpanded: true,
+                              decoration:
+                                  const InputDecoration(labelText: 'Output'),
+                              items: [
+                                for (final entry in targets.entries)
+                                  DropdownMenuItem(
+                                    value: entry.key,
+                                    child: Padding(
+                                        padding:
+                                            const EdgeInsets.only(right: 12),
+                                        child: Text(
+                                          entry.value,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        )),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(_clearFocus);
+                                  store.openOutputProcessing(value);
+                                }
+                              },
                             ),
+                          ),
+                          if (target != null)
+                            OutputLevelMeter(
+                              meter: store.outputMeterFor(target),
+                              showCompressorGr: surface == 'output_comp',
+                            ),
+                          if (surfaces.isNotEmpty)
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: ConsoleActionGroup(
+                                children: [
+                                  for (final item in surfaces)
+                                    ChoiceChip(
+                                      label: Text(labels[item] ?? item),
+                                      selected: item == surface,
+                                      onSelected: (_) => setState(() {
+                                        _clearFocus();
+                                        _surface = item;
+                                      }),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          if (surface != null && surface != 'output_controls')
+                            Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                                child: OutputProcessorPresetActions(
+                                    store: store, surface: surface)),
+                          if (surface == 'output_geq' &&
+                              outputGeqBands(processor).isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                              child: OutputGeqDraftActions(store: store),
+                            ),
+                          Expanded(
+                            child: processor.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                        'Output processing is unavailable.'),
+                                  )
+                                : ListView(
+                                    padding:
+                                        const EdgeInsets.all(AppDesign.spaceMd),
+                                    children: [
+                                      if (surface == 'output_peq' ||
+                                          surface == 'output_geq' ||
+                                          surface == 'output_comp')
+                                        OutputProcessingGraph(
+                                          controls: processor,
+                                          surface: surface!,
+                                        ),
+                                      const SizedBox(height: AppDesign.spaceMd),
+                                      if (surface == 'output_geq') ...[
+                                        for (final control in processor.where(
+                                          (c) => !RegExp(r'^geq\d+_gain$')
+                                              .hasMatch(c.id),
+                                        ))
+                                          _ControlTile(
+                                            key: ValueKey(
+                                                (control.target, control.id)),
+                                            store: store,
+                                            control: control,
+                                            onFocus: _focus,
+                                            onComplete: _complete,
+                                          ),
+                                        const SizedBox(
+                                            height: AppDesign.spaceMd),
+                                        SizedBox(
+                                          height: 310,
+                                          child: SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                for (final control
+                                                    in processor.where(
+                                                  (c) =>
+                                                      RegExp(r'^geq\d+_gain$')
+                                                          .hasMatch(c.id),
+                                                ))
+                                                  SizedBox(
+                                                    width: 74,
+                                                    child: _ControlTile(
+                                                      key: ValueKey((
+                                                        control.target,
+                                                        control.id,
+                                                      )),
+                                                      store: store,
+                                                      control: control,
+                                                      onFocus: _focus,
+                                                      onComplete: _complete,
+                                                      vertical: true,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ] else
+                                        for (final control in processor)
+                                          _ControlTile(
+                                            key: ValueKey(
+                                                (control.target, control.id)),
+                                            store: store,
+                                            control: control,
+                                            onFocus: _focus,
+                                            onComplete: _complete,
+                                          ),
+                                    ],
+                                  ),
+                          ),
                         ],
                       ),
                     ),
-                  if (surface != null && surface != 'output_controls')
-                    Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                        child: OutputProcessorPresetActions(
-                            store: store, surface: surface)),
-                  if (surface == 'output_geq' &&
-                      outputGeqBands(processor).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                      child: OutputGeqDraftActions(store: store),
-                    ),
-                  Expanded(
-                    child: processor.isEmpty
-                        ? const Center(
-                            child: Text('Output processing is unavailable.'),
-                          )
-                        : ListView(
-                            padding: const EdgeInsets.all(AppDesign.spaceMd),
-                            children: [
-                              if (surface == 'output_peq' ||
-                                  surface == 'output_geq' ||
-                                  surface == 'output_comp')
-                                OutputProcessingGraph(
-                                  controls: processor,
-                                  surface: surface!,
-                                ),
-                              const SizedBox(height: AppDesign.spaceMd),
-                              if (surface == 'output_geq') ...[
-                                for (final control in processor.where(
-                                  (c) =>
-                                      !RegExp(r'^geq\d+_gain$').hasMatch(c.id),
-                                ))
-                                  _ControlTile(
-                                    key: ValueKey((control.target, control.id)),
-                                    store: store,
-                                    control: control,
-                                    onFocus: _focus,
-                                    onComplete: _complete,
-                                  ),
-                                const SizedBox(height: AppDesign.spaceMd),
-                                SizedBox(
-                                  height: 310,
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        for (final control in processor.where(
-                                          (c) => RegExp(r'^geq\d+_gain$')
-                                              .hasMatch(c.id),
-                                        ))
-                                          SizedBox(
-                                            width: 74,
-                                            child: _ControlTile(
-                                              key: ValueKey((
-                                                control.target,
-                                                control.id,
-                                              )),
-                                              store: store,
-                                              control: control,
-                                              onFocus: _focus,
-                                              onComplete: _complete,
-                                              vertical: true,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ] else
-                                for (final control in processor)
-                                  _ControlTile(
-                                    key: ValueKey((control.target, control.id)),
-                                    store: store,
-                                    control: control,
-                                    onFocus: _focus,
-                                    onComplete: _complete,
-                                  ),
-                            ],
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          );
+                  ));
         },
       );
 }
@@ -365,8 +382,7 @@ class _ControlTileState extends State<_ControlTile> {
     setState(() => _pending = false);
     widget.onComplete(control);
     if (error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      InlineFeedbackScope.show(context, error);
     }
   }
 

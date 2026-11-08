@@ -1,3 +1,4 @@
+import 'inline_feedback.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -17,13 +18,8 @@ class OutputGeqDraftActions extends StatelessWidget {
   void _open(BuildContext context, bool flat) {
     final target = store.captureOutputGeqDraftTarget();
     if (target == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Wait for verified Graphic EQ settings and an unlocked output.',
-          ),
-        ),
-      );
+      InlineFeedbackScope.show(context,
+          'Wait for verified Graphic EQ settings and an unlocked output.');
       return;
     }
     showDialog<void>(
@@ -36,7 +32,10 @@ class OutputGeqDraftActions extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => ConsoleActionGroup(
+  Widget build(BuildContext context) =>
+      InlineFeedbackScope(expand: false, builder: _build);
+
+  Widget _build(BuildContext context) => ConsoleActionGroup(
         children: [
           TextButton.icon(
             onPressed: () => _open(context, false),

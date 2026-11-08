@@ -24,6 +24,7 @@ class ConnectionsStartScreen extends StatefulWidget {
   /// Work offline chosen: the owner connects the demo desk, then enters.
   final VoidCallback onWorkOffline;
   final ValueChanged<String>? onConnectServer;
+  final String? serverError;
 
   /// Returns to the existing workspace when opened from the mixer.
   final VoidCallback? onBackToMixer;
@@ -36,6 +37,7 @@ class ConnectionsStartScreen extends StatefulWidget {
       required this.onEnterMixer,
       required this.onWorkOffline,
       this.onConnectServer,
+      this.serverError,
       this.onBackToMixer});
 
   @override
@@ -69,6 +71,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   MixerType _pendingType = MixerType.automatic;
   bool _wasProbing = false;
   String? _lastError;
+  String? _feedback;
   bool _scannedOnce = false;
 
   @override
@@ -92,18 +95,9 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
 
   ConnectionStore get _store => widget.store;
 
-  void _toast(String msg) {
+  void _showFeedback(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: ConsolePalette.of(context).chip,
-        content: Text(msg,
-            textAlign: TextAlign.center,
-            style: AppDesign.type(15,
-                weight: FontWeight.w500,
-                color: ConsolePalette.of(context).text)),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3)));
+    setState(() => _feedback = msg);
   }
 
   List<_Row> _rows() {
@@ -160,9 +154,9 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
         final target = _pendingName ?? _pending!;
         _pending = null;
         _pendingName = null;
-        _toast('Could not connect to $target: $err');
+        _showFeedback('Could not connect to $target: $err');
       } else {
-        _toast(err);
+        _showFeedback(err);
       }
     }
     final probing = _store.probing;
@@ -176,7 +170,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       if (!hit && (_store.scanError?.isEmpty ?? true)) {
         _pending = null;
         _pendingName = null;
-        _toast('No response from $name');
+        _showFeedback('No response from $name');
       }
     }
     _wasProbing = probing;
@@ -202,7 +196,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       await _persistConnection(name, addr, mixerType);
       if (mounted) widget.onEnterMixer();
     } catch (error) {
-      _toast(
+      _showFeedback(
           'Connected, but this mixer could not be saved: $error. Tap Open mixer to continue.');
     }
   }
@@ -233,7 +227,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       _pending = 'id:${row.key}';
       _pendingName = row.name;
       _store.connectDevice(_deviceIdFor(row));
-      _toast('Connecting to ${row.name}…');
+      _showFeedback('Connecting to ${row.name}…');
       return;
     }
     _pending = host;
@@ -273,6 +267,20 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
                         _Brand(wide: wide),
                         SizedBox(height: wide ? 56 : 36),
+                        if (widget.serverError?.isNotEmpty == true)
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Semantics(
+                                  liveRegion: true,
+                                  child: Text(widget.serverError!,
+                                      textAlign: TextAlign.center))),
+                        if (_feedback != null)
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Semantics(
+                                  liveRegion: true,
+                                  child: Text(_feedback!,
+                                      textAlign: TextAlign.center))),
                         _Box(
                           wide: wide,
                           title: _rows().any((r) => r.discovered)

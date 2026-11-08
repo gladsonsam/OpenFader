@@ -495,6 +495,29 @@ impl RecorderService {
         }
         Ok(out)
     }
+    pub fn delete_take(&mut self, id: &str) -> io::Result<()> {
+        if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
+            return Err(error("transport active"));
+        }
+        valid_id(id)?;
+        if id.starts_with('.') || id.eq_ignore_ascii_case("transfers") {
+            return Err(error("invalid take id"));
+        }
+        let _playback_guard = crate::playback_guard(&self.root)?;
+        let dir = self.root.join(id);
+        crate::transfer::reject_link(&dir)?;
+        crate::transfer::reject_link(&dir.join("manifest.json"))?;
+        // Only remove a recognized take, never an arbitrary recorder directory.
+        read_manifest(&dir)?;
+        fs::remove_dir_all(dir)?;
+        if self.take.as_deref() == Some(id) {
+            self.take = None;
+            self.position = 0;
+            self.loop_range = None;
+            self.paused = false;
+        }
+        Ok(())
+    }
     pub fn recover_take(&mut self, id: &str) -> io::Result<TakeManifest> {
         if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
             return Err(error("transport active"));
@@ -1531,6 +1554,35 @@ mod tests {
         thread::sleep(Duration::from_millis(5));
         done.store(true, Ordering::Release);
         worker.join().unwrap().unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn take_deletion_validates_storage_and_clears_loaded_state() {
+        let root = root();
+        let mut service = RecorderService::new(&root).unwrap();
+        let writer =
+            TakeWriter::create(root.join("take"), 48_000, 8, ChannelLayout::new(2).unwrap())
+                .unwrap();
+        writer.finish().unwrap();
+        service.load_take("take").unwrap();
+        fs::create_dir(root.join("unrelated")).unwrap();
+        assert!(service.delete_take("../take").is_err());
+        assert!(service.delete_take("transfers").is_err());
+        assert!(service.delete_take(".hidden").is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("take"), root.join("linked-take")).unwrap();
+            assert!(service.delete_take("linked-take").is_err());
+        }
+        assert!(service.delete_take("unrelated").is_err());
+        let guard = crate::playback_guard(&root).unwrap();
+        assert!(service.delete_take("take").is_err());
+        assert!(root.join("take").exists());
+        drop(guard);
+        service.delete_take("take").unwrap();
+        assert!(service.status().selected_take_id.is_none());
+        assert!(!root.join("take").exists());
+        assert!(root.join("unrelated").exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

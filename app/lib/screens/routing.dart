@@ -17,6 +17,11 @@ class U4RoutingPage extends StatefulWidget {
 }
 
 class _U4RoutingPageState extends State<U4RoutingPage> {
+  String? _feedback;
+  void _report(String message) {
+    if (mounted) setState(() => _feedback = message);
+  }
+
   static const double _labelWidth = 168, _cell = 56, _row = 56;
   final _matrixKey = GlobalKey();
   RouteStrip? _previewStrip;
@@ -91,8 +96,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
         .firstOrNull;
     if (tile == null || !store.canPatch) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('This destination is unavailable or protected.')));
+        _report('This destination is unavailable or protected.');
       }
       return;
     }
@@ -399,10 +403,9 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Future<void> _reviewMappings(List<(int, RouteSrcTile)> mappings) async {
     final plan = store.planMappings(mappings);
     if (plan == null || plan.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(plan == null
-              ? 'Cannot map this range: a destination is protected or unavailable.'
-              : 'These routes already match.')));
+      _report(plan == null
+          ? 'Cannot map this range: a destination is protected or unavailable.'
+          : 'These routes already match.');
       return;
     }
     _confirming = true;
@@ -451,10 +454,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                             final sent = store.applyPlan(plan);
                                             Navigator.pop(sheetContext);
                                             if (sent) {
-                                              ScaffoldMessenger.of(this.context)
-                                                  .showSnackBar(SnackBar(
-                                                      content: Text(
-                                                          '${plan.length} routing changes sent')));
+                                              _report(
+                                                  '${plan.length} routing changes sent');
                                             }
                                           }
                                         : null,
@@ -767,222 +768,226 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: ConsolePalette.of(context).page,
         body: SafeArea(
-            child: ListenableBuilder(
-                listenable: store,
-                builder: (context, _) {
-                  final p = ConsolePalette.of(context);
-                  if (!store.routingSupported) {
-                    return const Center(
-                        child: Text(
-                            'Routing controls are unavailable for this driver.'));
-                  }
-                  if (store.isModeSelector) return _modeRows();
-                  if (MediaQuery.sizeOf(context).width <
-                      AppDesign.phoneBreakpoint) {
-                    return _mobileRoutes();
-                  }
-                  final strips = store.strips;
-                  final sources = store.allSrcTiles;
-                  final activeStrip = _previewStrip ?? _pickedStrip;
-                  final activeSource = _previewSource ?? _pickedSource;
-                  final activeTarget =
-                      _previewStrip == null ? _pickedTarget : _previewTarget;
-                  final preview = activeTarget == store.target &&
-                      strips.any((s) => s.id == activeStrip?.id) &&
-                      sources.any((s) =>
-                          s.group == activeSource?.group &&
-                          s.index == activeSource?.index);
-                  return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                            padding: AppDesign.pagePadding,
-                            child: Row(spacing: 8, children: [
-                              Expanded(child: _targetSelector()),
-                              _mapButton(),
-                            ])),
-                        Expanded(
-                            child: sources.isEmpty || strips.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                        'Waiting for routing sources and destinations…'))
-                                : Scrollbar(
-                                    child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: SizedBox(
-                                      width:
-                                          _labelWidth + sources.length * _cell,
-                                      child: Column(children: [
-                                        Row(children: [
-                                          SizedBox(
-                                              width: _labelWidth,
-                                              height: 64,
-                                              child: Center(
-                                                  child: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                    Text('DESTINATION',
-                                                        style: TextStyle(
-                                                            color: p.text7,
-                                                            fontSize: 11)),
-                                                    Icon(Icons.arrow_downward,
-                                                        color: p.text7,
-                                                        size: 12),
-                                                  ]))),
-                                          for (final source in sources)
-                                            Tooltip(
-                                                message: source.label,
-                                                child: Container(
-                                                    width: _cell,
-                                                    height: 64,
-                                                    alignment: Alignment.center,
-                                                    padding:
-                                                        const EdgeInsets.all(4),
-                                                    decoration: BoxDecoration(
-                                                        color: preview &&
-                                                                activeSource?.group ==
-                                                                    source
-                                                                        .group &&
-                                                                activeSource
-                                                                        ?.index ==
-                                                                    source.index
-                                                            ? p.selected
-                                                            : p.well,
-                                                        border: Border.all(
-                                                            color:
-                                                                p.tileBorder)),
-                                                    child: Text(source.label,
-                                                        textAlign:
-                                                            TextAlign.center,
-                                                        maxLines: 3,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)))),
+            child: Column(children: [
+          if (_feedback != null)
+            Padding(
+                padding: AppDesign.pagePadding,
+                child: Semantics(liveRegion: true, child: Text(_feedback!))),
+          Expanded(
+              child: ListenableBuilder(
+                  listenable: store,
+                  builder: (context, _) {
+                    final p = ConsolePalette.of(context);
+                    if (!store.routingSupported) {
+                      return const Center(
+                          child: Text(
+                              'Routing controls are unavailable for this driver.'));
+                    }
+                    if (store.isModeSelector) return _modeRows();
+                    if (MediaQuery.sizeOf(context).width <
+                        AppDesign.phoneBreakpoint) {
+                      return _mobileRoutes();
+                    }
+                    final strips = store.strips;
+                    final sources = store.allSrcTiles;
+                    final activeStrip = _previewStrip ?? _pickedStrip;
+                    final activeSource = _previewSource ?? _pickedSource;
+                    final activeTarget =
+                        _previewStrip == null ? _pickedTarget : _previewTarget;
+                    final preview = activeTarget == store.target &&
+                        strips.any((s) => s.id == activeStrip?.id) &&
+                        sources.any((s) =>
+                            s.group == activeSource?.group &&
+                            s.index == activeSource?.index);
+                    return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                              padding: AppDesign.pagePadding,
+                              child: Row(spacing: 8, children: [
+                                Expanded(child: _targetSelector()),
+                                _mapButton(),
+                              ])),
+                          Expanded(
+                              child: sources.isEmpty || strips.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                          'Waiting for routing sources and destinations…'))
+                                  : Scrollbar(
+                                      child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: SizedBox(
+                                        width: _labelWidth +
+                                            sources.length * _cell,
+                                        child: Column(children: [
+                                          Row(children: [
+                                            SizedBox(
+                                                width: _labelWidth,
+                                                height: 64,
+                                                child: Center(
+                                                    child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                      Text('DESTINATION',
+                                                          style: TextStyle(
+                                                              color: p.text7,
+                                                              fontSize: 11)),
+                                                      Icon(Icons.arrow_downward,
+                                                          color: p.text7,
+                                                          size: 12),
+                                                    ]))),
+                                            for (final source in sources)
+                                              Tooltip(
+                                                  message: source.label,
+                                                  child: Container(
+                                                      width: _cell,
+                                                      height: 64,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      padding: const EdgeInsets.all(
+                                                          4),
+                                                      decoration: BoxDecoration(
+                                                          color: preview && activeSource?.group == source.group && activeSource?.index == source.index
+                                                              ? p.selected
+                                                              : p.well,
+                                                          border: Border.all(
+                                                              color: p
+                                                                  .tileBorder)),
+                                                      child: Text(source.label,
+                                                          textAlign:
+                                                              TextAlign.center,
+                                                          maxLines: 3,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: const TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight.w600)))),
+                                          ]),
+                                          Expanded(
+                                              child: SingleChildScrollView(
+                                                  child: GestureDetector(
+                                            onLongPressStart: (d) {
+                                              _dragStart = null;
+                                              _dragPending = [];
+                                              _drag(d.globalPosition);
+                                            },
+                                            onLongPressMoveUpdate: (d) =>
+                                                _drag(d.globalPosition),
+                                            onLongPressCancel: () =>
+                                                setState(() {
+                                              _previewStrip = null;
+                                              _previewSource = null;
+                                              _dragStart = null;
+                                              _dragPending = [];
+                                            }),
+                                            onLongPressEnd: (_) =>
+                                                _finishDrag(),
+                                            child: Column(
+                                                key: _matrixKey,
+                                                children: [
+                                                  for (final strip in strips)
+                                                    Row(children: [
+                                                      _destinationLabel(
+                                                          strip,
+                                                          preview &&
+                                                              activeStrip?.id ==
+                                                                  strip.id),
+                                                      for (final source
+                                                          in sources)
+                                                        Builder(
+                                                            builder: (context) {
+                                                          final connected =
+                                                              strip.src ==
+                                                                  source.label;
+                                                          final rowActive =
+                                                              preview &&
+                                                                  activeStrip
+                                                                          ?.id ==
+                                                                      strip.id;
+                                                          final columnActive = preview &&
+                                                              activeSource
+                                                                      ?.group ==
+                                                                  source
+                                                                      .group &&
+                                                              activeSource
+                                                                      ?.index ==
+                                                                  source.index;
+                                                          final planned =
+                                                              _dragPending.any((m) =>
+                                                                  m.$1 ==
+                                                                      strip
+                                                                          .strip &&
+                                                                  m.$2.group ==
+                                                                      source
+                                                                          .group &&
+                                                                  m.$2.index ==
+                                                                      source
+                                                                          .index);
+                                                          final highlighted =
+                                                              rowActive &&
+                                                                      columnActive ||
+                                                                  planned;
+                                                          return MouseRegion(
+                                                              onEnter: (_) =>
+                                                                  _preview(
+                                                                      strip,
+                                                                      source),
+                                                              onExit: (_) {
+                                                                if (!_confirming) {
+                                                                  setState(() {
+                                                                    _previewStrip =
+                                                                        null;
+                                                                    _previewSource =
+                                                                        null;
+                                                                  });
+                                                                }
+                                                              },
+                                                              child: Semantics(
+                                                                  label:
+                                                                      '${source.label} to ${strip.name}',
+                                                                  button: true,
+                                                                  selected:
+                                                                      connected,
+                                                                  child: SizedBox(
+                                                                      width: _cell,
+                                                                      height: _row,
+                                                                      child: Padding(
+                                                                          padding: const EdgeInsets.all(3),
+                                                                          child: Material(
+                                                                              color: connected
+                                                                                  ? p.cyan
+                                                                                  : highlighted || rowActive || columnActive
+                                                                                      ? p.selected
+                                                                                      : p.well,
+                                                                              shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
+                                                                              child: InkWell(
+                                                                                  borderRadius: U4.rBtn,
+                                                                                  onTap: () => _choose(strip, source),
+                                                                                  child: Center(
+                                                                                      child: Icon(
+                                                                                          connected
+                                                                                              ? Icons.check_rounded
+                                                                                              : highlighted
+                                                                                                  ? Icons.add
+                                                                                                  : Icons.circle_outlined,
+                                                                                          size: connected || highlighted ? 22 : 10,
+                                                                                          color: connected
+                                                                                              ? p.onAccent
+                                                                                              : highlighted
+                                                                                                  ? p.cyan
+                                                                                                  : p.text7))))))));
+                                                        }),
+                                                    ]),
+                                                ]),
+                                          ))),
                                         ]),
-                                        Expanded(
-                                            child: SingleChildScrollView(
-                                                child: GestureDetector(
-                                          onLongPressStart: (d) {
-                                            _dragStart = null;
-                                            _dragPending = [];
-                                            _drag(d.globalPosition);
-                                          },
-                                          onLongPressMoveUpdate: (d) =>
-                                              _drag(d.globalPosition),
-                                          onLongPressCancel: () => setState(() {
-                                            _previewStrip = null;
-                                            _previewSource = null;
-                                            _dragStart = null;
-                                            _dragPending = [];
-                                          }),
-                                          onLongPressEnd: (_) => _finishDrag(),
-                                          child: Column(
-                                              key: _matrixKey,
-                                              children: [
-                                                for (final strip in strips)
-                                                  Row(children: [
-                                                    _destinationLabel(
-                                                        strip,
-                                                        preview &&
-                                                            activeStrip?.id ==
-                                                                strip.id),
-                                                    for (final source
-                                                        in sources)
-                                                      Builder(
-                                                          builder: (context) {
-                                                        final connected =
-                                                            strip.src ==
-                                                                source.label;
-                                                        final rowActive =
-                                                            preview &&
-                                                                activeStrip
-                                                                        ?.id ==
-                                                                    strip.id;
-                                                        final columnActive =
-                                                            preview &&
-                                                                activeSource
-                                                                        ?.group ==
-                                                                    source
-                                                                        .group &&
-                                                                activeSource
-                                                                        ?.index ==
-                                                                    source
-                                                                        .index;
-                                                        final planned =
-                                                            _dragPending.any((m) =>
-                                                                m.$1 ==
-                                                                    strip
-                                                                        .strip &&
-                                                                m.$2.group ==
-                                                                    source
-                                                                        .group &&
-                                                                m.$2.index ==
-                                                                    source
-                                                                        .index);
-                                                        final highlighted =
-                                                            rowActive &&
-                                                                    columnActive ||
-                                                                planned;
-                                                        return MouseRegion(
-                                                            onEnter: (_) =>
-                                                                _preview(strip,
-                                                                    source),
-                                                            onExit: (_) {
-                                                              if (!_confirming) {
-                                                                setState(() {
-                                                                  _previewStrip =
-                                                                      null;
-                                                                  _previewSource =
-                                                                      null;
-                                                                });
-                                                              }
-                                                            },
-                                                            child: Semantics(
-                                                                label:
-                                                                    '${source.label} to ${strip.name}',
-                                                                button: true,
-                                                                selected:
-                                                                    connected,
-                                                                child: SizedBox(
-                                                                    width:
-                                                                        _cell,
-                                                                    height:
-                                                                        _row,
-                                                                    child: Padding(
-                                                                        padding: const EdgeInsets.all(3),
-                                                                        child: Material(
-                                                                            color: connected
-                                                                                ? p.cyan
-                                                                                : highlighted || rowActive || columnActive
-                                                                                    ? p.selected
-                                                                                    : p.well,
-                                                                            shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
-                                                                            child: InkWell(
-                                                                                borderRadius: U4.rBtn,
-                                                                                onTap: () => _choose(strip, source),
-                                                                                child: Center(
-                                                                                    child: Icon(
-                                                                                        connected
-                                                                                            ? Icons.check_rounded
-                                                                                            : highlighted
-                                                                                                ? Icons.add
-                                                                                                : Icons.circle_outlined,
-                                                                                        size: connected || highlighted ? 22 : 10,
-                                                                                        color: connected
-                                                                                            ? p.onAccent
-                                                                                            : highlighted
-                                                                                                ? p.cyan
-                                                                                                : p.text7))))))));
-                                                      }),
-                                                  ]),
-                                              ]),
-                                        ))),
-                                      ]),
-                                    ),
-                                  ))),
-                      ]);
-                })),
+                                      ),
+                                    ))),
+                        ]);
+                  })),
+        ])),
       );
 
   Widget _destinationLabel(RouteStrip strip, bool active) => SizedBox(

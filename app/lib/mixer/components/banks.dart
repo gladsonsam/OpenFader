@@ -1,3 +1,4 @@
+import '../../widgets/inline_feedback.dart';
 import '../design.dart';
 import '../../ui/console.dart';
 import 'package:flutter/material.dart';
@@ -420,30 +421,34 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
 Future<void> showCustomMixerViews(
         BuildContext context, MixerController controller) =>
     showModalBottomSheet<void>(
-      sheetAnimationStyle: AnimationStyle.noAnimation,
-      context: context,
-      backgroundColor: ConsolePalette.of(context).background,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-          child: ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) => ListView(shrinkWrap: true, children: [
-          ListTile(
-              title: Text('Custom views',
-                  style: mixerType(context, 20, weight: FontWeight.w600))),
-          ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('Create view'),
-              onTap: () => _editCustomView(context, controller)),
-          for (final view in controller.store.customMixerViews)
-            ListTile(
-                title: Text(view.name),
-                subtitle: Text('${view.stripKeys.length} channels'),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () => _editCustomView(context, controller, view)),
-        ]),
-      )),
-    );
+        sheetAnimationStyle: AnimationStyle.noAnimation,
+        context: context,
+        backgroundColor: ConsolePalette.of(context).background,
+        showDragHandle: true,
+        builder: (context) => InlineFeedbackScope(
+              expand: true,
+              builder: (context) => SafeArea(
+                  child: ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => ListView(shrinkWrap: true, children: [
+                  ListTile(
+                      title: Text('Custom views',
+                          style:
+                              mixerType(context, 20, weight: FontWeight.w600))),
+                  ListTile(
+                      leading: const Icon(Icons.add),
+                      title: const Text('Create view'),
+                      onTap: () => _editCustomView(context, controller)),
+                  for (final view in controller.store.customMixerViews)
+                    ListTile(
+                        title: Text(view.name),
+                        subtitle: Text('${view.stripKeys.length} channels'),
+                        trailing: const Icon(Icons.edit_outlined),
+                        onTap: () =>
+                            _editCustomView(context, controller, view)),
+                ]),
+              )),
+            ));
 
 Future<void> _editCustomView(BuildContext context, MixerController controller,
     [CustomMixerView? existing]) async {
@@ -508,8 +513,8 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
   name.dispose();
   if (result == null || !context.mounted) return;
   if ((engine.driver, engine.model, engine.linkIp) != scope) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Mixer changed. Open custom views again.')));
+    InlineFeedbackScope.show(
+        context, 'Mixer changed. Open custom views again.');
     return;
   }
   final views = controller.store.customMixerViews
@@ -532,8 +537,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
     await controller.store.saveCustomMixerViews(views);
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not save view: $error')));
+      InlineFeedbackScope.show(context, 'Could not save view: $error');
     }
   }
 }

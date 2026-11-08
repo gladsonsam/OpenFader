@@ -1,3 +1,4 @@
+import 'inline_feedback.dart';
 import '../ui/console.dart';
 import 'package:flutter/material.dart';
 
@@ -13,16 +14,18 @@ class OutputProcessorPresetActions extends StatelessWidget {
       {super.key, required this.store, required this.surface});
 
   @override
-  Widget build(BuildContext context) => ConsoleActionGroup(children: [
+  Widget build(BuildContext context) =>
+      InlineFeedbackScope(expand: false, builder: _build);
+
+  Widget _build(BuildContext context) => ConsoleActionGroup(children: [
         TextButton.icon(
             icon: const Icon(Icons.folder_open),
             label: const Text('Presets / Paste'),
             onPressed: () {
               final target = store.captureOutputPresetTarget(surface);
               if (target == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text(
-                        'Output presets are unavailable or settings are changing.')));
+                InlineFeedbackScope.show(context,
+                    'Output presets are unavailable or settings are changing.');
                 return;
               }
               showDialog<void>(
@@ -40,9 +43,10 @@ class OutputProcessorPresetActions extends StatelessWidget {
               final error = target == null
                   ? 'Output presets are unavailable or settings are changing.'
                   : store.copyOutputProcessor(target);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(error ??
-                      'Processor copied. Bypass states and global temperature stay unchanged.')));
+              InlineFeedbackScope.show(
+                  context,
+                  error ??
+                      'Processor copied. Bypass states and global temperature stay unchanged.');
             }),
       ]);
 }

@@ -957,6 +957,26 @@ async fn worker_with_config(
                                         s.stop().map_err(|e| e.to_string())
                                     }
                                 }
+                                "delete_take" => {
+                                    if capture_active
+                                        || s.status().transport != "stopped"
+                                        || root.join("manual-routing-pending").exists()
+                                        || cached_backend
+                                            .as_ref()
+                                            .is_some_and(|(state, _)| state.input_mode != "live")
+                                    {
+                                        Err("stop recording and playback and return to live before deleting a take".into())
+                                    } else if args["confirm"] != true {
+                                        Err("take deletion requires explicit confirmation".into())
+                                    } else {
+                                        args["take_id"]
+                                            .as_str()
+                                            .ok_or_else(|| "take_id required".to_string())
+                                            .and_then(|take| {
+                                                s.delete_take(take).map_err(|e| e.to_string())
+                                            })
+                                    }
+                                }
                                 "recover_take"
                                     if capture_active || s.status().transport != "stopped" =>
                                 {
@@ -1146,7 +1166,7 @@ async fn worker_with_config(
                                 }
                                 _ => Err("unknown action".to_string()),
                             };
-                            if result.is_ok() && action == "recover_take" {
+                            if result.is_ok() && matches!(action, "recover_take" | "delete_take") {
                                 capture_status = None;
                                 capture_error = None;
                             }
