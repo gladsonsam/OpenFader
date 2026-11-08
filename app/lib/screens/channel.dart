@@ -274,8 +274,8 @@ class _ChannelPageState extends State<ChannelPage> {
 
   void _switchTab(ChannelStore store, ChannelTab tab) {
     _motionAxis = Axis.vertical;
-    // Follow the gesture: the next processor enters from above on a down swipe.
-    _motionDirection = tab.index >= store.tab.index ? -1 : 1;
+    // Advancing brings the next processor in from below on an up swipe.
+    _motionDirection = tab.index >= store.tab.index ? 1 : -1;
     store.setTab(tab);
     _focus.value =
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
@@ -312,9 +312,9 @@ class _ChannelPageState extends State<ChannelPage> {
     final tabs = _availableTabs(store);
     final index = tabs.indexOf(start);
     if (index < 0) return;
-    // The processor rail is ordered top-to-bottom: up selects the previous
-    // processor, down the next. Boundaries stop rather than wrapping.
-    final next = index + (distance < 0 ? -1 : 1);
+    // Swipe up to advance through processors, down to return to the previous
+    // processor. Boundaries stop rather than wrapping.
+    final next = index + (distance < 0 ? 1 : -1);
     if (next >= 0 && next < tabs.length) _switchTab(store, tabs[next]);
   }
 
