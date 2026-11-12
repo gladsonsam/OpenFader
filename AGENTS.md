@@ -64,6 +64,12 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
   tooling for other targets.
 - The app boots into the Connections start screen; use Work offline to
   reach the mixer on sims.
+- For emulator driver work, use `scripts/mixer-lab/lab.py` and the workflow in
+  `scripts/mixer-lab/README.md`. It runs pinned Sidecar fixtures and saves
+  independent command/readback evidence. Stop lab emulators before repository
+  tests because discovery tests use the same ports. Keep missing integrations
+  blocked in its matrix; emulator passes do not establish hardware support or
+  replace the existing gates and simulator checks.
 
 ## Gates (binding)
 

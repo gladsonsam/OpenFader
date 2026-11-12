@@ -21,7 +21,59 @@ impl Engine {
     /// Collect the writer-tagged `state` broadcast for `out` (flushed after
     /// the unicast reply, mirroring the relay socket order).
     pub(super) async fn push_state_with_by(&self, by: &str, out: &mut Vec<Event>) {
-        out.push(self.state_message(Some(by)).await);
+        if self.active_drv().mutation_state_from_observations() {
+            out.push(self.observed_state_message(by));
+        } else {
+            out.push(self.state_message(Some(by)).await);
+        }
+    }
+
+    /// Project confirmed values only: refresh_param evicts unconfirmed writes.
+    /// An incomplete cache emits no legacy rows; descriptor-driven clients
+    /// preserve topology and receive individual observed parameter events.
+    fn observed_state_message(&self, by: &str) -> Event {
+        let name = self.active_driver();
+        let driver = self.drv(&name);
+        let topology = driver.topology();
+        let cache = self.param_cache.read().unwrap();
+        let strips = topology
+            .iter()
+            .flat_map(|family| family.first..family.first + family.count)
+            .map(|index| {
+                let ch = u16::try_from(index).ok()?;
+                let values = cache.get(&ch)?;
+                let fader = values.get("fader")?.as_f64()? as f32;
+                if !fader.is_finite() {
+                    return None;
+                }
+                Some(crate::protocol::StateStrip {
+                    ch,
+                    key: openfader_core::strip_key_for_index(&topology, index),
+                    name: values.get("name")?.as_str()?.to_owned(),
+                    fader,
+                    muted: values.get("mute")?.as_bool()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
+            .filter(|strips| strips.len() == driver.strip_count())
+            .unwrap_or_default();
+        let main = topology
+            .iter()
+            .find(|family| family.kind == openfader_core::StripKind::Main);
+        let main_fader = main
+            .and_then(|family| u16::try_from(family.first).ok())
+            .and_then(|ch| cache.get(&ch))
+            .and_then(|values| values.get("fader"))
+            .and_then(Value::as_f64)
+            .map(|value| value as f32)
+            .filter(|value| value.is_finite());
+        Event::State {
+            output_meter_targets: driver.output_meter_targets(),
+            driver: name,
+            strips,
+            main_fader,
+            by: Some(by.to_owned()),
+        }
     }
 
     /// Write-priority decision (MR1): the poller skips its tick while any

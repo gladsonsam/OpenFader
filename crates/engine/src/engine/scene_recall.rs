@@ -80,6 +80,10 @@ impl Engine {
                         continue;
                     }
                     let drv = self.drv(&driver);
+                    // Inapplicable fields must not trigger source-context reads.
+                    if !drv.capture_param_applicable(strip, id).await? {
+                        continue;
+                    }
                     for context in drv.param_write_context(id) {
                         captured_context.insert(*context);
                         if !params.contains_key(*context) {
@@ -88,9 +92,6 @@ impl Engine {
                             })?;
                             params.insert(context.to_string(), param_value_json(&value));
                         }
-                    }
-                    if !drv.capture_param_applicable(strip, id).await? {
-                        continue;
                     }
                     let captured = match self.drv(&driver).capture_param_override(strip, id).await {
                         Some(result) => Some(result.map_err(|error| {

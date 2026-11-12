@@ -18,6 +18,7 @@ const CAPABILITIES: &[&str] = &[
     "fader",
     "mute",
     "name",
+    "link",
     "color",
     "icon",
     "pan",
@@ -702,6 +703,15 @@ pub fn swatches() -> &'static [ParamSwatch] {
 /// replaces the static scopes, so both narrowing and widening land here).
 pub fn scopes() -> Vec<(&'static str, &'static [StripKind])> {
     let mut out: Vec<(&'static str, &'static [StripKind])> = vec![
+        (
+            "link",
+            &[
+                StripKind::In,
+                StripKind::Ret,
+                StripKind::Bus,
+                StripKind::Mtx,
+            ],
+        ),
         ("gain", INPUT_DSP),
         ("phantom", INPUT_DSP),
         ("trim", INPUT_DSP),

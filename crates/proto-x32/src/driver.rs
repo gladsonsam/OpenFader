@@ -30,6 +30,19 @@ fn boolean(value: ParamValue) -> anyhow::Result<bool> {
 }
 
 impl X32Driver {
+    /// Native strip applicability, before considering live source availability.
+    pub fn param_applicable(&self, strip: StripId, param: &str) -> anyhow::Result<bool> {
+        let (_, family) = fam_of(strip)?;
+        Ok(match param {
+            "gain" | "phantom" | "source" | "x32:preamp_state" => family.is_ch || family.is_aux,
+            "x32:eq_bands" | "x32:eq_type_count" => !family.is_dca,
+            "x32:automix_gain" => family.is_ch && strip.0 < 8,
+            "gate_gr" => family.is_ch,
+            "comp_gr" => family.is_ch || family.is_bus || family.is_mtx || family.is_main,
+            _ => mapping(strip, param).is_ok(),
+        })
+    }
+
     /// protocol reference v4.09-02 p.55: /-prefs/clockrate 0=48K, 1=44K1.
     /// A read failure is unknown, never a guessed 48 kHz clock.
     pub async fn observed_sample_rate(&self) -> anyhow::Result<u32> {
@@ -175,7 +188,9 @@ impl MixerDriver for X32Driver {
         crate::link::STEREO_PAIRS.to_vec()
     }
     async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
-        if matches!(param, "gain" | "phantom") {
+        if param == "link" {
+            self.stereo_link_members(strip)
+        } else if matches!(param, "gain" | "phantom") {
             self.preamp_control_members(strip).await
         } else {
             self.linked_members(strip).await
@@ -598,6 +613,16 @@ impl X32Driver {
         value: ParamValue,
         expected: &std::collections::BTreeMap<String, ParamValue>,
     ) -> anyhow::Result<()> {
+        if param == "link" {
+            let ParamValue::Bool(linked) = value else {
+                anyhow::bail!("x32: stereo link requires boolean")
+            };
+            ensure!(
+                expected.is_empty(),
+                "x32: link writes carry no source context"
+            );
+            return self.write_stereo_link(strip, linked).await.map(|_| ());
+        }
         if matches!(param, "gain" | "phantom") {
             return self
                 .write_active_preamp_guarded(strip, param, value, expected)

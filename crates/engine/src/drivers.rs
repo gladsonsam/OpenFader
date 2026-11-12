@@ -616,6 +616,11 @@ pub trait DynDriver: Send + Sync {
     async fn set_param(&self, strip: StripId, param: &str, value: ParamValue)
         -> anyhow::Result<()>;
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue>;
+    /// Use confirmed observations for mutation echoes, avoiding a full scan.
+    /// Incomplete caches emit no legacy rows; explicit snapshots still read live.
+    fn mutation_state_from_observations(&self) -> bool {
+        false
+    }
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot>;
     async fn recall(&self, snapshot: &MixerSnapshot) -> anyhow::Result<()>;
     async fn recall_scene(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()>;
