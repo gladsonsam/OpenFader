@@ -76,12 +76,14 @@ jobs:
           python-version: '3.12'
       - uses: subosito/flutter-action@v2
         with:
-          # Pinned Flutter SDK (Flutter 3.47.7, release tag: commit
+          # Pinned Flutter SDK (Flutter 3.50.0, release tag: commit
           # hashes are not resolvable by the setup action).
-          flutter-version: '3.47.7'
+          flutter-version: '3.50.0'
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: apps-${{ matrix.platform }}
@@ -89,7 +91,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libayatana-appindicator3-dev libasound2-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libx11-dev libxi-dev libasound2-dev
       - name: Install pinned AppImage packaging tool
         if: matrix.platform == 'linux'
         shell: bash

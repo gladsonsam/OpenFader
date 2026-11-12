@@ -102,9 +102,9 @@ impl SoloState {
                     let value = (*word <= 1).then_some(*word);
                     if *old != value {
                         *old = value;
-                        for i in 0..62 {
+                        for (i, revision) in self.revisions.iter_mut().enumerate() {
                             if pair(i).is_some_and(|(_, a)| a.contains(&address)) {
-                                self.revisions[i] = self.revisions[i].wrapping_add(1);
+                                *revision = revision.wrapping_add(1);
                             }
                         }
                     }

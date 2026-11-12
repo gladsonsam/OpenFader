@@ -22,7 +22,7 @@ class RecorderCommandGate {
     _active++;
     onChanged();
     final result = _queue.then((_) => operation());
-    _queue = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _queue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result.whenComplete(() {
       _active--;
       onChanged();

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Shared application UI tokens. Prefer named roles over page-local literals.
 /// Reusable controls live in ui/console.dart.

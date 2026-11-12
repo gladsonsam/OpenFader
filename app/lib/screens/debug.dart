@@ -1,6 +1,6 @@
 // Debug inspector: raw engine state for verification, not design display.
 // Screens stay constructor-injected so Area A can implement the store.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ui/console.dart';

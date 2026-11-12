@@ -49,9 +49,10 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 
 ## Toolchain
 
-- Flutter 3.47.7 at `~/flutter-3.47/bin` — not on `PATH`; export it per command.
+- Flutter 3.50.0 at `~/sdks/flutter/bin` on Linux and
+  `~/flutter-3.47/bin` on the Mac mini — not on `PATH`; export it per command.
   CI pins the same version.
-- Rust stable workspace (`cargo test --workspace` from root). `gh` CLI is
+- Rust 1.100.0 stable workspace (`cargo test --workspace --locked` from root). `gh` CLI is
   authenticated for GitHub ops. No global git identity is configured —
   commit with repo-local `-c user.name/user.email` flags.
 - Node 24 for `scripts/sync-version.mjs`.

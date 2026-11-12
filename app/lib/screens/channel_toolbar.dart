@@ -1,7 +1,7 @@
 // Channel toolbar: home returns to the mixer with state retained.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../theme.dart';
 import '../ui/console.dart';

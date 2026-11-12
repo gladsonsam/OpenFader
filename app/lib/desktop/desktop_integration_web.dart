@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Browser windows remain owned by the browser, never the desktop host.
 class DesktopIntegration {

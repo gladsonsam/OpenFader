@@ -1,7 +1,7 @@
 import '../ui/overlays/console_dialogs.dart';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A bounded selector for native option sets, without assuming their size or
 /// interpreting provider labels as channel or FX identifiers.

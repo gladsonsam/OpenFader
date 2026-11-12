@@ -721,7 +721,7 @@ mixin _AppStoreChannel on _AppStoreContext {
           'filter_freq',
           'mix'
         ])
-          if (_editableRange('${p}_$prop') case final range?) prop: range,
+          prop: ?_editableRange('${p}_$prop'),
       },
       on: paramBool('${p}_on') ?? false,
       thr: paramNum('${p}_thr') ?? (kind == DynKind.gate ? -50 : -20),

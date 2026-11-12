@@ -56,7 +56,7 @@ class RemoteHost implements HostTransport {
   static Future<RemoteHost> connect(RemoteServer server,
       {String? password, bool trustIdentityChange = false}) async {
     final response = await _request(server.endpoint, '/web/connect',
-        body: {if (password != null) 'password': password});
+        body: {'password': ?password});
     final id = response['client_id'];
     if (id is! String || id.isEmpty) {
       throw const FormatException('Invalid server authentication response');

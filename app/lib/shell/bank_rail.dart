@@ -2,7 +2,7 @@
 // Side rail on desktop, bottom bar on phones. Unselected tiles use the tint map.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
 Map<String, Color> _bankTint(ConsolePalette palette) => {
