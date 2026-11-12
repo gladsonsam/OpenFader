@@ -1,13 +1,65 @@
-//! Desk-originated push parsing: `/xremote` echoes changes addressed
-//! as the param itself. Only unambiguous mix-surface leaves map here;
-//! everything else stays poll-only. Values decode to engineering units,
-//! the same contract as `get_param`.
+//! Desk-originated push parsing. The receive plane uses the same canonical
+//! mappings and engineering-unit codecs as queried values, including processing,
+//! sends and group membership. Unsupported family/leaf combinations never enter
+//! the map, so an external edit cannot make an unavailable control appear valid.
 use crate::{
     addrs, codec,
-    mapping::{fam_of, Mapping, WireKind},
+    mapping::{mapping, Mapping, WireKind},
+    presentation,
 };
 use openfader_core::{ParamValue, StripId};
 use rosc::OscMessage;
+use std::{collections::HashMap, sync::OnceLock};
+
+struct InboundLeaf {
+    strip: StripId,
+    param: &'static str,
+    mapping: Mapping,
+}
+
+/// Build once from the provider's actual mapping surface. Many group controls
+/// deliberately share one native mask leaf, so each address owns a list rather
+/// than silently retaining only the final DCA or mute-group membership.
+fn mapped_leaves() -> &'static HashMap<String, Vec<InboundLeaf>> {
+    static LEAVES: OnceLock<HashMap<String, Vec<InboundLeaf>>> = OnceLock::new();
+    LEAVES.get_or_init(|| {
+        let mut leaves: HashMap<String, Vec<InboundLeaf>> = HashMap::new();
+        for index in 0..addrs::X32_STRIPS as u16 {
+            let strip = StripId(index);
+            for &param in presentation::capabilities() {
+                let Ok(mapping) = mapping(strip, param) else {
+                    continue;
+                };
+                leaves
+                    .entry(mapping.path.clone())
+                    .or_default()
+                    .push(InboundLeaf {
+                        strip,
+                        param,
+                        mapping,
+                    });
+            }
+            // Source is a computed label in get_param, not a generic mapping.
+            // Only channels and aux inputs have the native source selector.
+            if index < 40 {
+                let (root, _) = addrs::root(strip).expect("registered X32 strip");
+                let mapping = Mapping {
+                    path: format!("{root}/config/source"),
+                    kind: WireKind::Int(0, 64),
+                };
+                leaves
+                    .entry(mapping.path.clone())
+                    .or_default()
+                    .push(InboundLeaf {
+                        strip,
+                        param: "source",
+                        mapping,
+                    });
+            }
+        }
+        leaves
+    })
+}
 
 /// Parse one desk-originated message into `(strip, param, value)` rows.
 pub fn parse_inbound(msg: &OscMessage) -> Vec<(StripId, String, ParamValue)> {
@@ -42,63 +94,36 @@ pub fn parse_inbound(msg: &OscMessage) -> Vec<(StripId, String, ParamValue)> {
         }
         return Vec::new();
     }
-    // Strip mix leaves: find the owning strip by root prefix.
-    for index in 0..addrs::X32_STRIPS as u16 {
-        let strip = StripId(index);
-        let Ok((root, _)) = fam_of(strip) else {
-            continue;
-        };
-        let Some(leaf) = msg.addr.strip_prefix(root.as_str()) else {
-            continue;
-        };
-        let leaf = leaf.strip_prefix('/').unwrap_or(leaf);
-        let Some(param) = mix_leaf_param(leaf) else {
-            continue;
-        };
-        let mapping = Mapping {
-            path: msg.addr.clone(),
-            kind: param,
-        };
-        if let Ok(value) = mapping.decode(msg) {
-            // Group bitmask leaves decode to whole-mask floats; the
-            // engine re-derives members on poll, so pushes stay silent.
-            if leaf == "grp/dca" || leaf == "grp/mute" {
-                return Vec::new();
-            }
-            // Desk `mix/on` ON = audible; canonical `mute` is inverted.
-            if inbound_param_name(leaf) == "mute" {
-                if let ParamValue::Bool(on) = value {
-                    return vec![(strip, "mute".into(), ParamValue::Bool(!on))];
-                }
-                return Vec::new();
-            }
-            return vec![(strip, inbound_param_name(leaf).into(), value)];
-        }
+    let Some(leaves) = mapped_leaves().get(&msg.addr) else {
         return Vec::new();
-    }
-    Vec::new()
-}
-
-/// Canonical param name for a served mix leaf.
-fn inbound_param_name(leaf: &str) -> &str {
-    match leaf {
-        "mix/fader" | "fader" => "fader",
-        "mix/on" | "on" => "mute",
-        "mix/pan" => "pan",
-        "config/name" => "name",
-        _ => "",
-    }
-}
-
-/// Wire kind for a served mix leaf (`None` = stays poll-only).
-fn mix_leaf_param(leaf: &str) -> Option<WireKind> {
-    match leaf {
-        "mix/fader" | "fader" => Some(WireKind::Raw01),
-        "mix/on" | "on" => Some(WireKind::Bool),
-        "mix/pan" => Some(WireKind::Linf(-100.0, 100.0)),
-        "config/name" => Some(WireKind::Text(12)),
-        _ => None,
-    }
+    };
+    leaves
+        .iter()
+        .filter_map(|leaf| {
+            let value = leaf.mapping.decode(msg).ok()?;
+            let value = match (leaf.param, value) {
+                // Desk mix/on ON = audible; canonical mute is inverted.
+                ("mute", ParamValue::Bool(on)) => ParamValue::Bool(!on),
+                ("source", ParamValue::Float(index)) => {
+                    ParamValue::Text(addrs::source_label(index as i32).ok()?)
+                }
+                (param, ParamValue::Float(mask)) if param.starts_with("dca") => {
+                    let group = param
+                        .strip_prefix("dca")?
+                        .strip_suffix("_assign")?
+                        .parse::<u8>()
+                        .ok()?;
+                    ParamValue::Bool(mask as i32 & (1 << (group - 1)) != 0)
+                }
+                (param, ParamValue::Float(mask)) if param.starts_with("_mg") => {
+                    let group = param.strip_prefix("_mg")?.parse::<u8>().ok()?;
+                    ParamValue::Bool(mask as i32 & (1 << (group - 1)) != 0)
+                }
+                (_, value) => value,
+            };
+            Some((leaf.strip, leaf.param.to_string(), value))
+        })
+        .collect()
 }
 
 /// `/-stat/solosw` 1-based index → strip.

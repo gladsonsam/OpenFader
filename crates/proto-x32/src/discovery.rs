@@ -6,7 +6,9 @@ use std::time::Duration;
 const X32_PROBE: ProbeSpec = ProbeSpec {
     driver: "x32",
     port: addrs::PORT,
-    payload: b"/info\0\0\0,",
+    // OSC strings include their NUL terminator and four-byte padding.
+    // A bare comma tag without its padding is a truncated OSC packet.
+    payload: b"/info\0\0\0,\0\0\0",
     reply_prefix: "/info",
 };
 

@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "sidecar_repository": "https://github.com/Audbol/Sidecar.git",
+  "sidecar_commit": "13306133aaa5d724b4282bed69bcc787fc167967",
+  "fixtures": {
+    "wing": {
+      "driver": "wing",
+      "transport": "osc",
+      "status": "runnable",
+      "expected_model": "ngc-full"
+    },
+    "wing-compact": {
+      "driver": "wing",
+      "transport": "osc",
+      "status": "runnable",
+      "expected_model": "wing-compact"
+    },
+    "wing-rack": {
+      "driver": "wing",
+      "transport": "osc",
+      "status": "runnable",
+      "expected_model": "wing-rack"
+    },
+    "x32": {
+      "driver": "x32",
+      "transport": "osc",
+      "status": "runnable",
+      "expected_model": "X32"
+    },
+    "sq5": {
+      "driver": null,
+      "transport": "midi-tcp",
+      "status": "blocked",
+      "reason": "Emulator transport available; OpenFader SQ driver and verification adapter needed. MIDI coverage does not establish full SQ control."
+    },
+    "dlive": {
+      "driver": null,
+      "transport": "midi-tcp",
+      "status": "blocked",
+      "reason": "Emulator transport available; OpenFader dLive driver and verification adapter needed. MIDI coverage does not establish full dLive control."
+    },
+    "promix01": {
+      "driver": null,
+      "transport": "midi",
+      "status": "blocked",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver."
+    },
+    "02r": {
+      "driver": null,
+      "transport": "midi",
+      "status": "blocked",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver."
+    },
+    "01v": {
+      "driver": null,
+      "transport": "midi",
+      "status": "blocked",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver."
+    },
+    "dm2000": {
+      "driver": null,
+      "transport": "midi",
+      "status": "blocked",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver."
+    },
+    "pro2": {
+      "driver": null,
+      "transport": null,
+      "status": "blocked",
+      "reason": "Sidecar profile has no published control protocol; emulated DSP is not hardware remote control."
+    },
+    "xenyx1202": {
+      "driver": null,
+      "transport": null,
+      "status": "blocked",
+      "reason": "Physical analog mixer has no remote control protocol; USB audio does not provide control of its knobs."
+    },
+    "universal": {
+      "driver": null,
+      "transport": null,
+      "status": "blocked",
+      "reason": "Sidecar software console, not a physical mixer; needs a dedicated capability-complete integration."
+    },
+    "xair": {
+      "driver": "xair",
+      "transport": null,
+      "status": "blocked",
+      "reason": "No matching Sidecar emulator; do not substitute its X32 profile."
+    },
+    "dl32s": {
+      "driver": "dl32s",
+      "transport": null,
+      "status": "blocked",
+      "reason": "No matching Sidecar emulator."
+    }
+  }
+}

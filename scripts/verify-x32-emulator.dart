@@ -10,122 +10,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+
+import 'mixer-lab/osc.dart';
 
 import '../app/lib/engine_protocol.dart';
 import '../app/lib/core/channel_views.dart';
 import '../app/lib/core/destination_controls.dart';
-
-void require(bool condition, String reason) {
-  if (!condition) throw StateError(reason);
-}
-
-Future<void> until(bool Function() ready, String what) async {
-  final end = DateTime.now().add(const Duration(seconds: 15));
-  while (!ready()) {
-    if (DateTime.now().isAfter(end)) throw TimeoutException(what);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-  }
-}
-
-List<int> oscString(String value) {
-  final bytes = [...utf8.encode(value), 0];
-  while (bytes.length % 4 != 0) bytes.add(0);
-  return bytes;
-}
-
-class OscReference {
-  final InternetAddress address;
-  OscReference(this.address);
-
-  List<int> packet(String path, [num? value]) {
-    final data = ByteData(4);
-    if (value is int) {
-      data.setInt32(0, value);
-    } else if (value != null) {
-      data.setFloat32(0, value.toDouble());
-    }
-    return [
-      ...oscString(path),
-      ...oscString(
-        value == null
-            ? ','
-            : value is int
-            ? ',i'
-            : ',f',
-      ),
-      if (value != null) ...data.buffer.asUint8List(),
-    ];
-  }
-
-  Future<void> write(String path, num value) async {
-    final socket = await RawDatagramSocket.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    try {
-      final bytes = packet(path, value);
-      require(
-        socket.send(bytes, address, 10023) == bytes.length,
-        'OSC send failed',
-      );
-    } finally {
-      socket.close();
-    }
-  }
-
-  Future<num> read(String path) async {
-    final socket = await RawDatagramSocket.bind(
-      InternetAddress.loopbackIPv4,
-      0,
-    );
-    try {
-      final bytes = packet(path);
-      require(
-        socket.send(bytes, address, 10023) == bytes.length,
-        'OSC query failed',
-      );
-      await for (final event in socket.timeout(const Duration(seconds: 2))) {
-        if (event != RawSocketEvent.read) continue;
-        final reply = socket.receive();
-        if (reply == null ||
-            reply.address.address != address.address ||
-            reply.port != 10023)
-          continue;
-        final data = reply.data;
-        final zero = data.indexOf(0);
-        if (zero < 0 || utf8.decode(data.sublist(0, zero)) != path) continue;
-        final tagsAt = ((zero + 4) ~/ 4) * 4;
-        final tagsEnd = data.indexOf(0, tagsAt);
-        require(tagsEnd >= 0, 'Malformed OSC type tag');
-        final tags = utf8.decode(data.sublist(tagsAt, tagsEnd));
-        final at = ((tagsEnd + 4) ~/ 4) * 4;
-        require(data.length == at + 4, 'Unexpected OSC argument count');
-        final word = ByteData.sublistView(data, at);
-        if (tags == ',i') return word.getInt32(0);
-        if (tags == ',f') {
-          final value = word.getFloat32(0);
-          require(value.isFinite, 'Non-finite OSC readback');
-          return value;
-        }
-        throw StateError('Expected numeric OSC reply, received $tags');
-      }
-      throw StateError('OSC socket closed');
-    } finally {
-      socket.close();
-    }
-  }
-
-  Future<void> agrees(String path, num expected) async {
-    final end = DateTime.now().add(const Duration(seconds: 5));
-    do {
-      final actual = await read(path);
-      if ((actual - expected).abs() <= 0.00002) return;
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    } while (DateTime.now().isBefore(end));
-    throw StateError('$path did not independently read back $expected');
-  }
-}
 
 Future<void> main(List<String> args) async {
   final options = <String, String>{};
@@ -236,6 +126,11 @@ Future<void> main(List<String> args) async {
         'Reference topology must cover 80 strips',
       );
     });
+    await check('Connection command completed before control writes', () async {
+      final start = sequence;
+      socket.add(Cmds.info());
+      await until(() => infoSequence > start, 'Post-connect command barrier');
+    });
     await check(
       'Matrix sends and native EQ domains reach Flutter descriptors',
       () async {
@@ -300,11 +195,14 @@ Future<void> main(List<String> args) async {
     );
     await check('External OSC fader change -> engine observation', () async {
       final start = sequence;
-      await reference.write(fader, 0.25);
+      // Use an exact native X32 fader step (1024 positions).
+      const externalFader = 256.0 / 1023.0;
+      await reference.write(fader, externalFader);
       await until(
         () =>
             (valueSequence['31/fader'] ?? 0) > start &&
-            values[31]?['fader'] == 0.25,
+            values[31]?['fader'] is num &&
+            ((values[31]!['fader'] as num) - externalFader).abs() < 0.00002,
         'External change observation',
       );
     });
@@ -476,7 +374,7 @@ Future<void> main(List<String> args) async {
       'limits': [
         'Emulator and document evidence only; no hardware/audio/USB/iOS proof',
         'Run repository gates separately',
-        'The command does not modify the emulator',
+        'Emulator values are changed and restoration is independently checked',
       ],
     };
     final path = options['--report'] ?? '/tmp/openfader-x32-verification.json';

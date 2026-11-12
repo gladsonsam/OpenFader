@@ -7,6 +7,9 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
         if matches!(param, "gain" | "phantom") { &["source", "x32:preamp_state"] } else { &[] }
     }
     async fn capture_param_applicable(&self, strip: StripId, param: &str) -> anyhow::Result<bool> {
+        if !self.param_applicable(strip, param)? {
+            return Ok(false);
+        }
         if matches!(param, "gain" | "phantom") {
             self.preamp_capture_applicable(strip, param).await
         } else {
@@ -49,6 +52,11 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
         self.set_guarded(strip, param, value, expected).await
     }
     async fn set_param_guarded_checked(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        if param == "link" {
+            let ParamValue::Bool(linked) = value else { anyhow::bail!("x32: stereo link requires boolean") };
+            anyhow::ensure!(expected.is_empty(), "x32: link writes carry no source context");
+            return self.write_stereo_link_checked(strip, linked, check).await.map(|_| ());
+        }
         if matches!(param, "gain" | "phantom") {
             return self.write_active_preamp_guarded_checked(strip, param, value, expected, check).await;
         }
@@ -79,7 +87,9 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
             &["gain", "phantom"]
         }
     }
-    fn preamp_invalidation_count(&self) -> usize { 32 }
+    // Channels 1..32 and aux inputs 1..8 share the routed physical
+    // headamps. A global headamp/route push invalidates all forty consumers.
+    fn preamp_invalidation_count(&self) -> usize { 40 }
     /// Live automix gain alias behind `provider:automix_gain` (channels
     /// 1..8; honestly unavailable until the /meters/16 stream lands).
     fn automix_gain_param(&self) -> Option<&'static str> { Some("x32:automix_gain") }
@@ -89,6 +99,7 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
     fn initial_read_timeout(&self) -> std::time::Duration { openfader_transport::session::CONNECT_BURST_TIMEOUT }
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { Self::param_scopes() }
     fn param_plane_snapshot(&self) -> bool { true }
+    fn mutation_state_from_observations(&self) -> bool { true }
     fn dial_addr(&self, ip: &str) -> String {
         openfader_transport::session::dial_addr_with_port(ip, openfader_proto_x32::addrs::PORT)
     }
@@ -432,8 +443,8 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
                         target: dest.target.into(),
                         clearable: false,
                         source_groups: vec![RoutingGroupCaps {
-                            key: "Bank".into(),
-                            label: "Bank source".into(),
+                            key: dest.source_group().into(),
+                            label: if dest.source_group() == "Mode" { "Routing mode" } else { "Bank source" }.into(),
                             count: dest.options.len(),
                             options: dest.options.iter().map(|s| s.trim().to_string()).collect(),
                             mode: false,

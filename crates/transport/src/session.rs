@@ -108,9 +108,23 @@ pub fn resolve_peer(addr: &str, default_port: u16) -> anyhow::Result<SocketAddr>
         .map_err(|e| anyhow::anyhow!("bad mixer address {addr:?}: {e}"))
 }
 
+enum ReplyPredicate {
+    Shape(fn(&OscMessage) -> bool),
+    Matching(Box<dyn Fn(&OscMessage) -> bool + Send + Sync>),
+}
+
+impl ReplyPredicate {
+    fn accepts(&self, message: &OscMessage) -> bool {
+        match self {
+            Self::Shape(accepts) => accepts(message),
+            Self::Matching(accepts) => accepts(message),
+        }
+    }
+}
+
 struct PendingQuery {
     tx: oneshot::Sender<(std::time::Instant, OscMessage)>,
-    accepts: fn(&OscMessage) -> bool,
+    accepts: ReplyPredicate,
 }
 
 /// Timestamped X-Air secondary meter snapshot shared with the ingest task.
@@ -274,7 +288,10 @@ impl OscSession {
                         // late query caller must not hide a newer desk change.
                         let _ = received_tx.send((received, msg.clone()));
                         let mut guard = pending.lock().await;
-                        if guard.get(&msg.addr).is_some_and(|q| (q.accepts)(&msg)) {
+                        if guard
+                            .get(&msg.addr)
+                            .is_some_and(|q| q.accepts.accepts(&msg))
+                        {
                             let query = guard.remove(&msg.addr).expect("matched pending query");
                             let _ = query.tx.send((received, msg));
                         } else {
@@ -367,6 +384,25 @@ impl OscSession {
             .await
     }
 
+    /// Query through interleaved same-address notifications using a wire-value
+    /// predicate. Nonmatching packets remain on the update plane. This never
+    /// retries writes and retains the ordinary query deadline.
+    pub async fn query_matching_timeout(
+        &self,
+        addr: &str,
+        timeout: Duration,
+        accepts: impl Fn(&OscMessage) -> bool + Send + Sync + 'static,
+    ) -> anyhow::Result<OscMessage> {
+        self.query_received_filtered_timeout(
+            addr,
+            vec![],
+            timeout,
+            ReplyPredicate::Matching(Box::new(accepts)),
+        )
+        .await
+        .map(|(_, message)| message)
+    }
+
     /// Query reply with the same socket receipt timestamp published on the
     /// ordered receive plane. Consumers can wait for their cache actor to
     /// reach this reply without assigning fresh times to older observations.
@@ -403,6 +439,17 @@ impl OscSession {
         args: Vec<OscType>,
         timeout: Duration,
         accepts: fn(&OscMessage) -> bool,
+    ) -> anyhow::Result<(std::time::Instant, OscMessage)> {
+        self.query_received_filtered_timeout(addr, args, timeout, ReplyPredicate::Shape(accepts))
+            .await
+    }
+
+    async fn query_received_filtered_timeout(
+        &self,
+        addr: &str,
+        args: Vec<OscType>,
+        timeout: Duration,
+        accepts: ReplyPredicate,
     ) -> anyhow::Result<(std::time::Instant, OscMessage)> {
         let bytes = osc::encode_message(addr, args)?;
         let _guard = self.query_shards[query_shard(addr)].lock().await;

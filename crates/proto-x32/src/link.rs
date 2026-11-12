@@ -5,7 +5,10 @@
 //! A linked pair shares the desk control surface; linked members are
 //! reported together so the engine authorizes every affected strip
 //! before any write. An unreadable link state rejects the operation.
-use crate::{mapping::fam_of, X32Driver};
+use crate::{
+    mapping::{Mapping, WireKind},
+    X32Driver,
+};
 use openfader_core::StripId;
 
 /// All linked-pair members, in strip-index order.
@@ -75,7 +78,28 @@ fn link_leaf(strip: StripId) -> anyhow::Result<Option<(String, StripId)>> {
     )))
 }
 
+/// One canonical boolean maps to the same native leaf on both members.
+/// Building the provider's reverse map from this mapping also fans native
+/// link pushes out to both observed channel rows.
+pub(crate) fn link_mapping(strip: StripId) -> anyhow::Result<Mapping> {
+    let Some((path, _)) = link_leaf(strip)? else {
+        anyhow::bail!("x32: stereo linking unavailable on this strip")
+    };
+    Ok(Mapping {
+        path,
+        kind: WireKind::Bool,
+    })
+}
+
 impl X32Driver {
+    /// A link edit always affects both members, including the transition
+    /// from unlinked to linked. This must not depend on the old link value.
+    pub fn stereo_link_members(&self, strip: StripId) -> anyhow::Result<Vec<StripId>> {
+        let Some((_, base)) = link_leaf(strip)? else {
+            anyhow::bail!("x32: stereo linking unavailable on this strip")
+        };
+        Ok(vec![base, StripId(base.0 + 1)])
+    }
     /// Members affected by a shared linked control: both pair members
     /// while the desk reports linked, else the strip alone. Unreadable
     /// link state rejects the operation because the partner may be affected.
@@ -98,28 +122,52 @@ impl X32Driver {
         strip: StripId,
         linked: bool,
     ) -> anyhow::Result<Vec<(StripId, String, openfader_core::ParamValue)>> {
-        let _ = fam_of(strip)?;
-        let Some((path, _base)) = link_leaf(strip)? else {
-            anyhow::bail!("x32: stereo linking unavailable on this strip")
-        };
+        self.write_stereo_link_checked(strip, linked, &|_| Ok(()))
+            .await
+    }
+
+    /// Authorize the complete pair under the write lane and again at actual
+    /// socket dispatch. Readback is independent and bound to the same session.
+    pub async fn write_stereo_link_checked(
+        &self,
+        strip: StripId,
+        linked: bool,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<Vec<(StripId, String, openfader_core::ParamValue)>> {
+        let mapping = link_mapping(strip)?;
+        let members = self.stereo_link_members(strip)?;
         let session = self.session()?;
         let _guard = self.writes.lock().await;
-        self.ensure_current(&session)?;
+        let authorize = || {
+            self.ensure_current(&session)?;
+            check(&members)
+        };
+        authorize()?;
         session
-            .send(&path, vec![rosc::OscType::Int(i32::from(linked))])
+            .send_checked(
+                &mapping.path,
+                vec![rosc::OscType::Int(i32::from(linked))],
+                &authorize,
+            )
             .await?;
-        // Fresh independent readback of the same leaf.
-        let reply = session.query_timeout(&path, crate::QUERY_TIMEOUT).await?;
-        self.ensure_current(&session)?;
-        let actual = crate::mapping::Mapping {
-            path,
-            kind: crate::mapping::WireKind::Int(0, 1),
-        }
-        .decode(&reply)?;
+        let reply = session
+            .query_timeout(&mapping.path, crate::QUERY_TIMEOUT)
+            .await?;
+        authorize()?;
+        let actual = mapping.decode(&reply)?;
         anyhow::ensure!(
-            actual == openfader_core::ParamValue::Float(f32::from(linked)),
+            actual == openfader_core::ParamValue::Bool(linked),
             "x32: link readback did not match the requested write"
         );
-        Ok(vec![])
+        Ok(members
+            .into_iter()
+            .map(|member| {
+                (
+                    member,
+                    "link".into(),
+                    openfader_core::ParamValue::Bool(linked),
+                )
+            })
+            .collect())
     }
 }

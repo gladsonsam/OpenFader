@@ -400,6 +400,18 @@ pub struct BankDest {
     pub options: &'static [&'static str],
 }
 
+impl BankDest {
+    /// Canonical group identity consumed by the shared `{Group} {index}`
+    /// contract. The REC/PLAY selector uses Mode; block feeds use Bank.
+    pub fn source_group(&self) -> &'static str {
+        if self.id == "routing/mode/01" {
+            "Mode"
+        } else {
+            "Bank"
+        }
+    }
+}
+
 /// One routing-bank plane descriptor for hand-built registry caps.
 pub struct BankPlane {
     pub key: &'static str,
@@ -1572,8 +1584,64 @@ pub(crate) fn note_route_push(
                 continue;
             }
         }
+        if let Ok(RouteAddr::OutputPatch { .. }) = route_addr(&id) {
+            // Duplicate observations preserve the verified revision. A real
+            // A→B→A transition still invalidates because B evicts the triple.
+            if let (Ok((src, tap, invert)), Ok(value)) = (
+                cached_route_raws(Some(generation), &id),
+                crate::mapping::strict_int(msg),
+            ) {
+                let unchanged = if msg.addr.ends_with("/src") {
+                    value == src
+                } else if msg.addr.ends_with("/pos") {
+                    value == tap
+                } else if msg.addr.ends_with("/invert") {
+                    value == invert
+                } else {
+                    false
+                };
+                if unchanged {
+                    continue;
+                }
+            }
+            let delay_control = if msg.addr.ends_with("/delay/on") {
+                Some(("delay_on", WireKind::Bool))
+            } else if msg.addr.ends_with("/delay/time") {
+                Some((
+                    "delay_time",
+                    WireKind::Linf(addrs::OUTPUT_DELAY_MIN_MS, addrs::OUTPUT_DELAY_MAX_MS),
+                ))
+            } else {
+                None
+            };
+            if let Some((control, kind)) = delay_control {
+                let mapping = Mapping {
+                    path: msg.addr.clone(),
+                    kind,
+                };
+                let value = match mapping.decode(msg) {
+                    Ok(openfader_core::ParamValue::Bool(value)) => Some(f32::from(value)),
+                    Ok(openfader_core::ParamValue::Float(value)) => Some(value),
+                    _ => None,
+                };
+                if let Some(value) = value {
+                    if cached_output_control_value(generation, &id, control)
+                        .is_some_and(|(before, _)| before.to_bits() == value.to_bits())
+                    {
+                        continue;
+                    }
+                    // Delay invalidates only its own descriptor until refresh.
+                    if let Ok(mut cache) = OUTPUT_CTL_CACHE.lock() {
+                        cache.remove(&(generation, id.clone(), control.to_string()));
+                    }
+                    let _ = dirty.send(RouteRefresh::One(id));
+                    continue;
+                }
+            }
+        }
+        // Unknown or malformed values remain fail-closed. A real source,
+        // tap or invert move invalidates the entire source-bound block.
         invalidate_route(generation, &id);
-        invalidate_output_controls(generation, &id);
         let _ = dirty.send(RouteRefresh::One(id));
     }
 }
@@ -2003,10 +2071,27 @@ impl X32Driver {
             "x32: output source changed; reopen the control"
         );
         let path = route_src_addr(&addr);
+        // INS can move both FX inputs; invalidate the sibling until readback.
+        let sibling = match &addr {
+            RouteAddr::FxSource { slot, side } => Some(format!(
+                "fx/source/{slot:02}/{}",
+                if side == "l" { "r" } else { "l" }
+            )),
+            _ => None,
+        };
         self.ensure_current(&session)?;
         anyhow::ensure!(check(), "x32: output engine session or policy changed");
+        if let Some(sibling) = &sibling {
+            invalidate_route(generation, sibling);
+        }
         session.send(&path, vec![OscType::Int(value)]).await?;
-        let reply = session.query_timeout(&path, crate::QUERY_TIMEOUT).await?;
+        // Delayed old xremote values must not consume the confirmation slot.
+        // A refused write still fails at the ordinary query deadline.
+        let reply = session
+            .query_matching_timeout(&path, crate::QUERY_TIMEOUT, move |reply| {
+                crate::mapping::strict_int(reply).ok() == Some(value)
+            })
+            .await?;
         self.ensure_current(&session)?;
         let read = crate::mapping::strict_int(&reply).map_err(|e| anyhow::anyhow!("x32: {e}"))?;
         anyhow::ensure!(
@@ -2019,6 +2104,11 @@ impl X32Driver {
             "x32: output companion changed during write; reconnect to refresh"
         );
         remember_route(id, generation, src2, tap2, invert2, source)?;
+        if let Some(sibling) = sibling {
+            // Confirm the companion before publication; unreadable stays unknown.
+            let _ = refresh_route_on(&session, generation, &sibling).await;
+            self.ensure_current(&session)?;
+        }
         Ok(())
     }
 
