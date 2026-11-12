@@ -128,7 +128,7 @@ class RemoteHost implements HostTransport {
     }
     final result = await _request(
         server.endpoint, server.fingerprint, '/connect',
-        body: {if (password != null) 'password': password});
+        body: {'password': ?password});
     if (result['client_id'] is! String ||
         (result['client_id'] as String).isEmpty ||
         result['token'] is! String ||

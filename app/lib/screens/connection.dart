@@ -1,6 +1,6 @@
 // Connection screen: scan, probe, connect, and disconnect desks.
 // Screens stay constructor-injected so Area A can implement the store.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../theme.dart';
 import '../ui/console.dart';

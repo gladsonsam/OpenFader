@@ -75,7 +75,7 @@ abstract class RoutingStore extends ChangeNotifier {
   // Provider-owned routing controls for the selected destination. Opaque
   // descriptors: surface == 'routing' and target == selected destination id.
   List<DestinationControlVm> get routingControls => [
-        if (tapControl case final control?) control,
+        ?tapControl,
       ];
   bool routingControlIsCurrent(DestinationControlVm control) =>
       control == tapControl && tapIsCurrent(control);

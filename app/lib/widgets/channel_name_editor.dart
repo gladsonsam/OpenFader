@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 
 import '../core/channel_clipboard.dart';
@@ -33,15 +33,13 @@ Future<void> showChannelNameEditor(
             ProcessorPresetKind.gate,
             ProcessorPresetKind.compressor,
           ])
-            if ((store as InputProcessorPresetStore).captureChannelPresetTarget(
+            ?(store as InputProcessorPresetStore).captureChannelPresetTarget(
               kind,
               target.channel,
               session: target.session,
               key: target.key,
               accessEpoch: target.accessEpoch,
-            )
-                case final captured?)
-              captured,
+            ),
         ]
       : <ProcessorPresetTarget>[];
   return showAnchoredPopover<void>(
@@ -1215,7 +1213,7 @@ class _NameEditorState extends State<_NameEditor> {
                                 fit: StackFit.expand,
                                 children: [
                                   ...previous,
-                                  if (current != null) current
+                                  ?current
                                 ]),
                             transitionBuilder: (child, animation) {
                               final incoming = child.key == pageKey;

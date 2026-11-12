@@ -4,7 +4,7 @@ import '../../design.dart';
 import '../../settings/prefs.dart';
 import '../../widgets/channel_name_editor.dart';
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../geometry.dart';
 import '../strip_layout.dart';

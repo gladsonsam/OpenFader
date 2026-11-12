@@ -6,7 +6,7 @@ library;
 import 'dart:async';
 import '../widgets/inline_feedback.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 

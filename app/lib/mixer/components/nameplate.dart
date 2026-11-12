@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/semantics.dart';
 import '../../palette.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../design.dart';
 import '../icons.dart';
