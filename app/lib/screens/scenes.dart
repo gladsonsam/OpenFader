@@ -1,7 +1,7 @@
 // Snapshot library plus named show capture and recall.
 // Local transactions and guarded provider operations keep separate authorities.
 // Screens stay constructor-injected so Area A can implement the store.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
 import '../theme.dart';

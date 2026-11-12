@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme.dart';
 import '../../ui/console.dart';
@@ -27,7 +27,7 @@ class U4Section extends StatelessWidget {
                         fontSize: 12,
                         color: ConsolePalette.of(context).text7)),
               ),
-              if (trailing != null) trailing!,
+              ?trailing,
             ],
           ),
           const SizedBox(height: 10),

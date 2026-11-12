@@ -1,7 +1,7 @@
 // Launch screen: logo, name, live boot status, and Retry on failure.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
 import 'app_logo.dart';

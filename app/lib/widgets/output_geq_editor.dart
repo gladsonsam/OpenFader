@@ -1,7 +1,7 @@
 import 'inline_feedback.dart';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../core/destination_controls.dart';
 import '../core/control_reset.dart';

@@ -2,7 +2,7 @@
 // The bank rail belongs to the mixer only and is owned by the caller.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
 import 'bank_rail.dart';

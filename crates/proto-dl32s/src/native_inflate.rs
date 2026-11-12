@@ -58,10 +58,10 @@ impl Tree {
     fn symbol(&self, bits: &mut Bits<'_>) -> Result<usize> {
         // Codes arrive most-significant bit first, unlike numeric fields.
         let mut code = 0;
-        for n in 1..16 {
+        for codes in self.codes.iter().skip(1) {
             code = (code << 1) | bits.read(1)?;
-            if let Ok(index) = self.codes[n].binary_search_by_key(&code, |(c, _)| *c) {
-                return Ok(self.codes[n][index].1);
+            if let Ok(index) = codes.binary_search_by_key(&code, |(c, _)| *c) {
+                return Ok(codes[index].1);
             }
         }
         bail!("Invalid Huffman code")

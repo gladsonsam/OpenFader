@@ -1,5 +1,5 @@
 import '../design.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../mixer/controller.dart';
 import '../palette.dart';

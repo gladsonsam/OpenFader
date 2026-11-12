@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import '../core/native_library_store.dart';
 import '../ui/console.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../core/native_library.dart';
 import '../core/native_library_policy.dart';
