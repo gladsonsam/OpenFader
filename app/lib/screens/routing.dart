@@ -1,6 +1,6 @@
 // Patch matrix: previews stay local; confirmed edits use the injected store.
 // The store retains provider identity, access and stale-operation guards.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../theme.dart';
 import '../ui/console.dart';
@@ -262,7 +262,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
       Expanded(
           child: ListView.separated(
               itemCount: store.strips.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   Divider(height: 1, color: p.tileBorder),
               itemBuilder: (context, i) {
                 final strip = store.strips[i];
@@ -501,7 +501,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                   itemCount: store.strips.length,
-                  separatorBuilder: (_, __) =>
+                  separatorBuilder: (_, _) =>
                       Divider(height: 1, color: p.tileBorder),
                   itemBuilder: (context, index) {
                     final strip = store.strips[index];

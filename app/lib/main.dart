@@ -1,6 +1,6 @@
 // BootGate drives staged boot behind the launch screen, then swaps in
 // the full-port shell. Desk discovery lives in the Link tab.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 

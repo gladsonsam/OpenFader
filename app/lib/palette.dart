@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Immutable semantic colors for one app tree. Resolve in build and pass the
 /// snapshot into painters; never read a process-wide mutable palette in paint.

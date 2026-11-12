@@ -9,7 +9,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 
 import '../core/channel_views.dart';
@@ -204,12 +204,10 @@ class ChannelFocus {
       required this.text,
       this.entryText,
       this.valueListenable,
-      required double min,
-      required double max,
+      required this._min,
+      required this._max,
       this.resolveRange,
-      required this.apply})
-      : _min = min,
-        _max = max;
+      required this.apply});
 }
 
 class ChannelPage extends StatefulWidget {

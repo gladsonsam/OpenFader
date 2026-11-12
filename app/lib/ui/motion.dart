@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Short visual responses never delay the action or change its hit area.
 abstract final class ConsoleMotion {

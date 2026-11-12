@@ -64,7 +64,7 @@ class ChannelIconSelection {
   const ChannelIconSelection.imported(String this.id)
       : kind = ChannelIconKind.imported;
   Map<String, Object> toJson() =>
-      {'kind': kind.name, if (id != null) 'id': id!};
+      {'kind': kind.name, 'id': ?id};
   static ChannelIconSelection fromJson(Object? raw) {
     if (raw is! Map) throw const FormatException('Invalid icon selection');
     final id = raw['id'];

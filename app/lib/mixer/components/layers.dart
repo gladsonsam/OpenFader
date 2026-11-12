@@ -1,6 +1,6 @@
 import '../../widgets/inline_feedback.dart';
 import '../../ui/console.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import '../../settings/prefs.dart';
 import '../controller.dart';

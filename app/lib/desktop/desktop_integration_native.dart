@@ -4,18 +4,18 @@ import 'dart:math' as math;
 
 import 'package:dbus/dbus.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:tray_manager/tray_manager.dart';
+import 'package:tray_manager/tray_manager.dart' as tray;
 import 'package:window_manager/window_manager.dart';
 
 import '../ui/overlays/console_dialogs.dart';
 
 /// Process-owned window/tray integration. Hiding never disposes the shell or
 /// changes its connection, recorder, or polling cadence.
-class DesktopIntegration with WindowListener, TrayListener {
+class DesktopIntegration {
   DesktopIntegration._();
 
   static bool get supported =>
@@ -27,6 +27,11 @@ class DesktopIntegration with WindowListener, TrayListener {
   Future<bool> Function()? _prepareQuit;
   Object? _owner;
   Timer? _boundsDebounce;
+  Window? _window;
+  ListenerId? _windowListener;
+  tray.TrayIcon? _trayIcon;
+  tray.Menu? _trayMenu;
+  tray.MenuItem? _statusItem;
   bool _windowReady = false, _trayReady = false, _hidden = false;
   bool _quitting = false, _hiding = false, _restoring = false;
   String _status = 'Starting…';
@@ -44,9 +49,10 @@ class DesktopIntegration with WindowListener, TrayListener {
       }
     });
     try {
-      await windowManager.ensureInitialized();
-      windowManager.addListener(desktop);
-      await windowManager.setPreventClose(true);
+      final window = WindowManager.instance.getCurrent();
+      if (window == null) throw StateError('Native window unavailable');
+      desktop._window = window;
+      desktop._windowListener = window.addListener(desktop._onWindowEvent);
       desktop._windowReady = true;
       desktop._prefs = await SharedPreferences.getInstance();
       await desktop._restoreBounds();
@@ -55,18 +61,33 @@ class DesktopIntegration with WindowListener, TrayListener {
     }
     if (desktop._windowReady) {
       try {
-        trayManager.addListener(desktop);
-        await trayManager.setIcon(Platform.isWindows
+        final icon =
+            tray.TrayIcon.createWithIdentifier('com.openfader.openfader');
+        if (icon == null) throw StateError('Native tray unavailable');
+        desktop._trayIcon = icon;
+        final image = tray.ImageAsset.fromAsset(Platform.isWindows
             ? 'assets/brand/open-fader-tray.ico'
             : 'assets/brand/open-fader-logo-32.png');
-        // AppIndicator uses its menu/title; this plugin's tooltip API is only
-        // implemented by Windows and macOS.
-        if (!Platform.isLinux) await trayManager.setToolTip('OpenFader');
+        if (image == null) throw StateError('Tray image unavailable');
+        icon.icon = image;
+        icon.setTooltip('OpenFader');
+        icon.addListener((event) {
+          if (event is tray.TrayIconClickedEvent) {
+            Platform.isMacOS
+                ? desktop._openTrayMenu()
+                : unawaited(desktop.show());
+          }
+        });
+        icon.setContextMenuTrigger(tray.ContextMenuTrigger.rightClicked);
         desktop._trayReady = true;
         await desktop._updateMenu();
+        if (!desktop._trayReady) throw StateError('Tray menu unavailable');
+        if (!icon.setVisible(true)) {
+          throw StateError('Could not show tray icon');
+        }
         if (Platform.isLinux) await desktop._watchLinuxTray();
       } catch (error) {
-        desktop._trayReady = false;
+        desktop._disposeTray();
         debugPrint('Tray unavailable; Hide to tray will minimize: $error');
       }
     }
@@ -93,13 +114,35 @@ class DesktopIntegration with WindowListener, TrayListener {
   Future<void> _updateMenu() {
     return _menuUpdate = _menuUpdate.then((_) async {
       if (!_trayReady) return;
-      await trayManager.setContextMenu(Menu(items: [
-        MenuItem(key: 'show', label: 'Show OpenFader'),
-        MenuItem(key: 'hide', label: 'Hide to tray'),
-        MenuItem(label: _status, disabled: true),
-        MenuItem.separator(),
-        MenuItem(key: 'quit', label: 'Quit OpenFader'),
-      ]));
+      final statusItem = _statusItem;
+      if (statusItem != null) {
+        statusItem.label = _status;
+        return;
+      }
+      final menu = tray.Menu.create();
+      if (menu == null) throw StateError('Native tray menu unavailable');
+      _trayMenu = menu;
+      void add(String label, Future<void> Function()? action) {
+        final item = tray.MenuItem.createWithLabelAndType(
+            label, tray.MenuItemType.normal);
+        if (item == null) throw StateError('Native tray item unavailable');
+        item.isEnabled = action != null;
+        if (action != null) {
+          item.addListener((event) {
+            if (event is tray.MenuItemClickedEvent) unawaited(action());
+          });
+        } else {
+          _statusItem = item;
+        }
+        menu.addItem(item);
+      }
+
+      add('Show OpenFader', show);
+      add('Hide to tray', _hide);
+      add(_status, null);
+      menu.addSeparator();
+      add('Quit OpenFader', requestQuit);
+      _trayIcon!.setContextMenu(menu);
     }).catchError((Object error) {
       _trayReady = false;
       debugPrint('Tray menu unavailable: $error');
@@ -107,7 +150,16 @@ class DesktopIntegration with WindowListener, TrayListener {
     });
   }
 
-  // Linux can load AppIndicator successfully even when no panel hosts icons.
+  void _disposeTray() {
+    _trayIcon?.dispose();
+    _trayIcon = null;
+    _trayMenu?.dispose();
+    _trayMenu = null;
+    _statusItem = null;
+    _trayReady = false;
+  }
+
+  // Linux can register a tray icon even when no panel hosts icons.
   // Watch the actual host, and restore a hidden window if its panel vanishes.
   Future<void> _watchLinuxTray() async {
     try {
@@ -162,9 +214,9 @@ class DesktopIntegration with WindowListener, TrayListener {
     if (!_windowReady || _restoring) return;
     _restoring = true;
     try {
-      await windowManager.show();
-      if (await windowManager.isMinimized()) await windowManager.restore();
-      await windowManager.focus();
+      _window!.show();
+      if (_window!.isMinimized) _window!.restore();
+      _window!.focus();
       _hidden = false;
     } catch (error) {
       debugPrint('Could not restore OpenFader: $error');
@@ -180,13 +232,13 @@ class DesktopIntegration with WindowListener, TrayListener {
       _cancelPointers();
       await _saveBounds();
       if (_trayReady && (!Platform.isLinux || _linuxTrayHost)) {
-        await windowManager.hide();
+        _window!.hide();
         _hidden = true;
         if (!_trayReady || (Platform.isLinux && !_linuxTrayHost)) {
           await show();
         }
       } else {
-        await windowManager.minimize();
+        _window!.minimize();
       }
     } catch (error) {
       debugPrint('Could not hide OpenFader: $error');
@@ -212,9 +264,7 @@ class DesktopIntegration with WindowListener, TrayListener {
           await subscription.cancel();
         }
         await _bus?.close().timeout(const Duration(seconds: 2));
-        if (_trayReady) {
-          await trayManager.destroy().timeout(const Duration(seconds: 2));
-        }
+        _disposeTray();
       } catch (error) {
         // Cosmetic tray cleanup must not strand the app after its engine has
         // already shut down successfully.
@@ -234,7 +284,11 @@ class DesktopIntegration with WindowListener, TrayListener {
         // (Flutter 3.47 rejects removing that view during window teardown).
         exit(0);
       } else {
-        await windowManager.destroy();
+        final window = _window!;
+        final listener = _windowListener;
+        if (listener != null) window.removeListener(listener);
+        _windowListener = null;
+        if (!window.close()) exit(0);
       }
     } catch (error) {
       if (shutdownPrepared) {
@@ -291,10 +345,10 @@ class DesktopIntegration with WindowListener, TrayListener {
         .clamp(area.left, area.right - width);
     final y = (previous?.top ?? area.center.dy - height / 2)
         .clamp(area.top, area.bottom - height);
-    await windowManager.setMinimumSize(minSize);
-    await windowManager.setBounds(Rect.fromLTWH(x, y, width, height));
+    _window!.minimumSize = minSize.toNative();
+    _window!.bounds = Rect.fromLTWH(x, y, width, height).toNative();
     if (_prefs?.getBool('desktop.window.maximized') == true) {
-      await windowManager.maximize();
+      _window!.maximize();
     }
   }
 
@@ -308,14 +362,13 @@ class DesktopIntegration with WindowListener, TrayListener {
     final prefs = _prefs;
     if (!_windowReady || prefs == null) return;
     try {
-      if (await windowManager.isMinimized() ||
-          await windowManager.isFullScreen()) {
+      if (_window!.isMinimized || _window!.isFullScreen) {
         return;
       }
-      final maximized = await windowManager.isMaximized();
+      final maximized = _window!.isMaximized;
       await prefs.setBool('desktop.window.maximized', maximized);
       if (maximized) return;
-      final rect = await windowManager.getBounds();
+      final rect = _window!.bounds.toRect();
       await prefs.setStringList(
           'desktop.window.bounds',
           [rect.left, rect.top, rect.width, rect.height]
@@ -326,40 +379,31 @@ class DesktopIntegration with WindowListener, TrayListener {
     }
   }
 
-  @override
-  // Window managers send the same close request for the title-bar button and
-  // shortcuts such as Omarchy's Super+Q. Linux uses guarded quit for both.
-  void onWindowClose() => unawaited(Platform.isLinux ? requestQuit() : _hide());
-  @override
-  void onWindowBlur() => _cancelPointers();
-  @override
-  void onWindowFocus() => _hidden = false;
-  @override
-  void onWindowMove() => _scheduleBoundsSave();
-  @override
-  void onWindowResize() => _scheduleBoundsSave();
-  @override
-  void onWindowMaximize() => _scheduleBoundsSave();
-  @override
-  void onWindowUnmaximize() => _scheduleBoundsSave();
-  @override
-  void onTrayIconMouseDown() =>
-      Platform.isMacOS ? _openTrayMenu() : unawaited(show());
-  @override
-  void onTrayIconRightMouseDown() => _openTrayMenu();
-
-  void _openTrayMenu() {
-    // Linux's panel opens the AppIndicator menu itself.
-    if (Platform.isLinux || !_trayReady || _quitting) return;
-    unawaited(trayManager.popUpContextMenu().catchError((Object error) {
-      debugPrint('Could not open the tray menu: $error');
-    }));
+  void _onWindowEvent(WindowEvent event) {
+    switch (event) {
+      case WindowCloseRequestedEvent():
+        // Title-bar close and window-manager shortcuts share the guarded path.
+        event.request.cancel();
+        unawaited(Platform.isLinux ? requestQuit() : _hide());
+      case WindowBlurredEvent():
+        _cancelPointers();
+      case WindowFocusedEvent():
+        _hidden = false;
+      case WindowMovedEvent() ||
+            WindowResizedEvent() ||
+            WindowMaximizedEvent() ||
+            WindowRestoredEvent():
+        _scheduleBoundsSave();
+      default:
+        break;
+    }
   }
 
-  @override
-  void onTrayMenuItemClick(MenuItem menuItem) {
-    if (menuItem.key == 'show') unawaited(show());
-    if (menuItem.key == 'hide') unawaited(_hide());
-    if (menuItem.key == 'quit') unawaited(requestQuit());
+  void _openTrayMenu() {
+    // Linux's panel opens the exported tray menu itself.
+    if (Platform.isLinux || !_trayReady || _quitting) return;
+    if (!_trayIcon!.openContextMenu()) {
+      debugPrint('Could not open the tray menu');
+    }
   }
 }

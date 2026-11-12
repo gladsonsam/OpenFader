@@ -98,9 +98,9 @@ class LocalLibraryAction {
   };
   Map<String, Object> toJson() => {
         'op': operation,
-        if (number != null) 'n': number!,
-        if (show != null) 'show': show!,
-        if (name != null) 'name': name!,
+        'n': ?number,
+        'show': ?show,
+        'name': ?name,
       };
 }
 

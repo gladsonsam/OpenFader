@@ -1,5 +1,5 @@
 import '../ui/overlays/console_dialogs.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../core/channel_name.dart';
 import '../design.dart';
 import '../palette.dart';
