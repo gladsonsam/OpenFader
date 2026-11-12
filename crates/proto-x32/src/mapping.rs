@@ -289,6 +289,7 @@ pub fn mapping(strip: StripId, param: &str) -> anyhow::Result<Mapping> {
     let sends_src = f.is_ch || f.is_aux || f.is_fx;
     let out_src = f.is_bus || f.is_main;
     match param {
+        "link" => crate::link::link_mapping(strip),
         "fader" => Ok(leaf(
             &r,
             if f.is_dca { "fader" } else { "mix/fader" },

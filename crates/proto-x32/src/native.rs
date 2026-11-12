@@ -5,6 +5,12 @@
 #[path = "native_tables.rs"]
 mod tables;
 
+mod archive;
+mod inventory;
+mod showdump;
+
+pub use archive::validate_archive;
+
 use openfader_core::native_library::Check;
 use openfader_transport::OscSession;
 use rosc::OscType;
@@ -359,9 +365,8 @@ impl NativeState {
             "id": "libchan_copy", "op": "libchan_copy",
             "title": "Copy channel preset", "submit_label": "Copy",
             "fields": [
-                {"key": "src", "label": "Source", "min": 0, "max": 31},
-                {"key": "dst", "label": "Destination", "min": 0, "max": 31},
-                {"key": "mask", "label": "Mask", "min": 1, "max": 255},
+                {"key": "src", "label": "Source preset index (0-based)", "min": 0, "max": 99},
+                {"key": "dst", "label": "Destination preset index (0-based)", "min": 0, "max": 99},
             ],
         })]
     }
@@ -379,7 +384,7 @@ impl NativeState {
             "import_confirm_title": "Import archive to mixer?",
             "import_confirm_message": "Write archived values to the mixer. A rollback backup is returned with the result.",
             "kinds": [
-                {"id": "scene", "label": "Scene archive", "slot_min": 0, "slot_max": 99},
+                {"id": "scene", "label": "current mix"},
                 {"id": "routing", "label": "Routing archive"},
             ],
         })
@@ -459,85 +464,6 @@ async fn dataset_op(
         .await?;
     anyhow::ensure!(check(), "x32 native: session changed during dispatch");
     check_status(&reply, op, dataset)
-}
-
-/// `/node` read: request path without leading slash. The desk answers
-/// addressed `node` (no slash), which the shared session decoder drops
-/// (only slashless `meters/N` has a repair fallback), so node traffic
-/// uses a short-lived raw socket and correlates by the echoed path
-/// prefix. Callers must serialize node traffic (the shared write lane)
-/// so a foreign `/node` reply cannot be mistaken for ours; replies are
-/// attributed by `"<path> "` / `"<path>\n"` prefix, never by timing.
-async fn read_node_text(session: &Arc<OscSession>, path: &str) -> anyhow::Result<String> {
-    let peer = session
-        .socket()
-        .peer_addr()
-        .map_err(|e| anyhow::anyhow!("x32 native: no desk peer ({e:#})"))?;
-    let bare = path.strip_prefix('/').unwrap_or(path);
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0")
-        .await
-        .map_err(|e| anyhow::anyhow!("x32 native: node socket ({e:#})"))?;
-    let out =
-        openfader_transport::osc::encode_message("/node", vec![OscType::String(bare.into())])?;
-    socket
-        .send_to(&out, peer)
-        .await
-        .map_err(|e| anyhow::anyhow!("x32 native: /node send ({e:#})"))?;
-    let deadline = tokio::time::Instant::now() + LEAF_TIMEOUT;
-    let mut buf = vec![0u8; 4096];
-    loop {
-        let now = tokio::time::Instant::now();
-        if now >= deadline {
-            anyhow::bail!("x32 native: /node {path} timed out");
-        }
-        let (n, _) = tokio::time::timeout(deadline - now, socket.recv_from(&mut buf))
-            .await
-            .map_err(|_| anyhow::anyhow!("x32 native: /node {path} timed out"))?
-            .map_err(|e| anyhow::anyhow!("x32 native: /node recv ({e:#})"))?;
-        let Some(text) = decode_node_text(&buf[..n]) else {
-            continue;
-        };
-        if text == path
-            || text.starts_with(&format!("{path} "))
-            || text.starts_with(&format!("{path}\n"))
-        {
-            return Ok(text);
-        }
-    }
-}
-
-/// Decode a raw desk datagram into node text, accepting the slashless
-/// `node` address the shared decoder rejects (rosc requires a leading
-/// slash; only `meters/N` has a repair fallback there). Hand-parsed OSC:
-/// `node\0\0\0\0 ,s\0\0 <text>\0...`.
-fn decode_node_text(buf: &[u8]) -> Option<String> {
-    let end = buf.iter().position(|&b| b == 0)?;
-    if &buf[..end] != b"node" {
-        return None;
-    }
-    let mut off = (end + 4) & !3;
-    let tag_end = buf.get(off..)?.iter().position(|&b| b == 0)?;
-    if &buf[off..off + tag_end] != b",s" {
-        return None;
-    }
-    off = (off + tag_end + 4) & !3;
-    let text_end = buf.get(off..)?.iter().position(|&b| b == 0)?;
-    std::str::from_utf8(&buf[off..off + text_end])
-        .ok()
-        .map(str::to_string)
-}
-
-/// `/` node write: single string `"<path-without-slash> <values>"`.
-async fn write_node_text(
-    session: &Arc<OscSession>,
-    path: &str,
-    values: &str,
-) -> anyhow::Result<()> {
-    let bare = path.strip_prefix('/').unwrap_or(path);
-    session
-        .send("/", vec![OscType::String(format!("{bare} {values}"))])
-        .await?;
-    Ok(())
 }
 
 /// Bounded-concurrency fan-out over owned items (no extra executor deps).
@@ -648,367 +574,6 @@ fn action_str<'a>(action: &'a Value, key: &str) -> anyhow::Result<&'a str> {
         .ok_or_else(|| anyhow::anyhow!("x32 native: missing string {key:?}"))
 }
 
-/// Node paths accepted for archive export/import. Anything outside this
-/// allowlist (scene set, routing set, channel/fx preset templates, plus the
-/// `/-show` inventory leaves themselves) is rejected before any write.
-fn node_allowlisted(path: &str) -> bool {
-    if !(path.starts_with('/') && !path.contains("..") && !path.contains('\0')) {
-        return false;
-    }
-    if path.starts_with("/-show/showfile/") || path.starts_with("/config/") {
-        return true;
-    }
-    if tables::SCENE_NODES.contains(&path) || tables::ROUTE_NODES.contains(&path) {
-        return true;
-    }
-    for fam in ["/ch/", "/auxin/", "/fxrtn/", "/bus/", "/mtx/", "/fx/"] {
-        if let Some(rest) = path.strip_prefix(fam) {
-            let suffix = rest.split_once('/').map(|(_, s)| s).unwrap_or(rest);
-            if tables::CH_PRESET_SUFFIXES.contains(&suffix)
-                || tables::FX_PRESET_SUFFIXES.contains(&suffix)
-            {
-                return true;
-            }
-        }
-    }
-    path.starts_with("/headamp/") || path.starts_with("/outputs/") || path.starts_with("/-libs/")
-}
-
-// ---------------------------------------------------------------------------
-// /showdump parsing (real-desk fast path; emulator answers one line)
-// ---------------------------------------------------------------------------
-
-/// Split off one leading `"quoted"` token; returns (token, rest).
-fn take_quoted(s: &str) -> Option<(String, String)> {
-    let s = s.trim_start();
-    let inner = s.strip_prefix('"')?;
-    let end = inner.find('"')?;
-    Some((
-        inner[..end].to_string(),
-        inner[end + 1..].trim_start().to_string(),
-    ))
-}
-
-fn take_int(s: &str) -> Option<(i64, String)> {
-    let s = s.trim_start();
-    let mut len = 0;
-    for (i, ch) in s.char_indices() {
-        if ch == '-' && i == 0 {
-            len += 1;
-        } else if ch.is_ascii_digit() {
-            len += ch.len_utf8();
-        } else {
-            break;
-        }
-    }
-    if len == 0 || (len == 1 && s.starts_with('-')) {
-        return None;
-    }
-    s[..len]
-        .parse::<i64>()
-        .ok()
-        .map(|v| (v, s[len..].trim_start().to_string()))
-}
-
-/// `%110000000` bitmask or plain int.
-fn take_mask(s: &str) -> Option<(u32, String)> {
-    let s = s.trim_start();
-    if let Some(bits) = s.strip_prefix('%') {
-        let mut value: u32 = 0;
-        let mut rest = bits;
-        while let Some(ch) = rest.chars().next() {
-            if ch == '0' || ch == '1' {
-                value = value
-                    .checked_shl(1)
-                    .and_then(|v| v.checked_add(u32::from(ch == '1')))?;
-                rest = &rest[ch.len_utf8()..];
-            } else {
-                break;
-            }
-        }
-        Some((value, rest.trim_start().to_string()))
-    } else {
-        take_int(s).map(|(v, r)| (v as u32, r))
-    }
-}
-
-fn parse_scene_dump(slot: u8, rest: &str) -> Option<NativeSceneSlot> {
-    let (name, rest) = take_quoted(rest)?;
-    let (notes, rest) = take_quoted(&rest)?;
-    let (safes, rest) = take_mask(&rest)?;
-    let (hasdata, _) = take_int(&rest)?;
-    if safes > 0xFF || !(0..=1).contains(&hasdata) {
-        return None;
-    }
-    Some(NativeSceneSlot {
-        slot,
-        name,
-        notes,
-        safes,
-        hasdata: hasdata != 0,
-    })
-}
-
-fn parse_snippet_dump(slot: u8, rest: &str) -> Option<NativeSnippetSlot> {
-    let (name, rest) = take_quoted(rest)?;
-    let (eventtyp, rest) = take_mask(&rest)?;
-    let (channels, rest) = take_int(&rest)?;
-    let (auxbuses, rest) = take_int(&rest)?;
-    let (maingrps, rest) = take_int(&rest)?;
-    let (hasdata, _) = take_int(&rest)?;
-    if eventtyp > 0x1FF_FFFF || maingrps > 0xFFFF || !(0..=1).contains(&hasdata) {
-        return None;
-    }
-    Some(NativeSnippetSlot {
-        slot,
-        name,
-        eventtyp,
-        channels: channels as u32,
-        auxbuses: auxbuses as u32,
-        maingrps: maingrps as u32,
-        hasdata: hasdata != 0,
-    })
-}
-
-fn parse_cue_dump(position: u16, rest: &str) -> Option<NativeCueSlot> {
-    let (numb, rest) = take_int(rest)?;
-    let (name, rest) = take_quoted(&rest)?;
-    let (skip, rest) = take_int(&rest)?;
-    let (scene, rest) = take_int(&rest)?;
-    let (snippet, rest) = take_int(&rest)?;
-    let (miditype, rest) = take_int(&rest)?;
-    let (midichan, rest) = take_int(&rest)?;
-    let (midipara1, rest) = take_int(&rest)?;
-    let (midipara2, _) = take_int(&rest)?;
-    if !(0..=1).contains(&skip) || !(-1..100).contains(&scene) || !(-1..100).contains(&snippet) {
-        return None;
-    }
-    if !(0..=3).contains(&miditype) {
-        return None;
-    }
-    Some(NativeCueSlot {
-        position,
-        numb: numb as i32,
-        name,
-        skip: skip != 0,
-        scene: scene as i32,
-        snippet: snippet as i32,
-        miditype: miditype as i32,
-        midichan: midichan as i32,
-        midipara1: midipara1 as i32,
-        midipara2: midipara2 as i32,
-    })
-}
-
-#[derive(Default)]
-struct ShowDump {
-    scenes: Vec<NativeSceneSlot>,
-    snippets: Vec<NativeSnippetSlot>,
-    cues: Vec<NativeCueSlot>,
-}
-
-fn parse_showdump_line(dump: &mut ShowDump, line: &str) {
-    let line = line.trim().trim_end_matches(['\n', '\r']).trim();
-    let Some((path, rest)) = line.split_once(' ') else {
-        return;
-    };
-    let rest = rest.trim();
-    if let Some(slot) = path.strip_prefix("/-show/showfile/scene/") {
-        if slot.len() == 3 {
-            if let Ok(n) = slot.parse::<u8>() {
-                if let Some(entry) = parse_scene_dump(n, rest) {
-                    dump.scenes.push(entry);
-                }
-            }
-        }
-        return;
-    }
-    if let Some(slot) = path.strip_prefix("/-show/showfile/snippet/") {
-        if slot.len() == 3 {
-            if let Ok(n) = slot.parse::<u8>() {
-                if let Some(entry) = parse_snippet_dump(n, rest) {
-                    dump.snippets.push(entry);
-                }
-            }
-        }
-        return;
-    }
-    if let Some(slot) = path.strip_prefix("/-show/showfile/cue/") {
-        if slot.len() == 3 {
-            if let Ok(n) = slot.parse::<u16>() {
-                if let Some(entry) = parse_cue_dump(n, rest) {
-                    dump.cues.push(entry);
-                }
-            }
-        }
-    }
-}
-
-/// Collect `/showdump` node lines within a bounded window. Same
-/// slashless-`node` decode reason as `read_node_text`: a raw socket.
-async fn collect_showdump(session: &Arc<OscSession>) -> Vec<String> {
-    let Ok(peer) = session.socket().peer_addr() else {
-        return Vec::new();
-    };
-    let Ok(socket) = tokio::net::UdpSocket::bind("0.0.0.0:0").await else {
-        return Vec::new();
-    };
-    let Ok(out) = openfader_transport::osc::encode_message("/showdump", vec![]) else {
-        return Vec::new();
-    };
-    if socket.send_to(&out, peer).await.is_err() {
-        return Vec::new();
-    }
-    let mut lines = Vec::new();
-    let deadline = tokio::time::Instant::now() + SHOWDUMP_WINDOW;
-    let mut buf = vec![0u8; 4096];
-    loop {
-        let now = tokio::time::Instant::now();
-        if now >= deadline {
-            break;
-        }
-        match tokio::time::timeout(deadline - now, socket.recv_from(&mut buf)).await {
-            Ok(Ok((n, _))) => {
-                if let Some(text) = decode_node_text(&buf[..n]) {
-                    lines.push(text);
-                }
-            }
-            _ => break,
-        }
-    }
-    lines
-}
-
-// ---------------------------------------------------------------------------
-// inventory refresh
-// ---------------------------------------------------------------------------
-
-async fn read_scene_slot(session: Arc<OscSession>, slot: u8) -> anyhow::Result<NativeSceneSlot> {
-    let base = format!("/-show/showfile/scene/{slot:03}");
-    let hasdata = read_int(&session, &format!("{base}/hasdata")).await?;
-    anyhow::ensure!(
-        (0..=1).contains(&hasdata),
-        "x32 native: scene hasdata out of range"
-    );
-    let name = read_string(&session, &format!("{base}/name")).await?;
-    let notes = read_string(&session, &format!("{base}/notes")).await?;
-    let safes = read_int(&session, &format!("{base}/safes")).await?;
-    anyhow::ensure!(
-        (0..=0xFF).contains(&safes),
-        "x32 native: scene safes out of range"
-    );
-    Ok(NativeSceneSlot {
-        slot,
-        name,
-        notes,
-        safes: safes as u32,
-        hasdata: hasdata != 0,
-    })
-}
-
-async fn read_snippet_slot(
-    session: Arc<OscSession>,
-    slot: u8,
-) -> anyhow::Result<NativeSnippetSlot> {
-    let base = format!("/-show/showfile/snippet/{slot:03}");
-    let hasdata = read_int(&session, &format!("{base}/hasdata")).await?;
-    anyhow::ensure!(
-        (0..=1).contains(&hasdata),
-        "x32 native: snippet hasdata out of range"
-    );
-    let name = read_string(&session, &format!("{base}/name")).await?;
-    let eventtyp = read_int(&session, &format!("{base}/eventtyp")).await?;
-    let channels = read_int(&session, &format!("{base}/channels")).await?;
-    let auxbuses = read_int(&session, &format!("{base}/auxbuses")).await?;
-    let maingrps = read_int(&session, &format!("{base}/maingrps")).await?;
-    anyhow::ensure!(
-        (0..=0x1FF_FFFF).contains(&eventtyp),
-        "x32 native: snippet eventtyp out of range"
-    );
-    anyhow::ensure!(
-        (0..=0xFFFF).contains(&maingrps),
-        "x32 native: snippet maingrps out of range"
-    );
-    Ok(NativeSnippetSlot {
-        slot,
-        name,
-        eventtyp: eventtyp as u32,
-        channels: channels as u32,
-        auxbuses: auxbuses as u32,
-        maingrps: maingrps as u32,
-        hasdata: hasdata != 0,
-    })
-}
-
-async fn read_lib_slot(
-    session: Arc<OscSession>,
-    bank: String,
-    slot: u8,
-) -> anyhow::Result<NativeLibSlot> {
-    let base = format!("/-libs/{bank}/{slot:03}");
-    let hasdata = read_int(&session, &format!("{base}/hasdata")).await?;
-    anyhow::ensure!(
-        (0..=1).contains(&hasdata),
-        "x32 native: lib hasdata out of range"
-    );
-    let name = read_string(&session, &format!("{base}/name")).await?;
-    let typ = read_int(&session, &format!("{base}/type")).await?;
-    let flags = read_int(&session, &format!("{base}/flags")).await?;
-    Ok(NativeLibSlot {
-        slot,
-        name,
-        typ,
-        flags: flags as u32,
-        hasdata: hasdata != 0,
-    })
-}
-
-async fn read_cue_numb(session: Arc<OscSession>, position: u16) -> Option<(u16, i32)> {
-    let numb = read_int(&session, &format!("/-show/showfile/cue/{position:03}/numb"))
-        .await
-        .ok()?;
-    (numb != 0).then_some((position, numb))
-}
-
-async fn read_cue_slot(session: Arc<OscSession>, position: u16) -> anyhow::Result<NativeCueSlot> {
-    let base = format!("/-show/showfile/cue/{position:03}");
-    let numb = read_int(&session, &format!("{base}/numb")).await?;
-    anyhow::ensure!(numb != 0, "x32 native: cue position empty");
-    let name = read_string(&session, &format!("{base}/name")).await?;
-    let skip = read_int(&session, &format!("{base}/skip")).await?;
-    let scene = read_int(&session, &format!("{base}/scene")).await?;
-    let snippet = read_int(&session, &format!("{base}/bit")).await?;
-    let miditype = read_int(&session, &format!("{base}/miditype")).await?;
-    let midichan = read_int(&session, &format!("{base}/midichan")).await?;
-    let midipara1 = read_int(&session, &format!("{base}/midipara1")).await?;
-    let midipara2 = read_int(&session, &format!("{base}/midipara2")).await?;
-    anyhow::ensure!((0..=1).contains(&skip), "x32 native: cue skip out of range");
-    anyhow::ensure!(
-        (-1..100).contains(&scene),
-        "x32 native: cue scene ref out of range"
-    );
-    anyhow::ensure!(
-        (-1..100).contains(&snippet),
-        "x32 native: cue snippet ref out of range"
-    );
-    anyhow::ensure!(
-        (0..=3).contains(&miditype),
-        "x32 native: cue miditype out of range"
-    );
-    Ok(NativeCueSlot {
-        position,
-        numb,
-        name,
-        skip: skip != 0,
-        scene,
-        snippet,
-        miditype,
-        midichan,
-        midipara1,
-        midipara2,
-    })
-}
-
 // ---------------------------------------------------------------------------
 // X32Driver inherent API (no new struct fields needed; state is passed in)
 // ---------------------------------------------------------------------------
@@ -1065,218 +630,6 @@ impl X32Driver {
         }
     }
 
-    /// Full inventory refresh into `state`. Returns the fresh inventory
-    /// JSON. Fails closed: on any error the previous cache is invalidated
-    /// (revision bumped, `complete=false`) rather than left half-updated.
-    pub async fn native_refresh_into(
-        &self,
-        state: &Mutex<NativeState>,
-        check: Check<'_>,
-    ) -> anyhow::Result<Value> {
-        let session = self.session()?;
-        let _guard = self.writes.lock().await;
-        self.ensure_current(&session)?;
-        anyhow::ensure!(check(), "x32 native: session changed before refresh");
-
-        let show_name = read_string(&session, "/-show/showfile/show/name")
-            .await
-            .ok();
-        anyhow::ensure!(check(), "x32 native: session changed during refresh");
-
-        // Prime with /showdump: on a real desk this carries the whole
-        // cue/scene/snippet dump in one burst; on the emulator it carries
-        // only the show line and leaf reads below stay authoritative.
-        let mut dump = ShowDump::default();
-        for line in collect_showdump(&session).await {
-            parse_showdump_line(&mut dump, &line);
-        }
-        anyhow::ensure!(check(), "x32 native: session changed during refresh");
-
-        // Scenes: dump seeds occupied slots; the rest get a gated leaf
-        // pass. Occupied = hasdata==1 OR a stored name: the independent
-        // emulator sets names while leaving hasdata at 0 (emulator bug),
-        // so names are authoritative there.
-        let mut scenes = dump.scenes;
-        {
-            let known: Vec<u8> = scenes.iter().map(|s| s.slot).collect();
-            let missing: Vec<u8> = (0..SCENE_SLOTS as u8)
-                .filter(|s| !known.contains(s))
-                .collect();
-            let needed: Vec<u8> = fan_out_simple(missing, |slot| {
-                let session = session.clone();
-                async move {
-                    let base = format!("/-show/showfile/scene/{slot:03}");
-                    let hasdata = read_int(&session, &format!("{base}/hasdata"))
-                        .await
-                        .unwrap_or(1);
-                    let named = read_string(&session, &format!("{base}/name"))
-                        .await
-                        .is_ok_and(|n| !n.is_empty());
-                    (slot, hasdata != 0 || named)
-                }
-            })
-            .await
-            .into_iter()
-            .filter(|(_, occupied)| *occupied)
-            .map(|(slot, _)| slot)
-            .collect();
-            anyhow::ensure!(check(), "x32 native: session changed during refresh");
-            let mut extra: Vec<NativeSceneSlot> = fan_out_simple(needed, |slot| {
-                let session = session.clone();
-                async move { read_scene_slot(session, slot).await.ok() }
-            })
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
-            scenes.append(&mut extra);
-            scenes.sort_by_key(|s| s.slot);
-        }
-
-        let mut snippets = dump.snippets;
-        {
-            let known: Vec<u8> = snippets.iter().map(|s| s.slot).collect();
-            let missing: Vec<u8> = (0..SNIPPET_SLOTS as u8)
-                .filter(|s| !known.contains(s))
-                .collect();
-            let needed: Vec<u8> = fan_out_simple(missing, |slot| {
-                let session = session.clone();
-                async move {
-                    let base = format!("/-show/showfile/snippet/{slot:03}");
-                    let hasdata = read_int(&session, &format!("{base}/hasdata"))
-                        .await
-                        .unwrap_or(1);
-                    let named = read_string(&session, &format!("{base}/name"))
-                        .await
-                        .is_ok_and(|n| !n.is_empty());
-                    (slot, hasdata != 0 || named)
-                }
-            })
-            .await
-            .into_iter()
-            .filter(|(_, occupied)| *occupied)
-            .map(|(slot, _)| slot)
-            .collect();
-            anyhow::ensure!(check(), "x32 native: session changed during refresh");
-            let mut extra: Vec<NativeSnippetSlot> = fan_out_simple(needed, |slot| {
-                let session = session.clone();
-                async move { read_snippet_slot(session, slot).await.ok() }
-            })
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
-            snippets.append(&mut extra);
-            snippets.sort_by_key(|s| s.slot);
-        }
-
-        // Cues: dump seeds; otherwise scan numb (0 = empty) then details.
-        let mut cues = dump.cues;
-        {
-            let known: Vec<u16> = cues.iter().map(|c| c.position).collect();
-            let missing: Vec<u16> = (0..CUE_POSITIONS as u16)
-                .filter(|p| !known.contains(p))
-                .collect();
-            let occupied: Vec<u16> = fan_out_simple(missing, |position| {
-                let session = session.clone();
-                async move { read_cue_numb(session, position).await }
-            })
-            .await
-            .into_iter()
-            .flatten()
-            .map(|(position, _)| position)
-            .collect();
-            anyhow::ensure!(check(), "x32 native: session changed during refresh");
-            let mut extra: Vec<NativeCueSlot> = fan_out_simple(occupied, |position| {
-                let session = session.clone();
-                async move { read_cue_slot(session, position).await.ok() }
-            })
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
-            cues.append(&mut extra);
-            cues.sort_by_key(|c| c.position);
-        }
-
-        // Libraries: probe support first (the emulator never answers
-        // /-libs; a real desk does). Silent probe => skip, report gap.
-        let libs_supported = tokio::time::timeout(
-            Duration::from_millis(500),
-            session.query_timeout("/-libs/ch/001/hasdata", LEAF_TIMEOUT),
-        )
-        .await
-        .is_ok();
-        let mut lib_ch = Vec::new();
-        let mut lib_fx = Vec::new();
-        let mut lib_r = Vec::new();
-        let mut lib_mon = Vec::new();
-        if libs_supported {
-            for bank in ["ch", "fx", "r", "mon"] {
-                let occupied: Vec<u8> = fan_out_simple((1..=LIB_SLOTS as u8).collect(), |slot| {
-                    let session = session.clone();
-                    async move {
-                        let base = format!("/-libs/{bank}/{slot:03}");
-                        let hasdata = read_int(&session, &format!("{base}/hasdata"))
-                            .await
-                            .unwrap_or(1);
-                        let named = read_string(&session, &format!("{base}/name"))
-                            .await
-                            .is_ok_and(|n| !n.is_empty());
-                        (slot, hasdata != 0 || named)
-                    }
-                })
-                .await
-                .into_iter()
-                .filter(|(_, occupied)| *occupied)
-                .map(|(slot, _)| slot)
-                .collect();
-                anyhow::ensure!(check(), "x32 native: session changed during refresh");
-                let entries: Vec<NativeLibSlot> = fan_out_simple(occupied, |slot| {
-                    let session = session.clone();
-                    async move { read_lib_slot(session, bank.to_string(), slot).await.ok() }
-                })
-                .await
-                .into_iter()
-                .flatten()
-                .collect();
-                match bank {
-                    "ch" => lib_ch = entries,
-                    "fx" => lib_fx = entries,
-                    "r" => lib_r = entries,
-                    _ => lib_mon = entries,
-                }
-            }
-        }
-
-        anyhow::ensure!(check(), "x32 native: session changed during refresh");
-        self.ensure_current(&session)?;
-        {
-            let mut cache = state
-                .lock()
-                .map_err(|_| anyhow::anyhow!("x32 native: state lock poisoned"))?;
-            let revision = cache.revision + 1;
-            *cache = NativeState {
-                owner: Some(Arc::downgrade(&session)),
-                revision,
-                generation: revision,
-                connected: true,
-                complete: true,
-                error: None,
-                show_name,
-                scenes,
-                snippets,
-                cues,
-                libs_supported: Some(libs_supported),
-                lib_ch,
-                lib_fx,
-                lib_r,
-                lib_mon,
-            };
-            Ok(cache.inventory_json(Some(&session)))
-        }
-    }
-
     /// Guarded native operation dispatch. `expected` must equal the current
     /// inventory view (session/identity aware); every mutating op re-reads
     /// its target leaf first, correlates the desk status reply, then
@@ -1313,9 +666,18 @@ impl X32Driver {
             );
             match self.native_refresh_into(state, check).await {
                 Ok(inventory) => {
+                    let complete = inventory["complete"] == true;
+                    let message = if complete {
+                        "Native show + library inventory read from the mixer.".to_string()
+                    } else {
+                        inventory["error"]
+                            .as_str()
+                            .unwrap_or("Native inventory incomplete; observed rows are partial.")
+                            .to_string()
+                    };
                     return Ok(openfader_core::native_library::receipt(
-                        "confirmed",
-                        "Native show + library inventory read from the mixer.",
+                        if complete { "confirmed" } else { "uncertain" },
+                        message,
                         inventory,
                     ));
                 }
@@ -2058,20 +1420,49 @@ impl X32Driver {
         check: Check<'_>,
         dispatched: &mut bool,
     ) -> anyhow::Result<(&'static str, String)> {
-        // Emulator-verified shape: /copy ,siii libchan src dst mask.
+        // Protocol reference v4.09-02, dataset operations: /copy ,sii
+        // libchan source-index destination-index. These are library slots,
+        // not live channel indices; no processing mask is documented.
         let src = action_i64(action, "src")?;
         let dst = action_i64(action, "dst")?;
-        let mask = action_i64(action, "mask")?;
-        anyhow::ensure!((0..32).contains(&src), "x32 native: copy source 0..31");
-        anyhow::ensure!((0..32).contains(&dst), "x32 native: copy destination 0..31");
-        anyhow::ensure!((1..=255).contains(&mask), "x32 native: copy mask 1..255");
-        let slots = expected["libs"]["ch"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("x32 native: refresh libraries first"))?;
         anyhow::ensure!(
-            slots.iter().any(|s| s["slot"] == src + 1),
-            "x32 native: refresh libraries first"
+            (0..LIB_SLOTS as i64).contains(&src),
+            "x32 native: copy source preset index 0..99"
         );
+        anyhow::ensure!(
+            (0..LIB_SLOTS as i64).contains(&dst),
+            "x32 native: copy destination preset index 0..99"
+        );
+        anyhow::ensure!(
+            src != dst,
+            "x32 native: copy source and destination must differ"
+        );
+        anyhow::ensure!(
+            action.get("mask").is_none(),
+            "x32 native: preset copy has no mask; reopen the copy form"
+        );
+        let source = self.expected_lib(expected, "ch", (src + 1) as u8)?;
+        let source_name = source["name"].as_str().unwrap_or("");
+        let source_leaf = format!("/-libs/ch/{:03}/name", src + 1);
+        anyhow::ensure!(
+            read_string(session, &source_leaf).await? == source_name,
+            "x32 native: source preset changed; refresh first"
+        );
+        let destination_leaf = format!("/-libs/ch/{:03}/name", dst + 1);
+        let destination_name = read_string(session, &destination_leaf).await?;
+        if let Ok(destination) = self.expected_lib(expected, "ch", (dst + 1) as u8) {
+            anyhow::ensure!(
+                destination["name"].as_str() == Some(destination_name.as_str()),
+                "x32 native: destination preset changed; refresh first"
+            );
+        } else {
+            anyhow::ensure!(
+                (destination_name.is_empty() || destination_name == "-")
+                    && read_int(session, &format!("/-libs/ch/{:03}/hasdata", dst + 1)).await? == 0,
+                "x32 native: destination preset became occupied; refresh first"
+            );
+        }
+        anyhow::ensure!(check(), "x32 native: session changed before copy");
         *dispatched = true;
         dataset_op(
             session,
@@ -2080,7 +1471,6 @@ impl X32Driver {
                 OscType::String("libchan".into()),
                 OscType::Int(src as i32),
                 OscType::Int(dst as i32),
-                OscType::Int(mask as i32),
             ],
             "libchan",
             check,
@@ -2091,252 +1481,4 @@ impl X32Driver {
             "Desk accepted channel-preset copy (status 1); its contents were not independently verified. Refresh before further operations.".to_string(),
         ))
     }
-}
-
-// ---------------------------------------------------------------------------
-// local archives (machine-readable; NOT desk USB images)
-// ---------------------------------------------------------------------------
-
-/// Validate a local archive document without touching the mixer.
-pub fn validate_archive(archive: &Value) -> anyhow::Result<Value> {
-    anyhow::ensure!(
-        archive["schema"] == ARCHIVE_SCHEMA,
-        "x32 native: unknown archive schema"
-    );
-    let kind = archive["kind"].as_str().unwrap_or("");
-    let nodes = archive["nodes"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("x32 native: archive has no nodes array"))?;
-    anyhow::ensure!(
-        !nodes.is_empty() && nodes.len() <= 4096,
-        "x32 native: archive node count out of bounds"
-    );
-    let allow: &[&str] = match kind {
-        "scene" => tables::SCENE_NODES,
-        "routing" => tables::ROUTE_NODES,
-        _ => anyhow::bail!("x32 native: unknown archive kind {kind:?} (scene|routing)"),
-    };
-    for node in nodes {
-        let path = node["path"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("x32 native: archive node without path"))?;
-        let text = node["text"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("x32 native: archive node without text"))?;
-        anyhow::ensure!(
-            allow.contains(&path) && node_allowlisted(path),
-            "x32 native: archive path {path:?} outside the {kind} allowlist"
-        );
-        anyhow::ensure!(
-            text.len() <= 2048 && !text.contains('\0'),
-            "x32 native: archive node text out of bounds"
-        );
-    }
-    Ok(json!({
-        "schema": ARCHIVE_SCHEMA, "kind": kind,
-        "slot": archive.get("slot").cloned().unwrap_or(Value::Null),
-        "name": archive.get("name").cloned().unwrap_or(Value::Null),
-        "nodes": nodes.len(),
-    }))
-}
-
-impl X32Driver {
-    async fn export_archive_into(
-        &self,
-        session: &Arc<OscSession>,
-        state: &Mutex<NativeState>,
-        action: &Value,
-        expected: &Value,
-        check: Check<'_>,
-    ) -> anyhow::Result<Value> {
-        let kind = action_str(action, "kind")?;
-        let (paths, slot): (&[&str], Value) = match kind {
-            "scene" => {
-                let slot = scene_slot(action_i64(action, "slot")?)?;
-                (tables::SCENE_NODES, json!(slot))
-            }
-            "routing" => (tables::ROUTE_NODES, Value::Null),
-            _ => anyhow::bail!("x32 native: unknown export kind {kind:?} (scene|routing)"),
-        };
-        anyhow::ensure!(
-            valid_export_expectation(expected),
-            "x32 native: refresh first"
-        );
-        let _guard = self.writes.lock().await;
-        self.ensure_current(session)?;
-        anyhow::ensure!(check(), "x32 native: session changed before export");
-        // Bounded concurrent node reads; failures are collected, never hidden.
-        let mut nodes = Vec::new();
-        let mut failed: Vec<String> = Vec::new();
-        for (path, got) in fan_out_simple(paths.to_vec(), |path: &str| {
-            let session = session.clone();
-            async move { (path.to_string(), read_node_text(&session, path).await) }
-        })
-        .await
-        {
-            match got {
-                Ok(text) => nodes.push(json!({"path": path, "text": text})),
-                Err(_) => failed.push(path),
-            }
-        }
-        anyhow::ensure!(check(), "x32 native: session changed during export");
-        self.ensure_current(session)?;
-        let archive = json!({
-            "schema": ARCHIVE_SCHEMA, "kind": kind, "slot": slot,
-            "name": action.get("name").cloned().unwrap_or(Value::Null),
-            "nodes": nodes,
-        });
-        let status = if failed.is_empty() {
-            "confirmed"
-        } else {
-            "uncertain"
-        };
-        let message = if failed.is_empty() {
-            format!(
-                "Exported {} node lines locally. This is an OpenFader-side copy, not a desk USB file.",
-                nodes.len()
-            )
-        } else {
-            format!(
-                "Partial export: {} node lines captured, {} unreadable ({}). Not a desk USB file; re-export on a reliable link before relying on it.",
-                nodes.len(),
-                failed.len(),
-                failed
-                    .iter()
-                    .take(8)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        };
-        let mut result =
-            openfader_core::native_library::receipt(status, message, self.inventory_or_null(state));
-        result["archive"] = archive;
-        if !failed.is_empty() {
-            result["unreadable"] = json!(failed);
-        }
-        Ok(result)
-    }
-
-    async fn import_archive_into(
-        &self,
-        session: &Arc<OscSession>,
-        state: &Mutex<NativeState>,
-        action: &Value,
-        expected: &Value,
-        check: Check<'_>,
-    ) -> anyhow::Result<Value> {
-        let archive = action
-            .get("archive")
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("x32 native: missing archive"))?;
-        let summary = validate_archive(&archive)?;
-        anyhow::ensure!(
-            valid_export_expectation(expected),
-            "x32 native: refresh first"
-        );
-        let nodes = archive["nodes"].as_array().cloned().unwrap_or_default();
-        let _guard = self.writes.lock().await;
-        self.ensure_current(session)?;
-        anyhow::ensure!(check(), "x32 native: session changed before import");
-        // Phase 1: back up current values of every affected path. Fail
-        // closed: without a complete backup there is no safe rollback, so
-        // nothing is written.
-        let mut backup = Vec::new();
-        for (path, got) in fan_out_simple(nodes.clone(), |node: Value| {
-            let session = session.clone();
-            async move {
-                let path = node["path"].as_str().unwrap_or("").to_string();
-                let got = read_node_text(&session, &path).await;
-                (path, got)
-            }
-        })
-        .await
-        {
-            match got {
-                Ok(text) => backup.push(json!({"path": path, "text": text})),
-                Err(error) => {
-                    anyhow::bail!(
-                        "Import refused: current value of {path:?} unreadable ({error:#}); no safe rollback exists so nothing was written."
-                    );
-                }
-            }
-        }
-        anyhow::ensure!(check(), "x32 native: session changed during backup");
-        self.ensure_current(session)?;
-        // Phase 2: write each node line sequentially. A mid-sequence
-        // failure stops the sequence; progress (applied vs pending) plus
-        // the backup captured above are reported so the caller can roll
-        // back by re-importing it. Node writes are fire-and-forget on this
-        // wire, so a completed import is still reported uncertain.
-        let mut applied: Vec<String> = Vec::new();
-        let mut failed: Vec<String> = Vec::new();
-        for node in &nodes {
-            let path = node["path"].as_str().unwrap_or("");
-            let text = node["text"].as_str().unwrap_or("");
-            // Node text is `/<path> <values>\n`; strip our own echo prefix
-            // and trailing newline before sending the value half.
-            let values = text
-                .strip_prefix(path)
-                .unwrap_or(text)
-                .trim_start()
-                .trim_end_matches(['\n', '\r'])
-                .to_string();
-            if !check() || self.ensure_current(session).is_err() {
-                failed.push(format!("{path} (session changed; stopped)"));
-                break;
-            }
-            match write_node_text(session, path, &values).await {
-                Ok(()) => applied.push(path.to_string()),
-                Err(error) => {
-                    failed.push(format!("{path} ({error:#})"));
-                    break;
-                }
-            }
-        }
-        // Phase 3: spot-verify the first, middle and last applied paths.
-        let mut unverified: Vec<String> = Vec::new();
-        if !applied.is_empty() {
-            for path in [
-                applied.first().cloned().unwrap_or_default(),
-                applied.get(applied.len() / 2).cloned().unwrap_or_default(),
-                applied.last().cloned().unwrap_or_default(),
-            ] {
-                if path.is_empty() {
-                    continue;
-                }
-                if read_node_text(session, &path).await.is_err() {
-                    unverified.push(path);
-                }
-            }
-        }
-        if let Ok(mut cache) = state.lock() {
-            cache.revision += 1;
-            cache.generation = cache.revision;
-            cache.complete = false;
-        }
-        let mut result = openfader_core::native_library::receipt(
-            "uncertain",
-            format!(
-                "Import attempted on {} paths: {} writes dispatched, {} failed, {} spot-reads unverified. Node writes are fire-and-forget on this wire; nothing here proves audio state. Roll back by importing the bundled backup.",
-                nodes.len(),
-                applied.len(),
-                failed.len(),
-                unverified.len(),
-            ),
-            self.inventory_or_null(state),
-        );
-        result["progress"] = json!({
-            "attempted": nodes.len(), "applied": applied.len(),
-            "failed": failed, "unverified": unverified,
-        });
-        result["backup"] = json!({"schema": ARCHIVE_SCHEMA, "kind": summary["kind"],
-            "nodes": backup, "note": "Pre-import values. Re-import to roll back."});
-        Ok(result)
-    }
-}
-
-fn valid_export_expectation(expected: &Value) -> bool {
-    expected.get("provider") == Some(&json!("x32"))
-        && expected.get("complete") == Some(&json!(true))
 }
