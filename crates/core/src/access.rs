@@ -375,6 +375,10 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.set_mute_group(group, muted).await
     }
 
+    async fn get_mute_group_name(&self, group: u8) -> anyhow::Result<String> {
+        self.inner.get_mute_group_name(group).await
+    }
+
     async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
         self.inner.get_mute_group(group).await
     }

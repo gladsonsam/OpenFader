@@ -870,6 +870,9 @@ mixin _AppStoreChannel on _AppStoreContext {
           : null;
 
   @override
+  String muteGroupLabel(int g) => engine.muteGroupLabel(g);
+
+  @override
   bool? muteGroupAssigned(int g) => engine.muteGroupAssign['$_channel:$g'];
 
   @override

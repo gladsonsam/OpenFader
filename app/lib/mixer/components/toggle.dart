@@ -92,5 +92,8 @@ class MixerToggle extends StatelessWidget {
                                             color: Colors.transparent)),
                               ),
                               child:
-                                  ExcludeSemantics(child: Text(label)))))))));
+                                  ExcludeSemantics(
+                                      child: Text(label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis)))))))));
 }

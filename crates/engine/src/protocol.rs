@@ -1228,6 +1228,11 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
+    /// Native mute-group label, independent of master mute availability.
+    MuteGroupName {
+        group: u8,
+        name: String,
+    },
     /// R2 mute-group-membership echo (`mute_group_assign`).
     MuteGroupAssign {
         ch: u16,
@@ -1360,6 +1365,7 @@ impl Event {
             Event::Subgroup { .. } => "subgroup",
             Event::SubgroupAssign { .. } => "subgroup_assign",
             Event::MuteGroup { .. } => "mute_group",
+            Event::MuteGroupName { .. } => "mute_group_name",
             Event::MuteGroupAssign { .. } => "mute_group_assign",
             Event::Main { .. } => "main",
             Event::Solo { .. } => "solo",

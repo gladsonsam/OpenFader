@@ -442,6 +442,12 @@ impl MixerDriver for Dl32sDriver {
         MUTE_GROUP_COUNT as u8
     }
 
+    async fn get_mute_group_name(&self, group: u8) -> anyhow::Result<String> {
+        let group = Self::dl_check_mute_group(group)?;
+        self.verified_name(openfader_transport::mackie::mute_group_name_slot(group)?)
+            .await
+    }
+
     async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
         let g = Self::dl_check_mute_group(group)?;
         self.set_mute_group(g, muted).await

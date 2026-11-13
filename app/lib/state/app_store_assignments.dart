@@ -72,7 +72,7 @@ mixin _AppStoreAssignments on _AppStoreContext {
           ChannelAssignmentChoice('subgroup:$g', 'Subgroup ${g + 1}'),
       for (var g = 0; g < engine.muteGroupCount; g++)
         if (engine.muteGroupAssign.containsKey('${target.channel}:$g'))
-          ChannelAssignmentChoice('mute_group:$g', 'Mute group ${g + 1}'),
+          ChannelAssignmentChoice('mute_group:$g', engine.muteGroupLabel(g)),
     ];
   }
 

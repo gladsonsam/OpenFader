@@ -502,6 +502,13 @@ class EngineState {
   Map<int, double> subgroupFaders = {};
   Map<int, bool> subgroupMuted = {};
   Map<int, bool> muteGroups = {};
+  final Map<int, String> muteGroupNames = {};
+
+  String muteGroupLabel(int group) {
+    final name = muteGroupNames[group]?.trim();
+    return name == null || name.isEmpty ? 'Mute group ${group + 1}' : name;
+  }
+
   Map<String, bool> subgroupAssign = {};
   Map<String, bool> muteGroupAssign = {};
   Map<int, String> locks = {};
@@ -625,6 +632,7 @@ class EngineState {
     subgroupAssign.clear();
     muteGroupAssign.clear();
     muteGroups.clear();
+    muteGroupNames.clear();
     muteGroupCount = 0;
     subgroupCount = 0;
     solos.clear();
@@ -991,6 +999,14 @@ class EngineState {
         final g = (e['group'] as num?)?.toInt();
         if (g == null) return false;
         muteGroups[g] = (e['muted'] as bool?) ?? false;
+        return true;
+      case 'mute_group_name':
+        final g = (e['group'] as num?)?.toInt();
+        final name = e['name'];
+        if (g == null || g < 0 || g >= muteGroupCount || name is! String) {
+          return false;
+        }
+        muteGroupNames[g] = name;
         return true;
       case 'mute_group_assign':
         final ch = (e['ch'] as num?)?.toInt();

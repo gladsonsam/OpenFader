@@ -179,6 +179,7 @@ class MixerController extends ChangeNotifier {
 
   int get pageCount => (_effectiveStrips.length / effectivePageSize).ceil();
   int get muteGroupCount => store.engine.muteGroupCount;
+  String muteGroupLabel(int group) => store.engine.muteGroupLabel(group);
   bool get hasSolo => store.hasSolo;
 
   /// Per-strip control notifiers (passthrough to the store): strips listen

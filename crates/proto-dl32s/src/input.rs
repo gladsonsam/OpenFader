@@ -241,15 +241,23 @@ pub(super) fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
         PushEvent::Names { pairs } => pairs
             .into_iter()
             .filter_map(|(slot, name)| {
-                (0..crate::strips::STRIP_COUNT)
-                    .find(|i| crate::strips::name_slot(StripId(*i as u16)).ok() == Some(slot))
-                    .map(|i| (i, name))
-            })
-            .map(|(i, name)| ParamUpdate {
-                received_at,
-                strip: StripId(i as u16),
-                param: "name".to_string(),
-                value: ParamValue::Text(name),
+                let group = (0..MUTE_GROUP_COUNT).find(|group| {
+                    openfader_transport::mackie::mute_group_name_slot(group + 1).ok() == Some(slot)
+                });
+                let (index, param) = if let Some(group) = group {
+                    (group as u16, "_mute_group_name")
+                } else {
+                    let strip = (0..crate::strips::STRIP_COUNT).find(|i| {
+                        crate::strips::name_slot(StripId(*i as u16)).ok() == Some(slot)
+                    })?;
+                    (strip as u16, "name")
+                };
+                Some(ParamUpdate {
+                    received_at,
+                    strip: StripId(index),
+                    param: param.to_string(),
+                    value: ParamValue::Text(name),
+                })
             })
             .collect(),
         PushEvent::SnapshotRecall(_) | PushEvent::SnapshotRename { .. } => Vec::new(),

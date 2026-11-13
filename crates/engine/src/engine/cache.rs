@@ -201,7 +201,16 @@ impl Engine {
         if changed && self.active_drv().routing_param_ids().contains(&param) {
             self.routing_dirty.store(true, Ordering::Release);
         }
-        let event = if param == "_mute_group" {
+        let event = if param == "_mute_group_name" {
+            if let ParamValue::Text(name) = pv {
+                Some(Event::MuteGroupName {
+                    group: ch as u8,
+                    name: name.clone(),
+                })
+            } else {
+                None
+            }
+        } else if param == "_mute_group" {
             pv_bool(pv).map(|muted| Event::MuteGroup {
                 group: ch as u8,
                 muted,
@@ -379,6 +388,11 @@ impl Engine {
                     if let Some(v) = fresh(ch, "mute").and_then(|v| v.as_bool()) {
                         *muted = v;
                     }
+                }
+            }
+            Event::MuteGroupName { group, name } => {
+                if let Some(Value::String(v)) = fresh(*group as u16, "_mute_group_name") {
+                    *name = v;
                 }
             }
             Event::MuteGroup { group, muted, .. } => {
