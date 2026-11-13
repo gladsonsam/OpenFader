@@ -298,6 +298,9 @@ impl Engine {
             }
         }
         for group in 0..mute_groups {
+            if let Ok(name) = drv.get_mute_group_name(group).await {
+                out.push(Event::MuteGroupName { group, name });
+            }
             let muted = drv.get_mute_group(group).await.ok();
             if let Some(muted) = muted {
                 out.push(Event::MuteGroup {

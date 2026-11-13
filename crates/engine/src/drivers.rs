@@ -569,6 +569,7 @@ pub trait DynDriver: Send + Sync {
         -> anyhow::Result<()>;
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool>;
     async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()>;
+    async fn get_mute_group_name(&self, group: u8) -> anyhow::Result<String>;
     async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool>;
     async fn set_mute_group_assign(
         &self,
@@ -1402,6 +1403,9 @@ macro_rules! impl_dyn_driver {
         }
         async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
             MixerDriver::set_mute_group(self, group, muted).await
+        }
+        async fn get_mute_group_name(&self, group: u8) -> anyhow::Result<String> {
+            MixerDriver::get_mute_group_name(self, group).await
         }
         async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
             MixerDriver::get_mute_group(self, group).await

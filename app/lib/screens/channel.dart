@@ -153,6 +153,7 @@ abstract class ChannelStore extends ChangeNotifier
       'Destination control unavailable.';
   int get subgroupCount;
   int get muteGroupCount;
+  String muteGroupLabel(int g);
   bool? subgroupAssigned(int g);
   bool? muteGroupAssigned(int g);
   bool get locked;

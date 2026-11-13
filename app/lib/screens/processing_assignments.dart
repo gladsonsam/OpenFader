@@ -69,7 +69,7 @@ class _InputAssignments extends StatelessWidget {
           for (var g = 0; g < store.muteGroupCount; g++)
             _ProcessingButton(
                 fontSize: assignmentFont,
-                label: 'Mute ${g + 1}',
+                label: store.muteGroupLabel(g),
                 active: store.muteGroupAssigned(g) == true,
                 onTap: store.muteGroupAssigned(g) == null
                     ? null
@@ -97,7 +97,8 @@ class _InputAssignments extends StatelessWidget {
         if (store.dcaAssigned(g) == true)
           _summaryLabel(controlGroup, store.dcaGroupLabel(g)),
       for (var g = 0; g < store.muteGroupCount; g++)
-        if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}',
+        if (store.muteGroupAssigned(g) == true)
+          _summaryLabel('Mute', store.muteGroupLabel(g)),
       for (var g = 0; g < store.viewGroupCount; g++)
         if (store.viewGroupAssigned(g) == true)
           _summaryLabel('View', store.viewGroupLabel(g))

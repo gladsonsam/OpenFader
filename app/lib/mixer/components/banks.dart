@@ -185,7 +185,8 @@ class MixerBanks extends StatelessWidget {
                         child: Column(children: [
                           for (var g = 0; g < count; g++)
                             button(
-                                '${g + 1}', () => controller.toggleMuteGroup(g),
+                                controller.muteGroupLabel(g),
+                                () => controller.toggleMuteGroup(g),
                                 active: controller.store.engine.muteGroups[g] ==
                                     true),
                         ])),
@@ -350,10 +351,11 @@ Future<void> showMixerMuteGroups(
                       ConsoleActionGroup(children: [
                         for (var g = 0; g < controller.muteGroupCount; g++)
                           SizedBox(
-                              width: 88,
+                              width: 140,
                               child: MixerToggle(
-                                  label: '${g + 1}',
-                                  channelName: 'Mute group',
+                                  fontSize: 14,
+                                  label: controller.muteGroupLabel(g),
+                                  channelName: 'Mute group ${g + 1}',
                                   on: controller.store.engine.muteGroups[g] ??
                                       false,
                                   activeColor: ConsolePalette.of(context).mute,
@@ -584,7 +586,8 @@ class _GroupMembershipState extends State<_GroupMembership> {
               group < widget.controller.muteGroupCount;
               group++) {
             choices.putIfAbsent(
-                'mute_group:$group', () => 'Mute group ${group + 1}');
+                'mute_group:$group',
+                () => widget.controller.muteGroupLabel(group));
           }
           final id = choices.containsKey(selected)
               ? selected
