@@ -678,6 +678,12 @@ pub trait MixerDriver: Send + Sync {
     fn mute_group_count(&self) -> u8 {
         0
     }
+    /// Provider's native mute-group name, including a known empty name.
+    /// Missing names remain unsupported; callers may use numbered labels.
+    async fn get_mute_group_name(&self, group: u8) -> anyhow::Result<String> {
+        let _ = group;
+        anyhow::bail!("{}: mute group names not supported", self.name())
+    }
     async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
         let _ = (group, muted);
         anyhow::bail!("{}: mute groups not supported", self.name())
