@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ui/console.dart';
+import '../core/provider_diagnostics.dart';
+import 'debug_diagnostics.dart';
 
 class DebugSection {
   final String title;
@@ -16,6 +18,8 @@ class DebugSection {
 abstract class DebugStore extends ChangeNotifier {
   int get tick;
   List<DebugSection> get sections;
+  ProviderDiagnostics? get diagnostics;
+  void requestDiagnostics(int offset);
   List<double> get spark; // meter levels 0..1
 
   Future<void> refresh();
@@ -90,6 +94,11 @@ class _U4DebugPageState extends State<U4DebugPage> {
                           levels: store.spark,
                           palette: ConsolePalette.of(context)),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  DebugDiagnostics(
+                    snapshot: store.diagnostics,
+                    onPage: store.requestDiagnostics,
                   ),
                   const SizedBox(height: 10),
                   for (final s in store.sections) ...[

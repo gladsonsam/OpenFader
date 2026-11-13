@@ -201,37 +201,7 @@ impl Engine {
         if changed && self.active_drv().routing_param_ids().contains(&param) {
             self.routing_dirty.store(true, Ordering::Release);
         }
-        let event = if param == "_mute_group_name" {
-            if let ParamValue::Text(name) = pv {
-                Some(Event::MuteGroupName {
-                    group: ch as u8,
-                    name: name.clone(),
-                })
-            } else {
-                None
-            }
-        } else if param == "_mute_group" {
-            pv_bool(pv).map(|muted| Event::MuteGroup {
-                group: ch as u8,
-                muted,
-                key: Some(format!("mgroup/{:02}", ch + 1)),
-            })
-        } else if let Some(group) = param.strip_prefix("_mg").and_then(|s| s.parse::<u8>().ok()) {
-            pv_bool(pv).map(|member| Event::MuteGroupAssign {
-                ch,
-                group: group - 1,
-                member,
-                key: self.active_strip_key(ch),
-            })
-        } else if param == "solo" {
-            pv_bool(pv).map(|soloed| Event::Solo {
-                ch,
-                soloed,
-                key: self.active_strip_key(ch),
-            })
-        } else {
-            None
-        };
+        let event = self.group_update_event(ch, param, pv);
         if let Some(event) = event {
             sync.typed.insert(format!("{ch}/{param}"), event.clone());
             if changed {
@@ -309,6 +279,7 @@ impl Engine {
                 .and_then(|_| cache.get(&ch)?.get(id))
                 .cloned()
         };
+        self.reconcile_group_event(&mut event, &fresh);
         match &mut event {
             Event::DestinationControls { epoch, controls } => {
                 if *epoch == self.connection_gen.load(Ordering::Acquire) {

@@ -13,6 +13,8 @@ use tokio::task::JoinHandle;
 
 mod controls;
 mod device;
+mod diagnostics;
+pub use diagnostics::ReceivedState;
 mod files;
 mod receive;
 mod values;
@@ -51,6 +53,7 @@ struct ValueStore {
 /// Channel-name slots with own-write provenance under ONE lock (same
 /// atomicity contract as [`ValueStore`]).
 struct NameStore {
+    received: HashMap<u32, String>,
     names: HashMap<u32, String>,
     pending: HashSet<u32>,
 }
@@ -59,6 +62,9 @@ struct Caches {
     values: StdMutex<ValueStore>,
     type2_values: StdMutex<ValueStore>,
     names: StdMutex<NameStore>,
+    extra_values: StdMutex<std::collections::BTreeMap<(u8, u32), u32>>,
+    meter_blocks: StdMutex<std::collections::BTreeMap<u32, ValueBlock>>,
+    info_frames: StdMutex<std::collections::BTreeMap<(u8, u8, u32), Message>>,
     snapshot_names: StdMutex<HashMap<u32, String>>,
     current_snapshot: StdMutex<Option<u32>>,
     /// Push-only native snapshot record (verified desk evidence): written
@@ -115,7 +121,11 @@ impl Caches {
         Self {
             values: StdMutex::new(ValueStore::default()),
             type2_values: StdMutex::new(ValueStore::default()),
+            extra_values: StdMutex::default(),
+            meter_blocks: StdMutex::default(),
+            info_frames: StdMutex::default(),
             names: StdMutex::new(NameStore {
+                received: HashMap::new(),
                 names: HashMap::new(),
                 pending: HashSet::new(),
             }),

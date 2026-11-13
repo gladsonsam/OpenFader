@@ -29,6 +29,8 @@ class Cmds {
   static String disconnect() => '{"cmd":"disconnect"}';
   static String info() => '{"cmd":"info"}';
   static String stats() => '{"cmd":"stats"}';
+  static String diagnostics([int offset = 0]) =>
+      jsonEncode({'cmd': 'diagnostics', 'offset': offset});
   static String hello([bool binaryMeters = true, bool? taps]) => taps == null
       ? '{"cmd":"hello","binary_meters":$binaryMeters}'
       : '{"cmd":"hello","binary_meters":$binaryMeters,"taps":$taps}';

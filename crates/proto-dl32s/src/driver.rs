@@ -601,15 +601,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
-        let addr = self.addr.lock().await.clone().unwrap_or_default();
-        Ok(MixerInfo {
-            name: String::new(),
-            model: "DL32S".into(),
-            // GENERAL_INFO model/firmware strings were never decoded from the
-            // wire; report the driver identity rather than guessing.
-            firmware: "unparsed".into(),
-            addr,
-        })
+        self.read_identity().await
     }
 
     /// Only the verified pre-fader input tap: the first 32 meter words are

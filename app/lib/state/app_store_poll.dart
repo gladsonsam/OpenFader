@@ -252,6 +252,7 @@ mixin _AppStorePoll on _AppStoreContext {
         final values = e['values'];
         if (values is! Map || values.isEmpty) return false;
         return values.keys.every((k) => k is String && _isHotControlField(k));
+      case 'master':
       case 'main':
       case 'bus':
       case 'subgroup':
