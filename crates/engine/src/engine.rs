@@ -43,6 +43,7 @@ mod destinations;
 mod discovery;
 mod fx;
 mod hydration;
+mod group_updates;
 mod library_status;
 mod library_transactions;
 mod link;

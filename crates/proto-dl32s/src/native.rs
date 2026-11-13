@@ -20,6 +20,7 @@ pub(super) struct NativeCache {
     pub(super) library_show_info: Option<Vec<u8>>,
     pub(super) library_index: Option<serde_json::Value>,
     pub(super) view: openfader_core::NativeSnapshots,
+    pub(super) device_information: Vec<(String, String, String)>,
     pub(super) parameter_labels: std::collections::BTreeMap<&'static str, String>,
     pub(super) destinations: destination::DestinationState,
     pub(super) fx: fx::FxState,
@@ -65,6 +66,7 @@ impl Dl32sDriver {
 impl NativeCache {
     pub(super) fn seed(&mut self, generation: u64, session: &MackieSession) {
         if self.generation != generation {
+            self.device_information.clear();
             self.library_show_info = None;
             self.library_index = None;
             self.library_revision = 0;

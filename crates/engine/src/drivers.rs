@@ -148,6 +148,10 @@ pub struct SceneRouteChange {
 
 #[async_trait::async_trait]
 pub trait DynDriver: Send + Sync {
+    async fn diagnostics(&self, _offset: usize, _limit: usize) -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::json!({"supported": false, "reason": "This provider does not expose raw diagnostics.", "rows": [], "offset": 0, "total": 0}))
+    }
+
     /// Read-only identification, independent of the active mixer session.
     /// New providers implement this and discovery alongside their driver.
     async fn identify(
@@ -2406,6 +2410,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    async fn diagnostics(&self, offset: usize, limit: usize) -> anyhow::Result<serde_json::Value> {
+        self.read_diagnostics(offset, limit).await
+    }
+
     async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
         openfader_proto_dl32s::soundcheck::assess()?;
         Ok(None)

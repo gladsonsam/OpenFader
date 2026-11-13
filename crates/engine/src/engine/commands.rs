@@ -153,7 +153,13 @@ impl Engine {
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
         let mut out = Vec::new();
+        let group_write = self.group_write_field(&cmd);
         let result = self.apply(cmd, writer, &mut out).await;
+        if matches!(result, Ok(None)) && generation == self.connection_gen.load(Ordering::Acquire) {
+            if let Some((index, field)) = group_write {
+                self.retire_group_observation(index, &field, started);
+            }
+        }
         match result {
             Ok(Some(reply)) => self.unicast(writer, reply),
             Ok(None) => {}
@@ -202,7 +208,10 @@ impl Engine {
         // mixer's initial control reads. Mutating commands still preempt polls.
         let _write_guard = (!matches!(
             &cmd,
-            Cmd::Scan | Cmd::DiscoverDevices { .. } | Cmd::RefreshDevices { .. }
+            Cmd::Scan
+                | Cmd::DiscoverDevices { .. }
+                | Cmd::RefreshDevices { .. }
+                | Cmd::Diagnostics { .. }
         ))
         .then(|| WriteGuard::new(&self.writes_in_flight));
         // Opportunistic expiry: release stale holds before any check so a
@@ -264,6 +273,25 @@ impl Engine {
             other => (other, None),
         };
         match cmd {
+            Cmd::Diagnostics { offset } => {
+                anyhow::ensure!(
+                    policy.role == Role::Admin,
+                    "Diagnostics require administrator access"
+                );
+                let epoch = self.connection_gen.load(Ordering::Acquire);
+                let driver = self.active_driver();
+                let data = self.drv(&driver).diagnostics(offset, 64).await?;
+                anyhow::ensure!(
+                    epoch == self.connection_gen.load(Ordering::Acquire)
+                        && driver == self.active_driver(),
+                    "Diagnostic connection changed"
+                );
+                Ok(Some(Event::Diagnostics {
+                    epoch,
+                    driver,
+                    data,
+                }))
+            }
             cmd @ (Cmd::LanRead { .. } | Cmd::LanWrite { .. }) => {
                 Ok(Some(self.apply_lan(cmd, writer).await))
             }

@@ -86,6 +86,7 @@ fn dispatch_values(caches: &Caches, body: &[u8]) {
     let Some(blocks) = parse_value_blocks(body) else {
         return;
     };
+    super::diagnostics::record_values(caches, &blocks);
     ingest_value_blocks(&caches.values, &blocks, VALUE_TYPE_PARAM);
     ingest_value_blocks(&caches.type2_values, &blocks, VALUE_TYPE_MUTE_GROUP);
     for block in blocks {
@@ -101,6 +102,7 @@ fn ingest_names(store: &StdMutex<NameStore>, pairs: &[(u32, String)]) {
     // One lock: desk insert + pending clear are atomic (same contract).
     if let Ok(mut s) = store.lock() {
         for (slot, name) in pairs {
+            s.received.insert(*slot, name.clone());
             s.names.insert(*slot, name.clone());
             s.pending.remove(slot);
         }
@@ -124,62 +126,32 @@ async fn dispatch(
     pending: &Arc<StdMutex<HashMap<u8, oneshot::Sender<PendingResult>>>>,
     caches: &Caches,
 ) {
-    // 0x12 is application-parameter GET (historically named ShowStatus).
-    // Its value-bearing response uses the same payload as 0x13 pushes.
-    // Empty ACKs and malformed bodies never clear pending provenance.
-    if msg.command == Command::ChannelValues
-        || (msg.command == Command::ShowStatus && msg.msg_type == MessageType::Response)
-    {
-        dispatch_values(caches, &msg.body);
+    super::diagnostics::record_info(caches, &msg);
+    if msg.msg_type != MessageType::Error {
+        if msg.command == Command::ChannelValues
+            || (msg.command == Command::ShowStatus && msg.msg_type == MessageType::Response)
+        {
+            dispatch_values(caches, &msg.body);
+        }
+        if msg.command == Command::ChannelNames && msg.body.len() > 8 {
+            if let Some(pairs) = parse_name_table(&msg.body) {
+                ingest_names(&caches.names, &pairs);
+                let _ = caches.push_tx.send(PushEvent::Names { pairs });
+            }
+        }
+        if msg.command == Command::ShowSnapshot
+            && matches!(msg.msg_type, MessageType::Request | MessageType::Broadcast)
+        {
+            ingest_snapshot(caches, &msg.body);
+        }
     }
-    let names = &caches.names;
-    let snapshot_names = &caches.snapshot_names;
-    let current_snapshot = &caches.current_snapshot;
-
     match msg.msg_type {
         MessageType::Request => {
             let reply_body: Vec<u8> = match msg.command {
                 Command::ClientHandshake => HANDSHAKE_REPLY.to_vec(),
                 Command::GeneralInfo => GENERAL_INFO_REPLY.to_vec(),
                 Command::ChannelInfoControl => msg.body.get(..4).unwrap_or(&[]).to_vec(),
-                Command::ShowSnapshot => {
-                    match parse_snapshot_push(&msg.body) {
-                        Some(SnapshotEvent::Recall(n)) => {
-                            if let Ok(mut c) = current_snapshot.lock() {
-                                *c = Some(n);
-                            }
-                            // Push-only verified record (see the
-                            // `snapshot_names_pushed` store docs): desk
-                            // evidence, never own-write optimism.
-                            if let Ok(mut c) = caches.current_snapshot_pushed.lock() {
-                                *c = Some(n);
-                            }
-                            let _ = caches.push_tx.send(PushEvent::SnapshotRecall(n));
-                        }
-                        Some(SnapshotEvent::Rename(n, name)) => {
-                            if let Ok(mut c) = snapshot_names.lock() {
-                                c.insert(n, name.clone());
-                            }
-                            // Push-only verified record (see above).
-                            if let Ok(mut c) = caches.snapshot_names_pushed.lock() {
-                                c.insert(n, name.clone());
-                            }
-                            let _ = caches
-                                .push_tx
-                                .send(PushEvent::SnapshotRename { slot: n, name });
-                        }
-                        None => {}
-                    }
-                    msg.body.get(..4).unwrap_or(&[]).to_vec()
-                }
-                Command::ChannelValues => Vec::new(),
-                Command::ChannelNames => {
-                    if let Some(pairs) = parse_name_table(&msg.body) {
-                        ingest_names(names, &pairs);
-                        let _ = caches.push_tx.send(PushEvent::Names { pairs });
-                    }
-                    Vec::new()
-                }
+                Command::ShowSnapshot => msg.body.get(..4).unwrap_or(&[]).to_vec(),
                 _ => Vec::new(),
             };
             let _ = send_frame(
@@ -203,5 +175,37 @@ async fn dispatch(
                 complete_pending(pending, msg.seq, Ok(msg));
             }
         }
+    }
+}
+
+fn ingest_snapshot(caches: &Caches, body: &[u8]) {
+    match parse_snapshot_push(body) {
+        Some(SnapshotEvent::Recall(slot)) => {
+            *caches
+                .current_snapshot
+                .lock()
+                .expect("snapshot cache poisoned") = Some(slot);
+            *caches
+                .current_snapshot_pushed
+                .lock()
+                .expect("snapshot cache poisoned") = Some(slot);
+            let _ = caches.push_tx.send(PushEvent::SnapshotRecall(slot));
+        }
+        Some(SnapshotEvent::Rename(slot, name)) => {
+            caches
+                .snapshot_names
+                .lock()
+                .expect("snapshot cache poisoned")
+                .insert(slot, name.clone());
+            caches
+                .snapshot_names_pushed
+                .lock()
+                .expect("snapshot cache poisoned")
+                .insert(slot, name.clone());
+            let _ = caches
+                .push_tx
+                .send(PushEvent::SnapshotRename { slot, name });
+        }
+        None => {}
     }
 }

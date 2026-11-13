@@ -1,5 +1,6 @@
 // Shell adapter: debug responsibility. The shell owns polling.
 import '../engine.dart';
+import '../core/provider_diagnostics.dart';
 import '../screens/debug.dart';
 import 'store_adapter.dart';
 
@@ -13,6 +14,12 @@ class ShellDebugStore extends ShellStoreAdapter implements DebugStore {
 
   @override
   List<double> get spark => List.of(engine.meters);
+
+  @override
+  ProviderDiagnostics? get diagnostics => engine.providerDiagnostics;
+
+  @override
+  void requestDiagnostics(int offset) => send(Cmds.diagnostics(offset));
 
   @override
   List<DebugSection> get sections => [
@@ -43,6 +50,7 @@ class ShellDebugStore extends ShellStoreAdapter implements DebugStore {
 
   @override
   Future<void> refresh() async {
+    requestDiagnostics(0);
     captureFrame();
   }
 

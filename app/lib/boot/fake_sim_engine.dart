@@ -292,6 +292,13 @@ class FakeSimEngine implements EngineApi {
       return;
     }
     switch (c['cmd']) {
+      case 'diagnostics':
+        _mailbox.add(jsonEncode({
+          'type': 'diagnostics', 'driver': 'sim', 'epoch': _processorEpoch,
+          'data': {'supported': false, 'offset': 0, 'total': 0, 'rows': [],
+            'reason': 'The offline fallback has no received hardware data.'},
+        }));
+        return;
       case 'native_library':
         _mailbox.add(jsonEncode({'type':'native_library_result',
           'request_id':c['request_id'], 'driver':c['driver'], 'epoch':c['epoch'],

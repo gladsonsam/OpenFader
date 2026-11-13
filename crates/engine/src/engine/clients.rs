@@ -100,11 +100,17 @@ impl Engine {
                     .into_iter()
                     .chain(info)
                     .chain([scenes, fx, routing])
+                    .chain(Self::partial_masters(&sync))
                     .chain(masters)
                     .chain(params)
                     .chain(std::iter::once(native))
                     .chain(self.device_library_status())
-                    .chain(sync.typed.values().cloned())
+                    .chain(
+                        sync.typed
+                            .values()
+                            .filter(|event| !matches!(event, Event::Master { .. }))
+                            .cloned(),
+                    )
                     .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
                     .chain(self.destination_controls_message())
                 {
@@ -208,11 +214,17 @@ impl Engine {
             .into_iter()
             .chain(info)
             .chain([scenes, fx, routing])
+            .chain(Self::partial_masters(&sync))
             .chain(masters)
             .chain(params)
             .chain(std::iter::once(native))
             .chain(self.device_library_status())
-            .chain(sync.typed.values().cloned())
+            .chain(
+                sync.typed
+                    .values()
+                    .filter(|event| !matches!(event, Event::Master { .. }))
+                    .cloned(),
+            )
             .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
             .chain(self.destination_controls_message())
         {

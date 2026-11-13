@@ -168,6 +168,10 @@ pub enum Cmd {
     /// R2: request the [`Event::Info`] identity block (also sent on every
     /// connect).
     Info,
+    Diagnostics {
+        #[serde(default)]
+        offset: usize,
+    },
     /// R2 numbered scene save (`{"cmd":"scene_save","n":1,"name":"Set 1"}`).
     /// Captures the FULL param-plane cache (every catalogue value of every
     /// strip + main), not just fader/mute.
@@ -448,6 +452,7 @@ impl Cmd {
             "forget_saved_mixers",
             "disconnect",
             "info",
+            "diagnostics",
             "scene_save",
             "scene_recall",
             "scene_rename",
@@ -1119,6 +1124,11 @@ pub enum Event {
         console_name: String,
         driver: String,
     },
+    Diagnostics {
+        epoch: u64,
+        driver: String,
+        data: serde_json::Value,
+    },
     /// R2 numbered scene library: slots `001..` with names, the current
     /// slot flag and save timestamps. Broadcast after every scene
     /// mutation; unicast in the attach snapshot.
@@ -1227,6 +1237,13 @@ pub enum Event {
         /// Stable master key (`mgroup/1`): `None` on old frames.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+    },
+    Master {
+        target: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fader: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        muted: Option<bool>,
     },
     /// Native mute-group label, independent of master mute availability.
     MuteGroupName {
@@ -1354,6 +1371,7 @@ impl Event {
             Event::DeviceOperationComplete { .. } => "device_operation_complete",
             Event::Link { .. } => "link",
             Event::Info { .. } => "info",
+            Event::Diagnostics { .. } => "diagnostics",
             Event::Scenes { .. } => "scenes",
             Event::LocalLibraryStatus { .. } => "local_library_status",
             Event::LocalLibraryResult { .. } => "local_library_result",
@@ -1366,6 +1384,7 @@ impl Event {
             Event::SubgroupAssign { .. } => "subgroup_assign",
             Event::MuteGroup { .. } => "mute_group",
             Event::MuteGroupName { .. } => "mute_group_name",
+            Event::Master { .. } => "master",
             Event::MuteGroupAssign { .. } => "mute_group_assign",
             Event::Main { .. } => "main",
             Event::Solo { .. } => "solo",

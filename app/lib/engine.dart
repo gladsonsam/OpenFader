@@ -4,6 +4,9 @@
 export 'engine_protocol.dart';
 import 'dart:typed_data';
 
+import 'core/master_updates.dart';
+import 'core/provider_diagnostics.dart';
+
 import 'core/output_meters.dart';
 import 'core/local_library.dart';
 import 'core/destination_controls.dart';
@@ -557,6 +560,7 @@ class EngineState {
   /// Latest explicitly correlated discovery/refresh completion. Parents match
   /// request_id; unrelated or old operations cannot complete their spinner.
   Map<String, dynamic>? deviceOperationComplete;
+  ProviderDiagnostics? providerDiagnostics;
 
   // Incremented when a desk session ends, including same-driver reconnects.
   int session = 0;
@@ -576,6 +580,7 @@ class EngineState {
   }
 
   bool capsReady = false;
+  int busCount = 0;
   int muteGroupCount = 0;
   int subgroupCount = 0;
   Set<String> supportedParams = {};
@@ -596,6 +601,7 @@ class EngineState {
     session++;
     _nativeSnapshots = null;
     _nativeSnapshotsCaps = null;
+    providerDiagnostics = null;
     knownValues.clear();
     capsReady = false;
     inputProcessorGuard = false;
@@ -633,6 +639,7 @@ class EngineState {
     muteGroupAssign.clear();
     muteGroups.clear();
     muteGroupNames.clear();
+    busCount = 0;
     muteGroupCount = 0;
     subgroupCount = 0;
     solos.clear();
@@ -785,6 +792,12 @@ class EngineState {
           params[ch]?.remove(field);
         }
         return true;
+      case 'diagnostics':
+        if (e['epoch'] != _syncEpoch || e['driver'] != driver) return false;
+        final diagnostics = ProviderDiagnostics.fromFrame(e);
+        if (diagnostics == null) return false;
+        providerDiagnostics = diagnostics;
+        return true;
       case 'device_operation_complete':
         deviceOperationComplete = Map<String, dynamic>.unmodifiable(e);
         return true;
@@ -808,6 +821,7 @@ class EngineState {
         clearSoloScope = groups is Map && groups['clear_solo_scope'] is String
             ? groups['clear_solo_scope'] as String
             : null;
+        busCount = groups is Map ? (groups['buses'] as num?)?.toInt() ?? 0 : 0;
         muteGroupCount =
             groups is Map ? (groups['mute_groups'] as num?)?.toInt() ?? 0 : 0;
         subgroupCount = groups is Map
@@ -1000,6 +1014,8 @@ class EngineState {
         if (g == null) return false;
         muteGroups[g] = (e['muted'] as bool?) ?? false;
         return true;
+      case 'master':
+        return applyMasterFrame(this, e);
       case 'mute_group_name':
         final g = (e['group'] as num?)?.toInt();
         final name = e['name'];
