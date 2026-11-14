@@ -5,6 +5,14 @@ import 'core/destination_controls.dart';
 import 'core/local_library.dart';
 
 class Cmds {
+  static String consoleControls(String requestId, String path) => jsonEncode({
+        'cmd': 'console_controls', 'request_id': requestId, 'path': path,
+      });
+  static String consoleControlSet(String requestId, int epoch, String path,
+          Object? value, Object revision) => jsonEncode({
+        'cmd': 'console_control_set', 'request_id': requestId, 'epoch': epoch,
+        'path': path, 'value': value, 'revision': revision,
+      });
   static String connectSim() => '{"cmd":"connect","driver":"sim"}';
   static String connect([String driver = 'sim', String? addr]) => addr == null
       ? '{"cmd":"connect","driver":${_q(driver)}}'

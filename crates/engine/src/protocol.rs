@@ -21,6 +21,17 @@ fn default_driver() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Cmd {
+    ConsoleControls {
+        request_id: String,
+        path: String,
+    },
+    ConsoleControlSet {
+        request_id: String,
+        epoch: u64,
+        path: String,
+        value: Value,
+        revision: Value,
+    },
     Connect {
         #[serde(default = "default_driver")]
         driver: String,
@@ -461,6 +472,8 @@ impl Cmd {
             "local_library_status",
             "local_library_mutate",
             "native_library",
+            "console_controls",
+            "console_control_set",
             "native_library_cancel",
             "fx_set_type",
             "fx_param",
@@ -850,7 +863,7 @@ pub struct SceneEntry {
 /// One `fx` slot state row (R2). `params` maps param id -> normalized
 /// 0.0..=1.0 value in the slot type's table order; `ret_label` is the
 /// design's return label (`Ret 1/2` …); `level` is the slot's return
-/// meter 0..1.
+/// meter 0..1 when actually available.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FxSlotState {
     pub slot: u8,
@@ -859,7 +872,8 @@ pub struct FxSlotState {
     pub on: bool,
     pub bypass: bool,
     pub ret_label: String,
-    pub level: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<f32>,
     pub params: BTreeMap<String, f32>,
 }
 
@@ -905,6 +919,21 @@ pub struct OfflineChange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    ConsoleControls {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        node: openfader_core::console_controls::ConsoleControlNode,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    ConsoleControlResult {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        #[serde(flatten)]
+        result: openfader_core::console_controls::ConsoleControlResult,
+    },
     You {
         id: String,
     },
@@ -947,6 +976,10 @@ pub enum Event {
     },
     /// Additive connection-generation barrier. Never a parameter reset in steady state.
     SyncEpoch {
+        epoch: u64,
+    },
+    /// Retire same-session control proofs after an unscoped native write.
+    NativeControlsInvalidated {
         epoch: u64,
     },
     /// Provider-described controls shared by all sends to a destination.
@@ -1349,6 +1382,7 @@ impl Event {
             Event::Param { .. } => "param",
             Event::Shows { .. } => "shows",
             Event::SyncEpoch { .. } => "sync_epoch",
+            Event::NativeControlsInvalidated { .. } => "native_controls_invalidated",
             Event::DestinationControls { .. } => "destination_controls",
             Event::InputProcessorResult { .. } => "input_processor_result",
             Event::DestinationControlResult { .. } => "destination_control_result",
@@ -1392,6 +1426,8 @@ impl Event {
             Event::NativeSnapshots { .. } => "native_snapshots",
             Event::LanResult { .. } => "lan_result",
             Event::NativeLibraryResult { .. } => "native_library_result",
+            Event::ConsoleControls { .. } => "console_controls",
+            Event::ConsoleControlResult { .. } => "console_control_result",
         }
     }
 

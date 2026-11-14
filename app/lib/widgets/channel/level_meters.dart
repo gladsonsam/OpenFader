@@ -88,7 +88,7 @@ class U4LevelHbar extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: levelDb,
       builder: (context, db, _) {
-        final frac = ((db + 90) / 90).clamp(0.0, 1.0);
+        final frac = db.isNaN ? double.nan : ((db + 90) / 90).clamp(0.0, 1.0);
         return CustomPaint(
           size: const Size(double.infinity, 8),
           painter:
@@ -110,6 +110,14 @@ class _HbarPainter extends CustomPainter {
       RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(3)),
       Paint()..color = palette.control,
     );
+    if (frac.isNaN) {
+      canvas.drawLine(
+        Offset(size.width / 2 - 3, size.height / 2),
+        Offset(size.width / 2 + 3, size.height / 2),
+        Paint()..color = palette.scaleTick..strokeWidth = 2,
+      );
+      return;
+    }
     final w = size.width * frac;
     if (w <= 0) {
       return;

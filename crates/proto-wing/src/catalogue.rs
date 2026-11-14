@@ -184,7 +184,7 @@ pub(crate) const RANGES: &[(&str, f32, f32)] = &[
     ("comp_rel", 4.0, 4000.0),
     ("comp_makeup", -6.0, 12.0),
     ("comp_knee", 0.0, 5.0),
-    ("eq1_freq", 20.0, 20000.0),
+    ("eq1_freq", 20.0, 2000.0),
     ("eq6_freq", 20.0, 20000.0),
     ("eq1_q", 0.442, 10.0),
     ("eq2_q", 0.442, 10.0),
@@ -288,5 +288,18 @@ pub(crate) fn capabilities() -> &'static [&'static str] {
             }
         }
         ids
+    })
+}
+
+/// Version 3.1 changes dynamics model option identities and ordering.
+/// Until the curated selector has a live-DD descriptor, use the native browser.
+pub(crate) fn capabilities_without_legacy_dynamics_selectors() -> &'static [&'static str] {
+    static CAPS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    CAPS.get_or_init(|| {
+        capabilities()
+            .iter()
+            .copied()
+            .filter(|id| !matches!(*id, "gate_mode" | "comp_mode"))
+            .collect()
     })
 }

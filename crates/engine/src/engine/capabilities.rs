@@ -62,6 +62,13 @@ impl Engine {
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();
+                let kind_ranges: Vec<_> = self.drv(&driver).param_kind_ranges().iter()
+                    .filter(|range| range.id == def.id && range.min.is_finite() && range.max.is_finite() && range.min < range.max)
+                    .map(|range| json!({"kind": range.kind.as_str(), "min": range.min, "max": range.max}))
+                    .collect();
+                if !kind_ranges.is_empty() {
+                    frame.presentations.insert(0, json!({"kind_ranges": kind_ranges}));
+                }
                 if let Some(slot) = def.id.strip_prefix("send").and_then(|id| id.strip_suffix("_level")).and_then(|id| id.parse::<u16>().ok()) {
                     if let Some(destination) = self.drv(&driver).send_destination(slot) {
                         frame.presentations.insert(0, json!({ "destination": {

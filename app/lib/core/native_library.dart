@@ -120,6 +120,9 @@ class NativeLibraryVm {
   bool get connected => guard['connected'] == true;
   bool get complete => guard['complete'] == true;
   int get capacity => guard['capacity'] as int;
+  String get capacityLabel => guard['capacity_label'] is String
+      ? guard['capacity_label'] as String
+      : '$capacity user slots';
   String get limitations => guard['limitations'] as String;
   List<Map<String, dynamic>> get slots =>
       (guard['slots'] as List).cast<Map<String, dynamic>>();

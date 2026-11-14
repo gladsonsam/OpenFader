@@ -1471,6 +1471,7 @@ dependencies = [
  "openfader-core",
  "openfader-transport",
  "rosc",
+ "serde_json",
  "tokio",
 ]
 

@@ -8,6 +8,7 @@ import '../palette.dart';
 class WorkspaceHome extends StatelessWidget {
   final VoidCallback onMixer;
   final VoidCallback onConnections;
+  final VoidCallback onConsoleControls;
   final VoidCallback? onRecorder;
   final VoidCallback? onQuit;
   final VoidCallback? onLeaveServer;
@@ -20,6 +21,7 @@ class WorkspaceHome extends StatelessWidget {
       {super.key,
       required this.onMixer,
       required this.onConnections,
+      required this.onConsoleControls,
       this.onRecorder,
       this.onQuit,
       this.onLeaveServer,
@@ -119,6 +121,11 @@ class WorkspaceHome extends StatelessWidget {
                                     'Banks, layers and master bus',
                                     Icons.view_column_outlined,
                                     () => onLayout(anchor))),
+                            tile(
+                                'Console controls',
+                                'Browse controls from the connected mixer',
+                                Icons.tune_outlined,
+                                onConsoleControls),
                             tile(
                                 'Connections',
                                 'Connect a mixer or work offline',

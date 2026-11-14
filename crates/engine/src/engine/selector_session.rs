@@ -36,7 +36,7 @@ impl Engine {
 
     pub async fn selector_session(self: &Arc<Self>) -> anyhow::Result<SelectorSession> {
         let guard = self.routing_mutation_guard().await;
-        let (generation, driver_name, suspended) = self.sample_capture_pin();
+        let (generation, driver_name, suspended, _) = self.sample_capture_pin();
         anyhow::ensure!(!suspended, "connection is changing");
         let driver = self.drv(&driver_name);
         let (model, address, name) = if driver_name == "sim" {
@@ -83,7 +83,7 @@ impl SelectorSession {
     }
 
     pub fn check(&self) -> anyhow::Result<()> {
-        let (generation, driver, suspended) = self.engine.sample_capture_pin();
+        let (generation, driver, suspended, _) = self.engine.sample_capture_pin();
         anyhow::ensure!(
             !suspended && generation == self.identity.generation && driver == self.driver_name,
             "stale selector session"

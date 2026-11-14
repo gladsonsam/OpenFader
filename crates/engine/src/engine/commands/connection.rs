@@ -434,8 +434,8 @@ impl Engine {
                 let had_parameter_labels = !self.active_drv().param_label_overrides().is_empty();
                 // A missing readback cannot prevent local disconnect cleanup.
                 let _ = self.active_drv().set_spectrum_target("", None).await;
-                self.invalidate_connection();
                 self.reads_suspended.store(true, Ordering::Release);
+                self.invalidate_connection();
                 let _ = self.active_drv().disconnect().await;
                 self.param_cache.write().unwrap().clear();
                 self.fx_cache.write().unwrap().clear();

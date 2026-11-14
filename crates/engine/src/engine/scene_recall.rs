@@ -41,6 +41,8 @@ impl Engine {
         generation: u64,
     ) -> anyhow::Result<StoredScene> {
         let driver = pin_driver.to_string();
+        let native_generation = self.native_control_generation.load(Ordering::Acquire);
+        let native_processors = self.capture_scene_native_processors(&driver, generation).await?;
         let capture_links = self.begin_scene_link_capture(&driver, generation).await?;
         let topo = self.driver_topology(&driver);
         let caps = self.driver_capabilities(&driver);
@@ -70,6 +72,12 @@ impl Engine {
                         || *id == "name"
                         || self.drv(&driver).param_read_only(id)
                     {
+                        continue;
+                    }
+                    if native_processors.as_ref().is_some_and(|snapshot| {
+                        openfader_core::strip_key_for_index(&topo, s).is_some_and(|key|
+                            providers::native_processors::covers(snapshot, &key, id))
+                    }) {
                         continue;
                     }
                     let scoped = reg
@@ -349,6 +357,9 @@ impl Engine {
         let link_settings = self
             .finish_scene_link_capture(&capture_links, &strips, &driver, generation)
             .await?;
+        if let Some(snapshot) = &native_processors {
+            self.revalidate_scene_native_processors(&driver, generation, native_generation, snapshot).await?;
+        }
         Ok(StoredScene {
             number,
             name: name.to_string(),
@@ -364,6 +375,7 @@ impl Engine {
             rta,
             output_eq,
             link_settings,
+            native_processors,
         })
     }
 
@@ -393,6 +405,7 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let native_processors = self.prepare_scene_native_processors(scene, scope, &driver, generation, writer, &topo).await?;
         let link_settings = self
             .prepare_scene_link_settings(scene.link_settings.as_ref(), scope, &driver, &check)
             .await?;
@@ -703,6 +716,9 @@ impl Engine {
                 });
             }
         }
+        if let Some(snapshot) = &native_processors {
+            self.restore_scene_native_processors(snapshot, &driver, generation, writer, &topo).await?;
+        }
         let mut failed = Vec::new();
         // Remaining params in safe order (names ride along unless the
         // scope excludes them).
@@ -710,6 +726,12 @@ impl Engine {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
+                if native_processors.as_ref().is_some_and(|snapshot| {
+                    openfader_core::strip_key_for_index(&topo, *r as usize).is_some_and(|key|
+                        providers::native_processors::covers(snapshot, &key, id))
+                }) {
+                    continue;
+                }
                 if drv.guarded_link_writes()
                     && id == "link"
                     && drv.stereo_pairs().iter().any(|pair| pair.contains(r))

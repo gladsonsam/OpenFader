@@ -152,6 +152,7 @@ class _SparkPainter extends CustomPainter {
     if (n == 0 || size.height <= 0) return;
     final w = size.width / n;
     for (var i = 0; i < n; i++) {
+      if (!levels[i].isFinite) continue;
       final v = levels[i].clamp(0.0, 1.0);
       final h = v * size.height;
       canvas.drawRect(

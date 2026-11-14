@@ -373,6 +373,28 @@ impl Engine {
                     Value::String(s) => ParamValue::Text(s.clone()),
                     _ => anyhow::bail!("param value must be number|bool|string"),
                 };
+                if let ParamValue::Float(value) = &pv {
+                    let drv = self.drv(&driver);
+                    if let Some(kind) = drv
+                        .topology()
+                        .iter()
+                        .find(|family| family.contains(ch as usize))
+                        .map(|family| family.kind)
+                    {
+                        if let Some(range) = drv
+                            .param_kind_ranges()
+                            .iter()
+                            .find(|range| range.id == field && range.kind == kind)
+                        {
+                            anyhow::ensure!(
+                                value.is_finite() && *value >= range.min && *value <= range.max,
+                                "{field} outside strip range {}..={}",
+                                range.min,
+                                range.max
+                            );
+                        }
+                    }
+                }
                 match (&field as &str, &pv) {
                     ("fader", ParamValue::Float(v)) => {
                         policy.allow_fader(StripId(ch), *v)?;

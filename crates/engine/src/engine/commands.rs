@@ -3,6 +3,8 @@
 use super::*;
 
 mod client;
+mod console_controls;
+pub(crate) use console_controls::ConsoleRequests;
 mod connection;
 mod destination;
 mod input;
@@ -22,6 +24,7 @@ fn is_routing_mutation(cmd: &Cmd) -> bool {
         | Cmd::PatchClear { .. }
         | Cmd::RecallScene { .. }
         | Cmd::SceneRecall { .. } => true,
+        Cmd::ConsoleControlSet { .. } => true,
         Cmd::Param { field, .. } | Cmd::ParamGuarded { field, .. } => {
             matches!(
                 field.as_str(),
@@ -212,6 +215,7 @@ impl Engine {
                 | Cmd::DiscoverDevices { .. }
                 | Cmd::RefreshDevices { .. }
                 | Cmd::Diagnostics { .. }
+                | Cmd::ConsoleControls { .. }
         ))
         .then(|| WriteGuard::new(&self.writes_in_flight));
         // Opportunistic expiry: release stale holds before any check so a
@@ -297,6 +301,9 @@ impl Engine {
             }
             cmd @ Cmd::NativeLibrary { .. } => {
                 Ok(Some(self.apply_native_library(cmd, writer).await))
+            }
+            cmd @ (Cmd::ConsoleControls { .. } | Cmd::ConsoleControlSet { .. }) => {
+                Ok(Some(self.apply_console_controls(cmd, writer).await))
             }
             Cmd::NativeLibraryCancel { request_id } => {
                 self.cancel_native_library(writer, request_id);

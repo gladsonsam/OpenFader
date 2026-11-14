@@ -158,7 +158,8 @@ bool? _presentationCondition(
 /// Resolve provider presentations against this strip's current values.
 /// Unknown dependencies disable edits until hydration supplies them.
 Map<String, dynamic>? parameterPresentation(
-    Map<String, dynamic>? metadata, double? Function(String) value) {
+    Map<String, dynamic>? metadata, double? Function(String) value,
+    {String? stripKind}) {
   if (metadata == null) return null;
   final rows = metadata['presentations'];
   if (rows is! List || rows.isEmpty) return metadata;
@@ -174,7 +175,24 @@ Map<String, dynamic>? parameterPresentation(
       }
       if (!match) continue;
     }
-    result['hidden'] = row['hidden'] == true;
+    if (row.containsKey('hidden')) result['hidden'] = row['hidden'] == true;
+    if (row.containsKey('kind_ranges')) {
+      final ranges = row['kind_ranges'];
+      if (ranges is List) {
+        if (stripKind == null) {
+          result['available'] = false;
+        } else {
+          for (final range in ranges) {
+            if (range is Map && range['kind'] == stripKind &&
+                range['min'] is num && range['max'] is num) {
+              result['min'] = range['min'];
+              result['max'] = range['max'];
+              break;
+            }
+          }
+        }
+      }
+    }
     if (row.containsKey('numeric_display')) {
       result['numeric_display'] = row['numeric_display'];
     }
@@ -184,10 +202,9 @@ Map<String, dynamic>? parameterPresentation(
     if (row.containsKey('destination')) {
       result['destination'] = row['destination'];
     }
-    result['choices'] = row['choices'];
-    result['value_labels'] = row['value_labels'];
-    result['limiter_value'] = row['limiter_value'];
-    result['curve'] = row['curve'];
+    for (final field in ['choices', 'value_labels', 'limiter_value', 'curve']) {
+      if (row.containsKey(field)) result[field] = row[field];
+    }
   }
   return result;
 }

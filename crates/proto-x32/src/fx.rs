@@ -156,7 +156,7 @@ impl X32Driver {
         };
         ensure!(
             (actual - value).abs() <= eps,
-            "x32: {code} par{:02} readback did not match the requested write",
+            "x32: FX {slot}/{code}/par{:02} readback did not match requested value {value} (observed {actual}, tolerance {eps})",
             param + 1
         );
         Ok(actual)
@@ -250,7 +250,7 @@ impl X32Driver {
         };
         ensure!(
             (actual - value).abs() <= eps,
-            "x32: {code} par{:02} readback did not match the requested write",
+            "x32: FX {slot}/{code}/par{:02} readback did not match requested value {value} (observed {actual}, tolerance {eps})",
             param + 1
         );
         Ok(())

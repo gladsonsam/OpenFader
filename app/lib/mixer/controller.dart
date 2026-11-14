@@ -273,11 +273,16 @@ class MixerController extends ChangeNotifier {
     final strip = _masterStrip;
     final bus = target.startsWith('bus/');
     final busNumber = bus ? int.tryParse(target.substring(4)) : null;
+    final mainNumber = target.startsWith('main/')
+        ? int.tryParse(target.substring(5))
+        : null;
     return MixerChannel(
         key: 'master',
         name: store.masterName == 'MAIN' ? 'Main' : store.masterName,
         number:
-            target == 'main' ? 'LR' : busNumber?.toString() ?? store.masterName,
+            target == 'main'
+                ? 'LR'
+                : (busNumber ?? mainNumber)?.toString() ?? store.masterName,
         channel: null,
         artwork: 8,
         icon: strip == null
@@ -311,7 +316,9 @@ class MixerController extends ChangeNotifier {
     if (store.outputProcessingTarget != null) return master;
     for (final strip in store.engine.strips) {
       if (strip.ch == store.channelIndex) {
-        return strip.key == 'main' ? master : _channel(strip, selected: true);
+        return strip.key == store.masterProcessingTarget
+            ? master
+            : _channel(strip, selected: true);
       }
     }
     return null;

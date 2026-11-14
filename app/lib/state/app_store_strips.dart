@@ -13,7 +13,6 @@ abstract interface class _AppStoreStripsContract {
   void _syncControlNotes();
   Map<String, (int, int)> get _bankRanges;
   List<MixerBank> get banks;
-  int? get _selectedSubgroup;
   ValueNotifier<double> faderOf(int ch);
   void setFader(int ch, double v);
   void _syncSendParamNotes();
@@ -158,14 +157,15 @@ mixin _AppStoreStrips on _AppStoreContext {
     _invalidateDerived();
   }
 
-  @override
   int? get _selectedSubgroup => _busId.startsWith('subgroup')
       ? int.tryParse(_busId.substring('subgroup'.length))
       : null;
 
   bool masterControlKnown(String field) {
     if (field == 'fader' && !_hasFaderLaw) return false;
-    if (_busId.startsWith('solo:')) return false;
+    if (_busId.startsWith('solo:') || masterProcessingTarget.isEmpty) {
+      return false;
+    }
     if (!accessTargetAllowed(masterProcessingTarget)) return false;
     final group = _selectedSubgroup;
     if (group != null) {
@@ -611,7 +611,7 @@ mixin _AppStoreStrips on _AppStoreContext {
     final cached = _busRowsCache;
     if (cached != null) return cached;
     final built = List<MixerBusRow>.unmodifiable([
-      MixerBusRow(
+      if (_primaryMainTarget.isNotEmpty) MixerBusRow(
         id: 'main',
         name: 'MAIN',
         sub: 'LR master',
@@ -626,7 +626,7 @@ mixin _AppStoreStrips on _AppStoreContext {
           sub: engine.busMuted[b] == true ? 'muted' : 'open',
           muted: engine.busMuted[b] ?? false,
           active: _busId == 'bus$b',
-          meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(0)),
+          meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(double.nan)),
         ),
       if (engine.capsReady)
         for (var group = 0; group < engine.subgroupCount; group++)
@@ -644,7 +644,7 @@ mixin _AppStoreStrips on _AppStoreContext {
             // Stable target-keyed meter feed, zero while unavailable.
             meter: _busMeters.putIfAbsent(
               'subgroup$group',
-              () => ValueNotifier(0),
+              () => ValueNotifier(double.nan),
             ),
           ),
       ..._soloBusRows,

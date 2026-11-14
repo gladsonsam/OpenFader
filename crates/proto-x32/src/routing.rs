@@ -1189,6 +1189,41 @@ static ROUTE_SESSIONS: std::sync::LazyLock<std::sync::Mutex<RouteSessions>> =
 static NEXT_ROUTE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 static NEXT_ROUTE_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+// Independent reads started before a console-wide write may not repopulate
+// routing or solo caches after those proofs were retired. The lock is never
+// held across an await: only the final cache insertion is protected.
+static PROOF_EPOCH: std::sync::RwLock<u64> = std::sync::RwLock::new(1);
+
+pub(crate) fn proof_stamp() -> anyhow::Result<u64> {
+    PROOF_EPOCH
+        .read()
+        .map(|v| *v)
+        .map_err(|_| anyhow::anyhow!("x32: proof epoch unavailable"))
+}
+
+pub(crate) fn with_proof<T>(
+    stamp: u64,
+    f: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let guard = PROOF_EPOCH
+        .read()
+        .map_err(|_| anyhow::anyhow!("x32: proof epoch unavailable"))?;
+    anyhow::ensure!(*guard == stamp, "x32: observation retired during refresh");
+    f()
+}
+
+pub(crate) fn retire_console_proof(generation: u64) -> anyhow::Result<()> {
+    let mut guard = PROOF_EPOCH
+        .write()
+        .map_err(|_| anyhow::anyhow!("x32: proof epoch unavailable"))?;
+    *guard = guard
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("x32: proof epoch exhausted"))?;
+    invalidate_all_routes(generation);
+    crate::solo::invalidate_all_solos(generation);
+    Ok(())
+}
+
 /// Independently observed extra-control values (`invert`, `delay_on`,
 /// `delay_time`) behind `/outputs/*` destinations, keyed by
 /// `(generation, destination id, control id)`. Same freshness contract
@@ -1579,10 +1614,12 @@ pub(crate) fn note_route_push(
     }
     for id in route_ids_for_addr(&msg.addr) {
         if is_single_leaf_id(&id) {
-            if let Ok(src) = crate::mapping::strict_int(msg) {
-                note_route_observed(&id, generation, src, 0, 0);
-                continue;
-            }
+            // A queued push may predate a console-wide write. Retire the row
+            // and perform a correlated read instead of promoting the push to
+            // fresh proof on receipt.
+            invalidate_route(generation, &id);
+            let _ = dirty.send(RouteRefresh::One(id));
+            continue;
         }
         if let Ok(RouteAddr::OutputPatch { .. }) = route_addr(&id) {
             // Duplicate observations preserve the verified revision. A real
@@ -1724,6 +1761,7 @@ pub(crate) async fn refresh_route_on(
     generation: u64,
     id: &str,
 ) -> anyhow::Result<RouteState> {
+    let proof = proof_stamp()?;
     let addr = route_addr(id)?;
     anyhow::ensure!(
         generation_for_session(session)? == generation,
@@ -1753,7 +1791,9 @@ pub(crate) async fn refresh_route_on(
         "x32: output session changed during route refresh"
     );
     let source = route_source_label(&addr, src)?;
-    remember_route(id, generation, src, tap, invert, &source)
+    with_proof(proof, || {
+        remember_route(id, generation, src, tap, invert, &source)
+    })
 }
 
 /// Re-read a small id set on the pinned session with bounded fanout.
@@ -1797,6 +1837,7 @@ pub(crate) async fn refresh_output_controls_on(
     generation: u64,
     id: &str,
 ) -> anyhow::Result<()> {
+    let proof = proof_stamp()?;
     let addr = route_addr(id)?;
     let RouteAddr::OutputPatch { plane, slot } = &addr else {
         return Ok(());
@@ -1812,11 +1853,15 @@ pub(crate) async fn refresh_output_controls_on(
     }
     let invert = read_output_invert(session, plane, *slot).await?;
     anyhow::ensure!((0..=1).contains(&invert), "x32: output invert invalid");
-    let _ = remember_output_control(id, "invert", generation, invert as f32)?;
+    with_proof(proof, || {
+        remember_output_control(id, "invert", generation, invert as f32)
+    })?;
     if *plane == "main" {
         let on = read_route_int(session, &format!("/outputs/{plane}/{slot:02}/delay/on")).await?;
         anyhow::ensure!((0..=1).contains(&on), "x32: output delay switch invalid");
-        let _ = remember_output_control(id, "delay_on", generation, on as f32)?;
+        with_proof(proof, || {
+            remember_output_control(id, "delay_on", generation, on as f32)
+        })?;
         let mapping = Mapping {
             path: format!("/outputs/{plane}/{slot:02}/delay/time"),
             kind: WireKind::Linf(addrs::OUTPUT_DELAY_MIN_MS, addrs::OUTPUT_DELAY_MAX_MS),
@@ -1832,7 +1877,9 @@ pub(crate) async fn refresh_output_controls_on(
         let openfader_core::ParamValue::Float(ms) = value else {
             anyhow::bail!("x32: invalid delay readback")
         };
-        let _ = remember_output_control(id, "delay_time", generation, ms)?;
+        with_proof(proof, || {
+            remember_output_control(id, "delay_time", generation, ms)
+        })?;
     }
     Ok(())
 }
@@ -2012,12 +2059,15 @@ impl X32Driver {
     /// session is pinned first and the generation derives from that same
     /// session, so no reconnect can mix generations across these reads.
     pub async fn output_route_state(&self, id: &str) -> anyhow::Result<RouteState> {
+        let proof = proof_stamp()?;
         let addr = route_addr(id)?;
         let session = self.session()?;
         let generation = self.route_generation_for(&session)?;
         let (src, tap, invert) = self.read_route_triple(&session, &addr).await?;
         let source = route_source_label(&addr, src)?;
-        remember_route(id, generation, src, tap, invert, &source)
+        with_proof(proof, || {
+            remember_route(id, generation, src, tap, invert, &source)
+        })
     }
 
     /// Sync read behind the engine `output_route` contract: serves only
@@ -2122,6 +2172,7 @@ impl X32Driver {
         generation: u64,
         id: &str,
     ) -> anyhow::Result<(OutputPatchDetail, RouteState)> {
+        let proof = proof_stamp()?;
         let addr = route_addr(id)?;
         let RouteAddr::OutputPatch { plane, slot } = &addr else {
             anyhow::bail!("x32: patch detail is outputs/* only")
@@ -2155,7 +2206,9 @@ impl X32Driver {
         anyhow::ensure!((0..=8).contains(&tap), "x32: output tap not advertised");
         anyhow::ensure!((0..=1).contains(&invert), "x32: output invert invalid");
         let source = addrs::output_source_label(src)?;
-        let state = remember_route(id, generation, src, tap, invert, &source)?;
+        let state = with_proof(proof, || {
+            remember_route(id, generation, src, tap, invert, &source)
+        })?;
         Ok((
             OutputPatchDetail {
                 source,

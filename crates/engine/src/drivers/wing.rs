@@ -6,8 +6,14 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
         if matches!(param, "gain" | "phantom") { &["source_a", "source_b", "source_select"] } else { &[] }
     }
 
+    async fn capture_param_applicable(&self, strip: StripId, param: &str) -> anyhow::Result<bool> {
+        self.capture_applicable(strip, param).await
+    }
+
     async fn capture_param_override(&self, strip: StripId, param: &str) -> Option<anyhow::Result<ParamValue>> {
-        if param == "wing:source_mode" { Some(self.source_mode_capture(strip).await.map(ParamValue::Text)) } else { None }
+        if param == "wing:source_mode" { Some(self.source_mode_capture(strip).await.map(ParamValue::Text)) }
+        else if param == "color" { Some(MixerDriver::get_param(self, strip, param).await) }
+        else { None }
     }
 
     fn param_readback_equivalent(&self, param: &str, read: &ParamValue, written: &ParamValue) -> Option<bool> {
@@ -85,15 +91,25 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
         let param = parse_par_id(id).ok_or_else(|| anyhow::anyhow!("WING: invalid FX parameter id"))?;
         MixerDriver::set_fx_param(self, slot, param, value).await
     }
-    async fn fx_apply_row(&self, slot: u8, model: &str, _on: bool, _bypass: bool, params: &BTreeMap<String, f32>) -> anyhow::Result<()> {
+    async fn fx_apply_row(&self, slot: u8, model: &str, on: bool, bypass: bool, params: &BTreeMap<String, f32>) -> anyhow::Result<()> {
+        anyhow::ensure!(on && !bypass, "WING: FX slot {slot} has no independent on/bypass control");
         let index = self.fx_type_index_of(model).ok_or_else(|| anyhow::anyhow!("WING: unknown FX model"))?;
         let defs = openfader_proto_wing::fx::MODELS[index as usize].params;
         for (id, value) in params {
             let p = parse_par_id(id).ok_or_else(|| anyhow::anyhow!("WING: invalid FX parameter id"))?;
             defs.get(p as usize).ok_or_else(|| anyhow::anyhow!("WING: invalid FX parameter"))?.encode(*value)?;
         }
-        self.set_fx_model(slot, model).await?;
-        for (id, value) in params { self.fx_set_param(slot, id, *value).await?; }
+        if self.fx_model(slot).await? != index {
+            if let Err(error) = self.set_fx_model(slot, model).await {
+                anyhow::bail!("WING: FX slot {slot} recall may be partial (model write attempted): {error:#}");
+            }
+        }
+        for (applied, (id, value)) in params.iter().enumerate() {
+            let param = parse_par_id(id).expect("FX IDs validated above");
+            if let Err(error) = self.write_fx_checked(slot, param, *value, Some(index)).await {
+                anyhow::bail!("WING: FX slot {slot} recall partial ({applied}/{} parameters applied): {error:#}", params.len());
+            }
+        }
         Ok(())
     }
     fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
@@ -127,7 +143,10 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { Self::param_scopes() }
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         openfader_proto_wing::ROUTING_GROUPS.iter().filter(|(key, _, _)| *key != "OFF")
-            .map(|&(key, label, count)| RoutingGroup { key, label, count: count as usize }).collect()
+            .filter_map(|&(key, label, count)| {
+                let count = if key == "LCL" { self.local_input_count() } else { count };
+                (count > 0).then_some(RoutingGroup { key, label, count: count as usize })
+            }).collect()
     }
     fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str {
         if target.is_empty() { "main" } else { target }
@@ -146,6 +165,7 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
         Ok(RoutingPatch { label, param: None })
     }
     fn routing_param_ids(&self) -> &'static [&'static str] { &["source_select"] }
+    fn routing_strip_kind(&self, kind: StripKind) -> bool { matches!(kind, StripKind::In | StripKind::Ret) }
     fn static_extra_rows(&self, _topo: &[StripFamily]) -> Vec<(u16, &'static str)> { (0..8).map(|n| (n, "_mute_group")).collect() }
     async fn recall_show(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> { scene.recall_to(self, fade_ms).await }
 });

@@ -2,6 +2,7 @@
 // Same wire protocol as the WS relay (`openfader_engine::protocol`);
 // unknown event types are ignored for interop.
 export 'engine_protocol.dart';
+
 import 'dart:typed_data';
 
 import 'core/master_updates.dart';
@@ -47,24 +48,24 @@ class NativeSnapshotsVm {
   final int? current;
 
   const NativeSnapshotsVm.unknown({this.driver = ''})
-      : complete = false,
-        error = null,
-        epoch = null,
-        supported = false,
-        readOnly = false,
-        status = NativeSnapshotsStatus.unknown,
-        slots = const [],
-        current = null;
+    : complete = false,
+      error = null,
+      epoch = null,
+      supported = false,
+      readOnly = false,
+      status = NativeSnapshotsStatus.unknown,
+      slots = const [],
+      current = null;
 
   const NativeSnapshotsVm.unsupported({this.driver = ''})
-      : complete = false,
-        error = null,
-        epoch = null,
-        supported = false,
-        readOnly = false,
-        status = NativeSnapshotsStatus.unsupported,
-        slots = const [],
-        current = null;
+    : complete = false,
+      error = null,
+      epoch = null,
+      supported = false,
+      readOnly = false,
+      status = NativeSnapshotsStatus.unsupported,
+      slots = const [],
+      current = null;
 
   NativeSnapshotsVm._({
     required this.driver,
@@ -89,19 +90,21 @@ class NativeSnapshotsVm {
       return NativeSnapshotsVm.unknown(driver: driver);
     }
     return NativeSnapshotsVm._(
-        driver: driver,
-        supported: true,
-        readOnly: true,
-        status: NativeSnapshotsStatus.loading);
+      driver: driver,
+      supported: true,
+      readOnly: true,
+      status: NativeSnapshotsStatus.loading,
+    );
   }
 
   NativeSnapshotsVm waiting({required bool connected}) => NativeSnapshotsVm._(
-      driver: driver,
-      supported: supported,
-      readOnly: readOnly,
-      status: connected
-          ? NativeSnapshotsStatus.loading
-          : NativeSnapshotsStatus.unavailable);
+    driver: driver,
+    supported: supported,
+    readOnly: readOnly,
+    status: connected
+        ? NativeSnapshotsStatus.loading
+        : NativeSnapshotsStatus.unavailable,
+  );
 
   static bool _isSlot(Object? value) =>
       value is int && value >= 0 && value <= 0xffffffff;
@@ -150,15 +153,16 @@ class NativeSnapshotsVm {
     }
     slots.sort((a, b) => a.slot.compareTo(b.slot));
     return NativeSnapshotsVm._(
-        driver: driver,
-        epoch: epoch,
-        supported: supported,
-        readOnly: readOnly,
-        status: status,
-        slots: slots,
-        current: current as int?,
-        complete: e['complete'] == true,
-        error: e['error'] is String ? e['error'] as String : null);
+      driver: driver,
+      epoch: epoch,
+      supported: supported,
+      readOnly: readOnly,
+      status: status,
+      slots: slots,
+      current: current as int?,
+      complete: e['complete'] == true,
+      error: e['error'] is String ? e['error'] as String : null,
+    );
   }
 
   @override
@@ -177,8 +181,17 @@ class NativeSnapshotsVm {
           .every((i) => slots[i] == other.slots[i]);
 
   @override
-  int get hashCode => Object.hash(driver, epoch, supported, readOnly, status,
-      current, complete, error, Object.hashAll(slots));
+  int get hashCode => Object.hash(
+    driver,
+    epoch,
+    supported,
+    readOnly,
+    status,
+    current,
+    complete,
+    error,
+    Object.hashAll(slots),
+  );
 }
 
 /// Measured audio bands with explicit provenance. Never infer a channel from
@@ -192,16 +205,16 @@ class AudioSpectrumFrame {
   final int epoch;
   final DateTime receivedAt;
 
-  AudioSpectrumFrame._(
-      {required this.ch,
-      required List<double> binsDb,
-      required List<double> bandEdgesHz,
-      required this.source,
-      required this.position,
-      required this.epoch,
-      required this.receivedAt})
-      : binsDb = List.unmodifiable(binsDb),
-        bandEdgesHz = List.unmodifiable(bandEdgesHz);
+  AudioSpectrumFrame._({
+    required this.ch,
+    required List<double> binsDb,
+    required List<double> bandEdgesHz,
+    required this.source,
+    required this.position,
+    required this.epoch,
+    required this.receivedAt,
+  }) : binsDb = List.unmodifiable(binsDb),
+       bandEdgesHz = List.unmodifiable(bandEdgesHz);
 
   static const maxBins = 1024;
   static const expiry = Duration(milliseconds: 1500);
@@ -239,13 +252,14 @@ class AudioSpectrumFrame {
       if (frequencies[i] <= frequencies[i - 1]) return null;
     }
     return AudioSpectrumFrame._(
-        ch: channel as int?,
-        binsDb: [for (final v in bins) (v as num).toDouble()],
-        bandEdgesHz: frequencies,
-        source: source.trim(),
-        position: position,
-        epoch: epoch,
-        receivedAt: DateTime.now());
+      ch: channel as int?,
+      binsDb: [for (final v in bins) (v as num).toDouble()],
+      bandEdgesHz: frequencies,
+      source: source.trim(),
+      position: position,
+      epoch: epoch,
+      receivedAt: DateTime.now(),
+    );
   }
 }
 
@@ -257,21 +271,23 @@ class Strip {
   double fader;
   bool muted;
 
-  Strip(
-      {required this.ch,
-      required this.key,
-      required this.name,
-      required this.fader,
-      required this.muted});
+  Strip({
+    required this.ch,
+    required this.key,
+    required this.name,
+    required this.fader,
+    required this.muted,
+  });
 
   factory Strip.fromJson(Map<String, dynamic> j) => Strip(
-        ch: (j['ch'] as num).toInt(),
-        key: (j['key'] as String?) ??
-            'ch/${((j['ch'] as num).toInt() + 1).toString().padLeft(2, '0')}',
-        name: (j['name'] as String?) ?? '',
-        fader: ((j['fader'] as num?) ?? 0.0).toDouble(),
-        muted: (j['muted'] as bool?) ?? false,
-      );
+    ch: (j['ch'] as num).toInt(),
+    key:
+        (j['key'] as String?) ??
+        'ch/${((j['ch'] as num).toInt() + 1).toString().padLeft(2, '0')}',
+    name: (j['name'] as String?) ?? '',
+    fader: ((j['fader'] as num?) ?? 0.0).toDouble(),
+    muted: (j['muted'] as bool?) ?? false,
+  );
 }
 
 /// Cmd JSON strings the engine accepts (see `Cmd::known_tags` in
@@ -313,7 +329,13 @@ class BinaryFrame {
       BinaryFrame._(kind: 'meters', seq: seq, tMs: tMs, levels: levels);
   factory BinaryFrame.gr(int seq, int tMs, int ch, double gate, double comp) =>
       BinaryFrame._(
-          kind: 'gr', seq: seq, tMs: tMs, ch: ch, gate: gate, comp: comp);
+        kind: 'gr',
+        seq: seq,
+        tMs: tMs,
+        ch: ch,
+        gate: gate,
+        comp: comp,
+      );
   factory BinaryFrame.taps(int seq, int tMs, String tap, List<double> levels) =>
       BinaryFrame._(kind: 'taps', seq: seq, tMs: tMs, tap: tap, levels: levels);
 }
@@ -338,8 +360,13 @@ BinaryFrame? parseBinary(Uint8List bytes) {
   }
   if (type == binTypeGr) {
     if (n != 1 || bytes.length < binHeaderLen + 3) return null;
-    return BinaryFrame.gr(seq, tMs, bytes[binHeaderLen],
-        bytes[binHeaderLen + 1] / 4, bytes[binHeaderLen + 2] / 4);
+    return BinaryFrame.gr(
+      seq,
+      tMs,
+      bytes[binHeaderLen],
+      bytes[binHeaderLen + 1] / 4,
+      bytes[binHeaderLen + 2] / 4,
+    );
   }
   if (type == binTypeTaps) {
     if (bytes.length < binHeaderLen + 1 + n * 2) return null;
@@ -383,8 +410,11 @@ class SceneEntry {
   final int number;
   final String name;
   final bool current;
-  const SceneEntry(
-      {required this.number, required this.name, this.current = false});
+  const SceneEntry({
+    required this.number,
+    required this.name,
+    this.current = false,
+  });
 }
 
 class DeviceEntry {
@@ -394,13 +424,14 @@ class DeviceEntry {
   final String ip;
   final String model;
   final String firmware;
-  const DeviceEntry(
-      {required this.id,
-      required this.name,
-      this.state = '',
-      this.ip = '',
-      this.model = '',
-      this.firmware = ''});
+  const DeviceEntry({
+    required this.id,
+    required this.name,
+    this.state = '',
+    this.ip = '',
+    this.model = '',
+    this.firmware = '',
+  });
 }
 
 class FxSlot {
@@ -411,15 +442,15 @@ class FxSlot {
   final bool bypass;
   final String returnLabel;
   final Map<String, double> params;
-  FxSlot(
-      {required this.slot,
-      required this.type,
-      this.on = true,
-      this.level = 0,
-      this.bypass = false,
-      this.returnLabel = '',
-      Map<String, double>? params})
-      : params = params ?? {};
+  FxSlot({
+    required this.slot,
+    required this.type,
+    this.on = true,
+    this.level = double.nan,
+    this.bypass = false,
+    this.returnLabel = '',
+    Map<String, double>? params,
+  }) : params = params ?? {};
 }
 
 class OfflineChange {
@@ -427,8 +458,12 @@ class OfflineChange {
   final String id;
   final Object? from;
   final Object? to;
-  const OfflineChange(
-      {required this.strip, required this.id, this.from, this.to});
+  const OfflineChange({
+    required this.strip,
+    required this.id,
+    this.from,
+    this.to,
+  });
 }
 
 class EngineState {
@@ -561,11 +596,14 @@ class EngineState {
   /// request_id; unrelated or old operations cannot complete their spinner.
   Map<String, dynamic>? deviceOperationComplete;
   ProviderDiagnostics? providerDiagnostics;
+  final Map<String, Map<String, dynamic>> consoleControlNodes = {};
+  final Map<String, Map<String, dynamic>> consoleControlResults = {};
 
   // Incremented when a desk session ends, including same-driver reconnects.
   int session = 0;
   int? _syncEpoch;
   int? get syncEpoch => _syncEpoch;
+  int nativeProofRevision = 0;
   bool inputProcessorGuard = false;
   bool channelProcessingGuard = false;
   final Map<int, Set<String>> knownValues = {};
@@ -602,6 +640,8 @@ class EngineState {
     _nativeSnapshots = null;
     _nativeSnapshotsCaps = null;
     providerDiagnostics = null;
+    consoleControlNodes.clear();
+    consoleControlResults.clear();
     knownValues.clear();
     capsReady = false;
     inputProcessorGuard = false;
@@ -685,6 +725,44 @@ class EngineState {
   /// Apply one decoded Event frame. Returns true when the UI should rebuild.
   bool applyFrame(Map<String, dynamic> e) {
     switch (e['type']) {
+      case 'console_controls':
+      case 'console_control_result':
+        final request = e['request_id'];
+        if (request is! String ||
+            e['epoch'] != _syncEpoch ||
+            e['driver'] != driver) {
+          return false;
+        }
+        final cache = e['type'] == 'console_controls'
+            ? consoleControlNodes
+            : consoleControlResults;
+        cache[request] = Map<String, dynamic>.of(e);
+        while (cache.length > 64) {
+          cache.remove(cache.keys.first);
+        }
+        return true;
+      case 'native_controls_invalidated':
+        if (e['epoch'] != _syncEpoch) return false;
+        nativeProofRevision++;
+        knownValues.clear();
+        params.clear();
+        consoleControlNodes.clear();
+        destinationControls = const [];
+        routing = [];
+        fx = [];
+        mainFader = null;
+        mainMuted = null;
+        busFaders.clear();
+        busMuted.clear();
+        subgroupFaders.clear();
+        subgroupMuted.clear();
+        subgroupAssign.clear();
+        muteGroupAssign.clear();
+        muteGroups.clear();
+        muteGroupNames.clear();
+        solos.clear();
+        _outputTelemetry.reset();
+        return true;
       case 'sync_epoch':
         final epoch = (e['epoch'] as num?)?.toInt();
         if (epoch == null || epoch == _syncEpoch) return false;
@@ -716,7 +794,8 @@ class EngineState {
           final control = DestinationControlVm.fromJson(epoch, row);
           if (control == null ||
               controls.any(
-                  (c) => c.target == control.target && c.id == control.id)) {
+                (c) => c.target == control.target && c.id == control.id,
+              )) {
             return false;
           }
           controls.add(control);
@@ -736,15 +815,16 @@ class EngineState {
           for (final target in (e['output_meter_targets'] as List? ?? const []))
             if (target is String) target,
         ]);
-        _outputTelemetry.samples
-            .removeWhere((key, _) => !outputMeterTargets.contains(key));
+        _outputTelemetry.samples.removeWhere(
+          (key, _) => !outputMeterTargets.contains(key),
+        );
         final raw = (e['strips'] as List?) ?? const [];
         // Hardware drivers publish geometry in caps and live values in
         // params. An empty legacy snapshot must not erase that surface.
         if (raw.isNotEmpty || topology.isEmpty) {
           strips = [
             for (final row in raw)
-              if (row is Map<String, dynamic>) Strip.fromJson(row)
+              if (row is Map<String, dynamic>) Strip.fromJson(row),
           ];
           // Snapshot values supersede older cached echoes. Keep unrelated
           // param-plane fields while hydrating the values actually present.
@@ -808,8 +888,10 @@ class EngineState {
         capsReady = true;
         inputProcessorGuard = e['input_processor_guard'] == true;
         channelProcessingGuard = e['channel_processing_guard'] == true;
-        final nativeCaps =
-            NativeSnapshotsVm.fromCaps(driver, e['native_snapshots']);
+        final nativeCaps = NativeSnapshotsVm.fromCaps(
+          driver,
+          e['native_snapshots'],
+        );
         if (!nativeCaps.supported) _nativeSnapshots = null;
         _nativeSnapshotsCaps = nativeCaps;
         dynamicsMetersSupported = e['dynamics_meters'] == true;
@@ -822,8 +904,9 @@ class EngineState {
             ? groups['clear_solo_scope'] as String
             : null;
         busCount = groups is Map ? (groups['buses'] as num?)?.toInt() ?? 0 : 0;
-        muteGroupCount =
-            groups is Map ? (groups['mute_groups'] as num?)?.toInt() ?? 0 : 0;
+        muteGroupCount = groups is Map
+            ? (groups['mute_groups'] as num?)?.toInt() ?? 0
+            : 0;
         subgroupCount = groups is Map
             ? ((groups['subgroups'] as num?)?.toInt() ?? 0).clamp(0, 255)
             : 0;
@@ -835,14 +918,14 @@ class EngineState {
             e['fx'] is Map && (e['fx'] as Map)['state_controls'] == true;
         fxTypes = [
           for (final type in types is List ? types : const [])
-            if (type is Map<String, dynamic>) type
+            if (type is Map<String, dynamic>) type,
         ];
         final families = e['topology'];
         if (families is List) {
           final previous = {for (final strip in strips) strip.key: strip};
           topology = [
             for (final f in families)
-              if (f is Map<String, dynamic>) f
+              if (f is Map<String, dynamic>) f,
           ];
           strips = [
             for (final f in topology)
@@ -855,12 +938,13 @@ class EngineState {
                       : '${f['key']}/${(i + 1).toString().padLeft(2, '0')}';
                   return previous[key] ??
                       Strip(
-                          ch: ch,
-                          key: key,
-                          name:
-                              '${f['name_prefix'] ?? f['label'] ?? 'CH'}${i + 1}',
-                          fader: 0,
-                          muted: false);
+                        ch: ch,
+                        key: key,
+                        name:
+                            '${f['name_prefix'] ?? f['label'] ?? 'CH'}${i + 1}',
+                        fader: 0,
+                        muted: false,
+                      );
                 })(),
           ];
           for (final entry in params.entries.toList()) {
@@ -878,7 +962,8 @@ class EngineState {
                 pair.any((v) => v is! int || v < 0) ||
                 pair[0] == pair[1] ||
                 pair.any(
-                    (v) => used.contains(v) || !strips.any((s) => s.ch == v))) {
+                  (v) => used.contains(v) || !strips.any((s) => s.ch == v),
+                )) {
               validPairs = false;
               break;
             }
@@ -893,17 +978,22 @@ class EngineState {
             for (final p in ps)
               if (p is Map && p['id'] is String)
                 p['id'] as String: Map<String, dynamic>.unmodifiable(
-                    Map<String, dynamic>.from(p)),
+                  Map<String, dynamic>.from(p),
+                ),
           });
           supportedParams = parameterMetadata.keys.toSet();
         }
         return true;
       case 'output_meters':
-        _outputTelemetry.apply(e,
-            epoch: _syncEpoch, targets: outputMeterTargets);
+        _outputTelemetry.apply(
+          e,
+          epoch: _syncEpoch,
+          targets: outputMeterTargets,
+        );
         return false;
       case 'meters':
         final raw = (e['levels'] as List?) ?? const [];
+        if (!connected && raw.isNotEmpty) return false;
         meters = [for (final v in raw) ((v as num?) ?? 0.0).toDouble()];
         return false; // meter frames ride notifiers, never rebuild
       case 'audio_spectrum':
@@ -937,7 +1027,7 @@ class EngineState {
             'gate_out',
             'comp_in',
             'comp_reduction',
-            'comp_out'
+            'comp_out',
           ]) {
             final value = row[key];
             if (value is num && value.isFinite) values[key] = value.toDouble();
@@ -987,6 +1077,7 @@ class EngineState {
         final tap = e['tap'] as String?;
         final raw = e['levels'];
         if (tap == null || raw is! List) return false;
+        if (!connected && raw.isNotEmpty) return false;
         taps[tap] = [for (final v in raw) ((v as num?) ?? 0.0).toDouble()];
         return false;
       case 'bus':
@@ -1097,7 +1188,7 @@ class EngineState {
                 number: (s['number'] as num?)?.toInt() ?? 0,
                 name: (s['name'] as String?) ?? '',
                 current: (s['current'] as bool?) ?? false,
-              )
+              ),
         ];
         return true;
       case 'fx':
@@ -1111,25 +1202,26 @@ class EngineState {
                 on: (s['on'] as bool?) ?? true,
                 bypass: s['bypass'] as bool? ?? false,
                 returnLabel: s['ret_label'] as String? ?? '',
-                level: ((s['level'] as num?) ?? 0).toDouble(),
+                level: (s['level'] as num?)?.toDouble() ?? double.nan,
                 params: s['params'] is Map
                     ? {
                         for (final kv in (s['params'] as Map).entries)
                           if (kv.key is String && kv.value is num)
-                            kv.key as String: (kv.value as num).toDouble()
+                            kv.key as String: (kv.value as num).toDouble(),
                       }
                     : null,
-              )
+              ),
         ];
         return true;
       case 'routing':
-        final rows =
-            e.containsKey('destinations') ? e['destinations'] : e['patches'];
+        final rows = e.containsKey('destinations')
+            ? e['destinations']
+            : e['patches'];
         final raw = rows is List ? rows : const [];
         routing = [
           for (final p in raw)
             if (p is Map)
-              {for (final kv in p.entries) kv.key.toString(): kv.value}
+              {for (final kv in p.entries) kv.key.toString(): kv.value},
         ];
         return true;
       case 'devices':
@@ -1144,7 +1236,7 @@ class EngineState {
                 ip: d['ip'] as String? ?? '',
                 model: d['model'] as String? ?? '',
                 firmware: d['fw'] as String? ?? '',
-              )
+              ),
         ];
         return true;
       case 'info':
@@ -1156,7 +1248,7 @@ class EngineState {
         clientCount = (e['count'] as num?)?.toInt() ?? 0;
         writers = [
           for (final w in e['writers'] as List? ?? const [])
-            if (w is String) w
+            if (w is String) w,
         ];
         return true;
       case 'link':
@@ -1179,7 +1271,7 @@ class EngineState {
         locks = {
           for (final kv in holds.entries)
             if (int.tryParse(kv.key.toString()) != null && kv.value is String)
-              int.parse(kv.key.toString()): kv.value as String
+              int.parse(kv.key.toString()): kv.value as String,
         };
         return true;
       case 'offline_diff':
@@ -1192,7 +1284,7 @@ class EngineState {
                 id: (c['id'] as String?) ?? '',
                 from: c['from'] as Object?,
                 to: c['to'] as Object?,
-              )
+              ),
         ];
         return true;
       case 'error':
@@ -1207,6 +1299,7 @@ class EngineState {
 
   /// Apply one decoded BINARY frame (meters/GR/taps). Never rebuilds.
   void applyBinary(BinaryFrame f) {
+    if (!connected && (f.kind == 'gr' || f.levels.isNotEmpty)) return;
     meterSeq = f.seq;
     switch (f.kind) {
       case 'meters':

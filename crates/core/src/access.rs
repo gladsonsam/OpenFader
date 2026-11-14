@@ -193,9 +193,41 @@ impl<'a, D: MixerDriver> CheckedDriver<'a, D> {
     pub fn policy(&self) -> &Policy {
         &self.policy
     }
+
+    fn allow_native_processor_recall(&self, snapshot: &crate::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> {
+        self.policy.allow_recall()?;
+        let topology = self.inner.topology();
+        for block in &snapshot.blocks {
+            let index = crate::strip_index_for_key(&topology, &block.strip_key)
+                .ok_or_else(|| anyhow::anyhow!("native processor target unavailable"))?;
+            self.policy.allow_strip(StripId(u16::try_from(index)?))?;
+        }
+        Ok(())
+    }
 }
 
 impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
+    fn console_controls_capability(&self) -> crate::console_controls::ConsoleControlsCapability {
+        self.inner.console_controls_capability()
+    }
+    async fn console_controls_node(&self, path: &str) -> anyhow::Result<crate::console_controls::ConsoleControlNode> {
+        self.inner.console_controls_node(path).await
+    }
+    async fn console_control_write(&self, request: &crate::console_controls::ConsoleControlWrite,
+        check: crate::native_library::Check<'_>) -> anyhow::Result<crate::console_controls::ConsoleControlResult> {
+        let allowed = || check()
+            && self.policy.allow_recall().is_ok()
+            && self.policy.allow_main(1.).is_ok()
+            && self.policy.allow_upload().is_ok()
+            && (0..self.inner.strip_count()).all(|ch| {
+                let Ok(ch) = u16::try_from(ch) else { return false; };
+                self.policy.allow_assign(StripId(ch)).is_ok()
+                    && self.policy.allow_rename(StripId(ch)).is_ok()
+                    && self.policy.allow_fader(StripId(ch), 1.).is_ok()
+            });
+        anyhow::ensure!(allowed(), "Native console edits require full mixer access");
+        self.inner.console_control_write(request, &allowed).await
+    }
     fn name(&self) -> &'static str {
         self.inner.name()
     }
@@ -258,6 +290,17 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner
             .set_destination_control(target, control, value, expected)
             .await
+    }
+
+    fn legacy_native_processor_required(&self, field: &str, value: &crate::ParamValue) -> anyhow::Result<Option<crate::native_processor::NativeProcessorDomain>> { self.inner.legacy_native_processor_required(field, value) }
+    async fn capture_native_processors(&self, check: crate::native_library::Check<'_>) -> anyhow::Result<Option<crate::native_processor::NativeProcessorSnapshot>> { self.inner.capture_native_processors(check).await }
+    fn validate_native_processors(&self, snapshot: &crate::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> { self.inner.validate_native_processors(snapshot) }
+    async fn revalidate_captured_native_processors(&self, snapshot: &crate::native_processor::NativeProcessorSnapshot, check: crate::native_library::Check<'_>) -> anyhow::Result<()> { self.inner.revalidate_captured_native_processors(snapshot, check).await }
+    async fn preflight_native_processors(&self, snapshot: &crate::native_processor::NativeProcessorSnapshot, check: crate::native_library::Check<'_>) -> anyhow::Result<()> { self.allow_native_processor_recall(snapshot)?; self.inner.preflight_native_processors(snapshot, check).await }
+    async fn recall_native_processors(&self, snapshot: &crate::native_processor::NativeProcessorSnapshot, check: crate::native_library::Check<'_>) -> anyhow::Result<()> { self.allow_native_processor_recall(snapshot)?; self.inner.recall_native_processors(snapshot, check).await }
+
+    fn param_kind_ranges(&self) -> &'static [crate::params::ParamKindRange] {
+        self.inner.param_kind_ranges()
     }
 
     fn channel_count(&self) -> usize {

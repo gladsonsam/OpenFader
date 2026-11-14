@@ -14,6 +14,44 @@ pub struct Definition {
     pub read_only: bool,
     pub kind: Kind,
 }
+impl Definition {
+    /// OSC child address: named leaves use their native name; indexed nodes
+    /// use the documented 1-based index, never the display label.
+    pub fn address_name(&self) -> anyhow::Result<String> {
+        let name = if self.name.is_empty() {
+            anyhow::ensure!(self.index > 0, "WING: unnamed native child has zero index");
+            self.index.to_string()
+        } else {
+            self.name.clone()
+        };
+        anyhow::ensure!(
+            !name.is_empty()
+                && name != "."
+                && name != ".."
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'$')),
+            "WING: unaddressable native child {name:?}"
+        );
+        Ok(name)
+    }
+}
+
+/// Parse definitions and fail closed when native children cannot be uniquely
+/// addressed, including collisions between a named and indexed child.
+pub fn addressed_definitions(bytes: &[u8]) -> anyhow::Result<Vec<Definition>> {
+    let defs = definitions(bytes)?;
+    let mut seen = std::collections::BTreeSet::new();
+    for def in &defs {
+        let name = def.address_name()?;
+        anyhow::ensure!(
+            seen.insert(name.clone()),
+            "WING: duplicate or ambiguous native child {name:?}"
+        );
+    }
+    Ok(defs)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Node,
@@ -102,7 +140,20 @@ pub fn definitions(bytes: &[u8]) -> anyhow::Result<Vec<Definition>> {
                             Kind::Log { min, max, steps }
                         }
                     }
-                    3 => Kind::Fader,
+                    3 => {
+                        // Some definitions include the fader's standard numeric
+                        // domain, although the protocol also permits no payload.
+                        if !body.0.is_empty() {
+                            let min = body.float()?;
+                            let max = body.float()?;
+                            let steps = body.signed()?;
+                            ensure!(
+                                min == -144.0 && max == 10.0 && steps == 1024,
+                                "WING: unsupported native fader definition"
+                            );
+                        }
+                        Kind::Fader
+                    }
                     4 => Kind::Integer {
                         min: body.signed()?,
                         max: body.signed()?,
@@ -177,9 +228,9 @@ impl WingDriver {
         let [OscType::Blob(bytes)] = response.args.as_slice() else {
             unreachable!()
         };
-        let mut found = definitions(bytes)?
+        let mut found = addressed_definitions(bytes)?
             .into_iter()
-            .filter(|def| def.name == name);
+            .filter(|def| def.address_name().is_ok_and(|child| child == name));
         let definition = found
             .next()
             .context("WING: native parameter definition unavailable")?;

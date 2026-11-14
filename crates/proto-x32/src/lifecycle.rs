@@ -21,6 +21,8 @@ pub(crate) struct Link {
     /// Route hydration/renewal worker; aborted with the link so no query
     /// task outlives its connection (its fanout children drop with it).
     pub(crate) route_tasks: Vec<tokio::task::JoinHandle<()>>,
+    pub(crate) route_refresh: tokio::sync::mpsc::UnboundedSender<crate::routing::RouteRefresh>,
+    pub(crate) solo_refresh: tokio::sync::mpsc::UnboundedSender<crate::solo::SoloRefresh>,
 }
 
 impl Drop for Link {
@@ -189,6 +191,7 @@ impl X32Driver {
                     },
                 };
                 if unsolicited {
+                    let _ = crate::input_processors::observe(route_generation, &msg);
                     let source_changed = msg.addr.starts_with("/-ha/")
                         || msg.addr.ends_with("/config/source")
                         || msg.addr.starts_with("/config/routing/")
@@ -222,9 +225,6 @@ impl X32Driver {
                     // Other unsolicited leaves already entered `received`.
                     continue;
                 }
-                if msg.addr.starts_with("/-stat/solosw/") {
-                    crate::solo::note_solo_push(&msg, route_generation, &solo_push_tx2);
-                }
                 for (strip, param, value) in inbound::parse_inbound(&msg) {
                     *last_control.lock().unwrap() = Some(at);
                     let _ = tx.send(ParamUpdate {
@@ -240,6 +240,8 @@ impl X32Driver {
             session: session.clone(),
             info,
             updates,
+            route_refresh: route_dirty_tx,
+            solo_refresh: solo_dirty_tx,
             meter_tasks: Vec::new(),
             route_tasks: vec![
                 tokio::spawn(crate::routing::route_maintenance_task(

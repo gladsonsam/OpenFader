@@ -190,6 +190,7 @@ pub struct StoredScene {
     pub rta: Option<StoredRta>,
     pub output_eq: Option<StoredOutputEq>,
     pub link_settings: Option<StoredLinkSettings>,
+    pub native_processors: Option<openfader_core::native_processor::NativeProcessorSnapshot>,
 }
 
 #[derive(Clone, Debug)]

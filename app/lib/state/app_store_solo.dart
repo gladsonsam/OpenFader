@@ -93,7 +93,7 @@ extension _SoloControls on _AppStoreContext {
               muted: false,
               active: _busId == 'solo:${row.target}:${row.id}',
               meter: _busMeters.putIfAbsent(
-                  'solo:${row.target}:${row.id}', () => ValueNotifier(0))),
+                  'solo:${row.target}:${row.id}', () => ValueNotifier(double.nan))),
       ];
 
   void _writeTargetSolo(int ch) {

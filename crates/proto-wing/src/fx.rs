@@ -160,9 +160,16 @@ impl WingDriver {
                 &format!("/fx/{slot}/mdl"),
                 vec![OscType::String(model.id.into())],
             )
-            .await
+            .await?;
+        ensure!(
+            self.fx_model(slot).await?
+                == MODELS.iter().position(|m| m.id == model.id).unwrap() as u8,
+            "WING: FX model readback did not match"
+        );
+        self.ensure_current(&session)
     }
     pub async fn read_fx(&self, slot: u8, param: u8, expected: Option<u8>) -> anyhow::Result<f32> {
+        let session = self.session()?;
         let actual = self.fx_model(slot).await?;
         ensure!(
             expected.is_none_or(|e| actual == e),
@@ -173,8 +180,8 @@ impl WingDriver {
             .params
             .get(param as usize)
             .context("WING: FX parameter out of range")?;
-        let reply = self
-            .session()?
+        self.ensure_current(&session)?;
+        let reply = session
             .query_timeout(&format!("/fx/{slot}/{}", def.name), QUERY_TIMEOUT)
             .await?;
         let value = def.decode(&reply)?;
@@ -182,21 +189,61 @@ impl WingDriver {
             self.fx_model(slot).await? == actual,
             "WING: FX model changed during read"
         );
+        self.ensure_current(&session)?;
         Ok(value)
     }
     pub(crate) async fn write_fx(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()> {
+        self.write_fx_checked(slot, param, value, None).await
+    }
+
+    pub async fn write_fx_checked(
+        &self,
+        slot: u8,
+        param: u8,
+        value: f32,
+        expected: Option<u8>,
+    ) -> anyhow::Result<()> {
         let session = self.session()?;
         let _guard = self.writes.lock().await;
         self.ensure_current(&session)?;
         let model = self.fx_model(slot).await?;
+        ensure!(
+            expected.is_none_or(|e| e == model),
+            "WING: FX model changed before write"
+        );
         let def = MODELS[model as usize]
             .params
             .get(param as usize)
             .context("WING: FX parameter out of range")?;
         let arg = def.encode(value)?;
+        let path = format!("/fx/{slot}/{}", def.name);
+        let encoded = def.decode(&rosc::OscMessage {
+            addr: path.clone(),
+            args: vec![arg.clone()],
+        })?;
+        ensure!(
+            self.fx_model(slot).await? == model,
+            "WING: FX model changed before write"
+        );
         self.ensure_current(&session)?;
-        session
-            .send(&format!("/fx/{slot}/{}", def.name), vec![arg])
-            .await
+        session.send(&path, vec![arg]).await?;
+        let reply = session.query_timeout(&path, QUERY_TIMEOUT).await?;
+        let actual = def.decode(&reply).with_context(|| {
+            format!(
+                "WING: FX slot {slot} model {} parameter {} invalid readback {:?}",
+                MODELS[model as usize].id, def.name, reply.args
+            )
+        })?;
+        ensure!(
+            self.fx_model(slot).await? == model,
+            "WING: FX model changed during write"
+        );
+        self.ensure_current(&session)?;
+        ensure!(
+            (actual - encoded).abs() <= 0.002,
+            "WING: FX slot {slot} model {} parameter {} readback mismatch: expected {encoded}, got {actual}, reply {:?}",
+            MODELS[model as usize].id, def.name, reply.args
+        );
+        Ok(())
     }
 }

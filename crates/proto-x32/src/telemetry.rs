@@ -308,36 +308,27 @@ impl X32Driver {
         self.telemetry.reset();
     }
 
-    /// Freshest socket receive time across all meter streams, for the
-    /// current generation only. Replaying a cache never advances it.
-    pub(crate) fn last_meter_at(&self) -> Option<Instant> {
+    /// Freshest receipt for streams that contribute to each projection.
+    /// Neither replayed samples nor unrelated output/automix pages advance it.
+    pub(crate) fn meter_timestamps(&self) -> (Option<Instant>, Option<Instant>) {
         let gen = self.telemetry.current();
         let state = self.telemetry.state.lock().unwrap();
         if state.generation != gen {
-            return None;
+            return (None, None);
         }
         let now = Instant::now();
-        let mut latest: Option<Instant> = None;
-        for sample in [
-            &state.page0,
-            &state.chan,
-            &state.mixbus,
-            &state.inout,
-            &state.page5,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if now.duration_since(sample.at) <= METER_STALE_AFTER {
-                latest = Some(latest.map_or(sample.at, |at: Instant| at.max(sample.at)));
-            }
-        }
-        if let Some((at, _)) = state.automix {
-            if now.duration_since(at) <= METER_STALE_AFTER {
-                latest = Some(latest.map_or(at, |l: Instant| l.max(at)));
-            }
-        }
-        latest
+        let latest = |samples: &[&Option<Sample>]| {
+            samples
+                .iter()
+                .filter_map(|sample| sample.as_ref())
+                .filter(|sample| now.duration_since(sample.at) <= METER_STALE_AFTER)
+                .map(|sample| sample.at)
+                .max()
+        };
+        (
+            latest(&[&state.page0, &state.chan, &state.mixbus, &state.page5]),
+            latest(&[&state.chan, &state.mixbus]),
+        )
     }
 
     /// Subscribe to the meter broadcast, arming the documented `/meters` streams (bare ids plus `/meters/5`

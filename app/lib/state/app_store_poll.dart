@@ -121,6 +121,19 @@ mixin _AppStorePoll on _AppStoreContext {
         final previousSession = engine.session;
         final controlOnly = _controlOnlyFrame(e);
         var frameDirty = engine.applyFrame(e);
+        if (e['type'] == 'native_controls_invalidated' && frameDirty) {
+          const reason = 'Console settings changed. Reopen this control.';
+          _invalidatePresetOperations(reason);
+          _interruptDestinationEdits(reason);
+          _interruptAssignmentEdit(reason);
+          _failNameEdits(reason);
+          _coalescer.clear();
+          _maps.confirmed.clear();
+          _maps.pending.clear();
+          _presetVerifiedFields.clear();
+          _confirmedFader.clear();
+          _confirmedMute.clear();
+        }
         if (e['type'] == 'caps') _observeInputPresetCatalogue();
         _observeOutputProcessingContext();
         if (e['type'] == 'input_processor_result') {

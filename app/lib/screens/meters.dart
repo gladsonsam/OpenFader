@@ -3,6 +3,7 @@
 // Freshness comes from the single shell-owned 80 ms loop; this page sends
 // spectrum_target for the visible strip while visible and clears it on dispose.
 import '../widgets/inline_feedback.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -51,19 +52,19 @@ class BridgeOutputGroup {
   const BridgeOutputGroup(this.title, this.meters);
 }
 
-// double.negativeInfinity means honestly no data, so the ladder renders dark.
+// NaN means unavailable; negative infinity is a measured silent signal.
 class BridgeTap {
   final ValueNotifier<double> db;
   final ValueNotifier<double> peakDb;
   final ValueNotifier<bool> clip;
 
   BridgeTap({
-    double db = double.negativeInfinity,
-    double peakDb = double.negativeInfinity,
+    double db = double.nan,
+    double peakDb = double.nan,
     bool clip = false,
-  })  : db = ValueNotifier(db),
-        peakDb = ValueNotifier(peakDb),
-        clip = ValueNotifier(clip);
+  }) : db = ValueNotifier(db),
+       peakDb = ValueNotifier(peakDb),
+       clip = ValueNotifier(clip);
 
   void dispose() {
     db.dispose();
@@ -85,8 +86,7 @@ abstract class MetersStore extends ChangeNotifier {
   Future<String?> setMonitorControl(
     DestinationControlVm control,
     double value,
-  ) async =>
-      'Monitor control unavailable.';
+  ) async => 'Monitor control unavailable.';
   ValueListenable<OutputMeterVm> outputMeterFor(String target);
 
   Future<void> pollMeters();
@@ -223,114 +223,119 @@ class _U4MetersPageState extends State<U4MetersPage> {
   @override
   Widget build(BuildContext context) {
     return InlineFeedbackScope(
-        expand: true,
-        controller: _feedback,
-        builder: (context) => Scaffold(
-              backgroundColor: ConsolePalette.of(context).page,
-              body: SafeArea(
-                child: ListenableBuilder(
-                  listenable: widget.store,
-                  builder: (context, _) {
-                    final store = widget.store;
-                    final focused = _currentFocus;
-                    return Column(
-                      children: [
-                        if (focused != null)
-                          Container(
-                            width: double.infinity,
-                            color: ConsolePalette.of(context).panel,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: TextButton(
-                                onPressed: () => _editFocus(focused),
-                                child: Text(
-                                  '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                                  overflow: TextOverflow.ellipsis,
+      expand: true,
+      controller: _feedback,
+      builder: (context) => Scaffold(
+        backgroundColor: ConsolePalette.of(context).page,
+        body: SafeArea(
+          child: ListenableBuilder(
+            listenable: widget.store,
+            builder: (context, _) {
+              final store = widget.store;
+              final focused = _currentFocus;
+              return Column(
+                children: [
+                  if (focused != null)
+                    Container(
+                      width: double.infinity,
+                      color: ConsolePalette.of(context).panel,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => _editFocus(focused),
+                          child: Text(
+                            '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: AppDesign.pagePadding,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (!store.online)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              margin: const EdgeInsets.only(bottom: 14),
+                              decoration: BoxDecoration(
+                                color: ConsolePalette.of(context).panel,
+                                border: Border.all(
+                                  color: ConsolePalette.of(context).divider,
+                                ),
+                                borderRadius: const BorderRadius.all(
+                                  Radius.circular(4),
+                                ),
+                              ),
+                              child: Text(
+                                'Offline - ladders are dark until a live link is up. Connect for live meters.',
+                                style: TextStyle(
+                                  fontFamily: U4.font,
+                                  fontSize: AppDesign.caption,
+                                  color: ConsolePalette.of(context).text7,
                                 ),
                               ),
                             ),
-                          ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: AppDesign.pagePadding,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                          for (final g in store.groups) ...[
+                            if (g.ladders.isNotEmpty)
+                              _LadderGroup(
+                                group: g,
+                                online: store.online,
+                                tapOf: store.tapOf,
+                              )
+                            else
+                              _CollapsedGroup(group: g),
+                            const SizedBox(height: 14),
+                          ],
+                          for (final g in store.physicalOutputGroups) ...[
+                            _PhysicalOutputs(
+                              group: g,
+                              meterOf: store.outputMeterFor,
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (store.monitorControls.isNotEmpty) ...[
+                            ExpansionTile(
+                              expansionAnimationStyle:
+                                  AnimationStyle.noAnimation,
+                              tilePadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              title: const Text(
+                                'Monitor controls',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                               children: [
-                                if (!store.online)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 8,
-                                    ),
-                                    margin: const EdgeInsets.only(bottom: 14),
-                                    decoration: BoxDecoration(
-                                      color: ConsolePalette.of(context).panel,
-                                      border: Border.all(
-                                        color:
-                                            ConsolePalette.of(context).divider,
-                                      ),
-                                      borderRadius: const BorderRadius.all(
-                                        Radius.circular(4),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Offline - ladders are dark until a live link is up. Connect for live meters.',
-                                      style: TextStyle(
-                                        fontFamily: U4.font,
-                                        fontSize: AppDesign.caption,
-                                        color: ConsolePalette.of(context).text7,
-                                      ),
-                                    ),
-                                  ),
-                                for (final g in store.groups) ...[
-                                  if (g.ladders.isNotEmpty)
-                                    _LadderGroup(
-                                      group: g,
-                                      online: store.online,
-                                      tapOf: store.tapOf,
-                                    )
-                                  else
-                                    _CollapsedGroup(group: g),
-                                  const SizedBox(height: 14),
-                                ],
-                                for (final g in store.physicalOutputGroups) ...[
-                                  _PhysicalOutputs(
-                                    group: g,
-                                    meterOf: store.outputMeterFor,
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
-                                if (store.monitorControls.isNotEmpty) ...[
-                                  ExpansionTile(
-                                    expansionAnimationStyle:
-                                        AnimationStyle.noAnimation,
-                                    tilePadding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
-                                    title: const Text('Monitor controls',
-                                        style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600)),
-                                    children: [
-                                      _MonitorControls(
-                                          store: store,
-                                          focused: focused,
-                                          onSelect: (row) =>
-                                              setState(() => _focused = row))
-                                    ],
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
+                                _MonitorControls(
+                                  store: store,
+                                  focused: focused,
+                                  onSelect: (row) =>
+                                      setState(() => _focused = row),
+                                ),
                               ],
                             ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ));
+                            const SizedBox(height: 14),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -365,7 +370,9 @@ class _PhysicalOutputs extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: _PhysicalLadder(
-                        label: meter.label, meter: meterOf(meter.target)),
+                      label: meter.label,
+                      meter: meterOf(meter.target),
+                    ),
                   ),
               ],
             ),
@@ -394,11 +401,13 @@ class _PhysicalLadderState extends State<_PhysicalLadder> {
     final count = value.levels.length == 2 ? 2 : 1;
     if (_count != count) setState(() => _count = count);
     for (var i = 0; i < _taps.length; i++) {
-      final level = i < value.levels.length ? value.levels[i] : 0.0;
-      _taps[i].db.value = value.available && level > 0
-          ? 20 * math.log(level) / math.ln10
-          : double.negativeInfinity;
-      _taps[i].clip.value = value.available && level >= 1;
+      final level = i < value.levels.length ? value.levels[i] : double.nan;
+      _taps[i].db.value = !value.available || !level.isFinite
+          ? double.nan
+          : level > 0
+              ? 20 * math.log(level) / math.ln10
+              : double.negativeInfinity;
+      _taps[i].clip.value = value.available && level.isFinite && level >= 1;
     }
   }
 
@@ -430,19 +439,25 @@ class _PhysicalLadderState extends State<_PhysicalLadder> {
 
   @override
   Widget build(BuildContext context) => Tooltip(
-      message: widget.meter.value.inferred
-          ? '${widget.label}: measured signal; physical mapping is unverified'
-          : widget.label,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    message: widget.meter.value.inferred
+        ? '${widget.label}: measured signal; physical mapping is unverified'
+        : widget.label,
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         for (var i = 0; i < _count; i++)
           _Ladder(
-              ladder: BridgeLadder(
-                  ch: -1,
-                  label: widget.label,
-                  sub: _count == 2 ? (i == 0 ? 'L' : 'R') : ''),
-              tap: _taps[i],
-              height: 160),
-      ]));
+            ladder: BridgeLadder(
+              ch: -1,
+              label: widget.label,
+              sub: _count == 2 ? (i == 0 ? 'L' : 'R') : '',
+            ),
+            tap: _taps[i],
+            height: 160,
+          ),
+      ],
+    ),
+  );
 }
 
 class _LadderGroup extends StatelessWidget {
@@ -654,7 +669,7 @@ class _LadderPainter extends CustomPainter {
   };
 
   _LadderPainter({required this.tap, required this.palette})
-      : super(repaint: Listenable.merge([tap.db, tap.peakDb, tap.clip]));
+    : super(repaint: Listenable.merge([tap.db, tap.peakDb, tap.clip]));
 
   void disposeLabels() {
     for (final label in _labels.values) {
@@ -682,6 +697,16 @@ class _LadderPainter extends CustomPainter {
       Rect.fromLTWH(colL, colTop, colW, h),
       Paint()..color = palette.well,
     );
+
+    if (db.isNaN) {
+      canvas.drawLine(
+        Offset(colL, colTop + h / 2),
+        Offset(colL + colW, colTop + h / 2),
+        Paint()
+          ..color = palette.scaleTick
+          ..strokeWidth = 2,
+      );
+    }
 
     if (hasData && lv > bridgeFloorDb) {
       final fillY = _yOf(lv, colTop, h);
@@ -808,31 +833,40 @@ class _MonitorControls extends StatelessWidget {
                         ),
                     ],
                     child: IntrinsicWidth(
-                        child: Container(
-                      constraints: const BoxConstraints(
-                          minHeight: AppDesign.touchTarget),
-                      alignment: Alignment.center,
-                      padding: AppDesign.controlPadding,
-                      decoration: BoxDecoration(
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minHeight: AppDesign.touchTarget,
+                        ),
+                        alignment: Alignment.center,
+                        padding: AppDesign.controlPadding,
+                        decoration: BoxDecoration(
                           color: palette.control,
                           border: Border.all(color: palette.lineCtl),
-                          borderRadius: U4.rBtn),
-                      child: Text('${row.label}: ${row.valueLabel ?? '-'}',
-                          style: AppDesign.type(AppDesign.body,
-                              color: palette.text1, weight: FontWeight.w600)),
-                    )),
+                          borderRadius: U4.rBtn,
+                        ),
+                        child: Text(
+                          '${row.label}: ${row.valueLabel ?? '-'}',
+                          style: AppDesign.type(
+                            AppDesign.body,
+                            color: palette.text1,
+                            weight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   )
                 else if (row.numeric)
                   Semantics(
+                    selected: isFocused(row),
+                    child: ConsoleButton(
+                      label: row.label,
                       selected: isFocused(row),
-                      child: ConsoleButton(
-                        label: row.label,
-                        selected: isFocused(row),
-                        onPressed: !store.monitorControlIsCurrent(row) ||
-                                !row.available
-                            ? null
-                            : () => onSelect(row),
-                      )),
+                      onPressed:
+                          !store.monitorControlIsCurrent(row) || !row.available
+                          ? null
+                          : () => onSelect(row),
+                    ),
+                  ),
             ],
           ),
         ],

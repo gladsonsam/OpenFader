@@ -75,17 +75,19 @@ class DynCurvePainter extends CustomPainter {
             ..color = color
             ..strokeWidth = 1.5);
     }
-    // Operating dot (SPEC 2a: live level reader; frozen parks at lo).
-    final lv = (levelDb ?? lo).clamp(lo, 0.0);
-    final dot = Offset(px(lv), py(dynOut(dyn, lv).clamp(lo, 0)));
-    canvas.drawCircle(dot, 6, Paint()..color = color);
-    canvas.drawCircle(
-        dot,
-        6,
-        Paint()
-          ..color = palette.text1
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5);
+    // NaN denotes unavailable; a measured silent level parks at the floor.
+    if (levelDb == null || !levelDb!.isNaN) {
+      final lv = (levelDb ?? lo).clamp(lo, 0.0);
+      final dot = Offset(px(lv), py(dynOut(dyn, lv).clamp(lo, 0)));
+      canvas.drawCircle(dot, 6, Paint()..color = color);
+      canvas.drawCircle(
+          dot,
+          6,
+          Paint()
+            ..color = palette.text1
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5);
+    }
   }
 
   @override

@@ -98,13 +98,15 @@ impl Engine {
     /// `sync_state` -> `active` direction in `reconcile_event` /
     /// `deferred_fill`; no path acquires `sync_state` while holding
     /// `scenes_lib`/`shows`/`active`, so no inversion.
-    pub(super) fn sample_capture_pin(&self) -> (u64, String, bool) {
+    pub(super) fn sample_capture_pin(&self) -> (u64, String, bool, u64) {
         let sync = self.sync_state.lock().unwrap();
         let generation = self.connection_gen.load(Ordering::Acquire);
         let driver = self.active.read().unwrap().clone();
-        let suspended = self.reads_suspended.load(Ordering::Acquire);
+        let suspended = self.reads_suspended.load(Ordering::Acquire)
+            || self.native_control_in_flight.load(Ordering::Acquire);
+        let native_generation = self.native_control_generation.load(Ordering::Acquire);
         drop(sync);
-        (generation, driver, suspended)
+        (generation, driver, suspended, native_generation)
     }
 
     /// Whether a library action reads the desk (`Save` captures the full
@@ -125,23 +127,27 @@ impl Engine {
     /// mid-capture desk change rejects, never a steady state.
     pub(super) fn commit_with_capture_guard(
         &self,
-        pin: Option<(u64, String)>,
+        pin: Option<(u64, String, u64)>,
         numbered: HashMap<u16, StoredScene>,
         shows: Vec<Show>,
         current: Option<u16>,
     ) -> Result<CommitDisposition, String> {
-        if let Some((pin_gen, pin_driver)) = pin {
+        if let Some((pin_gen, pin_driver, pin_native)) = pin {
             let sync = self.sync_state.lock().unwrap();
             let cur_gen = self.connection_gen.load(Ordering::Acquire);
             let cur_driver = self.active.read().unwrap().clone();
-            let suspended = self.reads_suspended.load(Ordering::Acquire);
+            let suspended = self.reads_suspended.load(Ordering::Acquire)
+                || self.native_control_in_flight.load(Ordering::Acquire);
             if suspended {
                 drop(sync);
                 return Err(
                     "scene capture rejected: desk session changed (reads suspended)".to_string(),
                 );
             }
-            if cur_gen != pin_gen || cur_driver != pin_driver {
+            if cur_gen != pin_gen
+                || cur_driver != pin_driver
+                || self.native_control_generation.load(Ordering::Acquire) != pin_native
+            {
                 drop(sync);
                 return Err("scene capture rejected: desk changed during capture".to_string());
             }

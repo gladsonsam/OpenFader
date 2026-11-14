@@ -181,7 +181,7 @@ pub fn defs() -> &'static [ParamDef] {
             ("eq7_q", "EQ 7 Q", 0.442, 10., ""),
             ("eq7_type", "EQ 7 type", 0., 5., ""),
             ("eq8_gain", "EQ 8 gain", -15., 15., "dB"),
-            ("eq8_freq", "EQ 8 frequency", 20., 20000., "Hz"),
+            ("eq8_freq", "EQ 8 frequency", 50., 20000., "Hz"),
             ("eq8_q", "EQ 8 Q", 0.442, 10., ""),
             ("eq8_type", "EQ 8 type", 0., 5., ""),
         ] {

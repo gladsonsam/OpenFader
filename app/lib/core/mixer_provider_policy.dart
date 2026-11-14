@@ -171,6 +171,8 @@ class Dl32sProviderPolicy extends MixerProviderPolicy {
 class WingProviderPolicy extends MixerProviderPolicy {
   const WingProviderPolicy();
   @override
+  bool get masterChannelProcessing => true;
+  @override
   bool get meterSpectrumTarget => true;
   @override
   int get legacyAuxCount => 16;

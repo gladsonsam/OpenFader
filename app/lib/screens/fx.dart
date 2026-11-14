@@ -426,7 +426,9 @@ class _FxCard extends StatelessWidget {
                         ValueListenableBuilder<double>(
                             valueListenable: store.meterOf(slot.slot),
                             builder: (context, value, _) =>
-                                LinearProgressIndicator(
+                                !value.isFinite
+                                    ? Text('–', style: TextStyle(color: palette.mutedText))
+                                    : LinearProgressIndicator(
                                     value: value.clamp(0, 1),
                                     minHeight: 3,
                                     color: palette.meterGreen,

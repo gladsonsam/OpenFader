@@ -148,8 +148,37 @@ pub struct SceneRouteChange {
 
 #[async_trait::async_trait]
 pub trait DynDriver: Send + Sync {
-    async fn diagnostics(&self, _offset: usize, _limit: usize) -> anyhow::Result<serde_json::Value> {
-        Ok(serde_json::json!({"supported": false, "reason": "This provider does not expose raw diagnostics.", "rows": [], "offset": 0, "total": 0}))
+    fn console_controls_capability(
+        &self,
+    ) -> openfader_core::console_controls::ConsoleControlsCapability {
+        openfader_core::console_controls::ConsoleControlsCapability {
+            available: false,
+            unavailable_reason: Some(
+                "Native console controls are not available for this provider.".into(),
+            ),
+        }
+    }
+    async fn console_controls_node(
+        &self,
+        _path: &str,
+    ) -> anyhow::Result<openfader_core::console_controls::ConsoleControlNode> {
+        anyhow::bail!("native console controls unavailable")
+    }
+    async fn console_control_write(
+        &self,
+        _request: &openfader_core::console_controls::ConsoleControlWrite,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<openfader_core::console_controls::ConsoleControlResult> {
+        anyhow::bail!("native console controls unavailable")
+    }
+    async fn diagnostics(
+        &self,
+        _offset: usize,
+        _limit: usize,
+    ) -> anyhow::Result<serde_json::Value> {
+        Ok(
+            serde_json::json!({"supported": false, "reason": "This provider does not expose raw diagnostics.", "rows": [], "offset": 0, "total": 0}),
+        )
     }
 
     /// Read-only identification, independent of the active mixer session.
@@ -306,6 +335,16 @@ pub trait DynDriver: Send + Sync {
     /// empty (canonical ranges); mirrors
     /// [`MixerDriver::param_range_overrides`].
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
+        &[]
+    }
+    fn legacy_native_processor_required(&self, _field: &str, _value: &ParamValue) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorDomain>> { Ok(None) }
+    async fn capture_native_processors(&self, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorSnapshot>> { Ok(None) }
+    fn validate_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    async fn revalidate_captured_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    async fn preflight_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    async fn recall_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+
+    fn param_kind_ranges(&self) -> &'static [openfader_core::params::ParamKindRange] {
         &[]
     }
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
@@ -1253,6 +1292,16 @@ macro_rules! impl_dyn_driver {
         fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
             MixerDriver::param_range_overrides(self)
         }
+        fn legacy_native_processor_required(&self, field: &str, value: &ParamValue) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorDomain>> { MixerDriver::legacy_native_processor_required(self, field, value) }
+        async fn capture_native_processors(&self, check: openfader_core::native_library::Check<'_>) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorSnapshot>> { MixerDriver::capture_native_processors(self, check).await }
+        fn validate_native_processors(&self, snapshot: &openfader_core::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> { MixerDriver::validate_native_processors(self, snapshot) }
+        async fn revalidate_captured_native_processors(&self, snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { MixerDriver::revalidate_captured_native_processors(self, snapshot, check).await }
+        async fn preflight_native_processors(&self, snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { MixerDriver::preflight_native_processors(self, snapshot, check).await }
+        async fn recall_native_processors(&self, snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { MixerDriver::recall_native_processors(self, snapshot, check).await }
+
+        fn param_kind_ranges(&self) -> &'static [openfader_core::params::ParamKindRange] {
+            MixerDriver::param_kind_ranges(self)
+        }
         fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
             MixerDriver::param_presentations(self)
         }
@@ -1286,6 +1335,9 @@ macro_rules! impl_dyn_driver {
             MixerDriver::meter_taps(self)
         }
         fn native_library(&self) -> Option<serde_json::Value> { MixerDriver::native_library(self) }
+        fn console_controls_capability(&self) -> openfader_core::console_controls::ConsoleControlsCapability { MixerDriver::console_controls_capability(self) }
+        async fn console_controls_node(&self, path: &str) -> anyhow::Result<openfader_core::console_controls::ConsoleControlNode> { MixerDriver::console_controls_node(self, path).await }
+        async fn console_control_write(&self, request: &openfader_core::console_controls::ConsoleControlWrite, check: openfader_core::native_library::Check<'_>) -> anyhow::Result<openfader_core::console_controls::ConsoleControlResult> { MixerDriver::console_control_write(self, request, check).await }
         async fn read_lan(&self) -> anyhow::Result<openfader_core::lan::LanSnapshot> { MixerDriver::read_lan(self).await }
         async fn write_lan(&self, expected: openfader_core::lan::LanSnapshot, desired: openfader_core::lan::LanConfiguration,
             authorize: &(dyn Fn() -> bool + Send + Sync), apply_requested: bool) -> Result<openfader_core::lan::LanWriteResult, openfader_core::lan::LanWriteError> {

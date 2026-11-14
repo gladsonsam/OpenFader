@@ -10,6 +10,7 @@
 //! "unsupported", so stub drivers keep compiling while they grow.
 
 pub mod access;
+pub mod console_controls;
 pub mod destinations;
 pub mod fx;
 pub mod global_controls;
@@ -22,6 +23,7 @@ pub mod solo;
 pub use output_meters::{OutputMeterFrame, OutputMeterSnapshot};
 pub mod input_processors;
 pub mod native_library;
+pub mod native_processor;
 pub mod presets;
 pub mod rta;
 pub mod show;
@@ -547,6 +549,20 @@ impl FaderScale {
 /// all driver crates, so the `async_fn_in_trait` lint is allowed here.
 #[allow(async_fn_in_trait)]
 pub trait MixerDriver: Send + Sync {
+    fn console_controls_capability(&self) -> console_controls::ConsoleControlsCapability {
+        console_controls::ConsoleControlsCapability {
+            available: false,
+            unavailable_reason: Some("Native console controls are not available for this provider.".into()),
+        }
+    }
+    async fn console_controls_node(&self, _path: &str) -> anyhow::Result<console_controls::ConsoleControlNode> {
+        anyhow::bail!("native console controls unavailable")
+    }
+    /// Err rejects before mutation. Once a write is attempted, return an
+    /// explicit uncertain receipt unless native readback proves its outcome.
+    async fn console_control_write(&self, _request: &console_controls::ConsoleControlWrite, _check: native_library::Check<'_>) -> anyhow::Result<console_controls::ConsoleControlResult> {
+        anyhow::bail!("native console controls unavailable")
+    }
     // ---- identity ----
     fn name(&self) -> &'static str;
 
@@ -817,6 +833,24 @@ pub trait MixerDriver: Send + Sync {
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         &[]
     }
+
+    /// Optional engineering ranges specific to the current strip kind.
+    fn param_kind_ranges(&self) -> &'static [crate::params::ParamKindRange] {
+        &[]
+    }
+
+    /// Identify legacy selector values requiring a complete native block.
+    fn legacy_native_processor_required(&self, _field: &str, _value: &ParamValue) -> anyhow::Result<Option<crate::native_processor::NativeProcessorDomain>> { Ok(None) }
+    /// Capture a complete provider-specific processor plane, or None when absent.
+    async fn capture_native_processors(&self, _check: crate::native_library::Check<'_>) -> anyhow::Result<Option<crate::native_processor::NativeProcessorSnapshot>> { Ok(None) }
+    /// Provider-owned offline model/leaf roster validation.
+    fn validate_native_processors(&self, _snapshot: &crate::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    /// Re-read a captured block to reject changed source context before commit.
+    async fn revalidate_captured_native_processors(&self, _snapshot: &crate::native_processor::NativeProcessorSnapshot, _check: crate::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    /// Validate live target definitions and models before any scene mutation.
+    async fn preflight_native_processors(&self, _snapshot: &crate::native_processor::NativeProcessorSnapshot, _check: crate::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    /// Apply a previously preflighted snapshot with independent readback.
+    async fn recall_native_processors(&self, _snapshot: &crate::native_processor::NativeProcessorSnapshot, _check: crate::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
 
     /// Provider-owned labels and conditional choices for model-specific DSP.
     fn param_presentations(&self) -> &'static [crate::params::ParamPresentation] {

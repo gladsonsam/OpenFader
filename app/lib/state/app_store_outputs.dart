@@ -4,13 +4,16 @@ part of 'app_store.dart';
 abstract interface class _AppStoreOutputsContract {
   set _outputProcessingTarget(String? value);
   String get masterProcessingTarget;
+  String get _primaryMainTarget;
   int get _outputContextRevision;
   void _observeOutputProcessingContext();
 }
 
 mixin _AppStoreOutputs on _AppStoreContext {
+  int _outputContextRevisionBase = 0;
   @override
-  int _outputContextRevision = 0;
+  int get _outputContextRevision =>
+      _outputContextRevisionBase + engine.nativeProofRevision;
   bool? _outputLastLocked;
 
   // Observe every engine frame, including lock/unlock within one poll batch.
@@ -18,7 +21,7 @@ mixin _AppStoreOutputs on _AppStoreContext {
   void _observeOutputProcessingContext() {
     if (_outputLastLocked != locked) {
       _outputLastLocked = locked;
-      _outputContextRevision++;
+      _outputContextRevisionBase++;
     }
   }
 
@@ -27,7 +30,7 @@ mixin _AppStoreOutputs on _AppStoreContext {
   @override
   set _outputProcessingTarget(String? value) {
     if (_selectedOutputTarget == value) return;
-    _outputContextRevision++;
+    _outputContextRevisionBase++;
     _selectedOutputTarget = value;
   }
 
@@ -49,10 +52,33 @@ mixin _AppStoreOutputs on _AppStoreContext {
   @override
   String get masterProcessingTarget => _processingTargetForBus(_busId);
 
+  @override
+  String get _primaryMainTarget {
+    for (final family in engine.topology) {
+      if (family['kind'] != 'main' ||
+          family['first'] is! num ||
+          family['count'] is! num ||
+          (family['count'] as num) < 1) {
+        continue;
+      }
+      final first = (family['first'] as num).toInt();
+      final strip = engine.strips.where((s) => s.ch == first).firstOrNull;
+      if (strip != null) return strip.key;
+      return '';
+    }
+    // Some providers expose a separate main master without a strip family.
+    // Only use its legacy target once a real master value has arrived.
+    if (engine.connected &&
+        (engine.mainFader != null || engine.mainMuted != null)) {
+      return 'main';
+    }
+    return '';
+  }
+
   String _processingTargetForBus(String id) => id.startsWith('solo:')
       ? id.split(':')[1]
       : id == 'main'
-          ? 'main'
+          ? _primaryMainTarget
           : id.startsWith('subgroup')
               ? 'subgroup/${((int.tryParse(id.substring('subgroup'.length)) ?? 0) + 1).toString().padLeft(2, '0')}'
               : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
