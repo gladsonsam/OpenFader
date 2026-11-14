@@ -73,7 +73,7 @@ extension _InputPresetGuards on _AppStorePresets {
 
   String _inputFieldDomain(ProcessorPresetTarget target) => jsonEncode({
         for (final f in (_presetFields(target)..sort()))
-          f: engine.parameterMetadata[f],
+          f: _presetPresentation(target, f),
       });
 
   String? _inputClipboardReadyError(ProcessorPresetTarget target) {

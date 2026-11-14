@@ -4,7 +4,24 @@ extension _StripValues on _AppStoreContext {
   // Capabilities are per family, not the union of every advertised strip.
   bool _stripParamApplies(int ch, String field) {
     if (!engine.supportedParams.contains(field)) return false;
-    final scopes = engine.parameterMetadata[field]?['scopes'];
+    final metadata = engine.parameterMetadata[field];
+    final rows = metadata?['presentations'];
+    if (metadata?.containsKey('presentations') == true && rows is! List) return false;
+    if (rows is List) {
+      final explicit = rows.whereType<Map>()
+          .where((row) => row.containsKey('applicable_strip_keys')).toList();
+      if (explicit.length > 1) return false;
+      if (explicit.isNotEmpty) {
+        final keys = explicit.single['applicable_strip_keys'];
+        final key = engine.strips.where((strip) => strip.ch == ch).firstOrNull?.key;
+        final knownKeys = engine.strips.map((strip) => strip.key).toSet();
+        if (keys is! List || keys.any((key) => key is! String || key.isEmpty || !knownKeys.contains(key)) ||
+            keys.toSet().length != keys.length || key == null || !keys.contains(key)) {
+          return false;
+        }
+      }
+    }
+    final scopes = metadata?['scopes'];
     final family = _presetFamily(ch);
     final tags = family?['params_scope'];
     final kinds = tags is List ? tags : [family?['kind']];

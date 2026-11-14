@@ -62,6 +62,13 @@ impl Engine {
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();
+                // This parameter-scoped descriptor narrows applicability to exact strip keys.
+                if let Some(indices) = self.drv(&driver).param_applicable_strips(def.id) {
+                    let topology = self.driver_topology(&driver);
+                    let keys: Vec<_> = indices.into_iter().filter_map(|index|
+                        openfader_core::strip_key_for_index(&topology, index as usize)).collect();
+                    frame.presentations.insert(0, json!({"applicable_strip_keys": keys}));
+                }
                 let kind_ranges: Vec<_> = self.drv(&driver).param_kind_ranges().iter()
                     .filter(|range| range.id == def.id && range.min.is_finite() && range.max.is_finite() && range.min < range.max)
                     .map(|range| json!({"kind": range.kind.as_str(), "min": range.min, "max": range.max}))
@@ -136,6 +143,7 @@ impl Engine {
             })
             .collect();
         Event::Caps {
+            guarded_processor_targets: self.drv(&driver).guarded_processor_targets(),
             input_processor_guard: self.drv(&driver).input_processor_guard(),
             channel_processing_guard: self.drv(&driver).channel_processing_guard(),
             driver: driver.clone(),

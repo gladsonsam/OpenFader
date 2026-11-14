@@ -14,6 +14,7 @@ impl Engine {
             stereo_pairs,
             input_processor_guard,
             channel_processing_guard,
+            guarded_processor_targets,
             ..
         } = self.caps_message()
         else {
@@ -27,13 +28,45 @@ impl Engine {
             processor != "channel_processing" || channel_processing_guard,
             "Guarded channel processing unavailable for this provider"
         );
+        let key = self.active_strip_key(ch);
+        if let Some(targets) = &guarded_processor_targets {
+            let native_topology = self.driver_topology(&driver);
+            let mut processors = std::collections::BTreeSet::new();
+            for target in targets {
+                anyhow::ensure!(
+                    matches!(
+                        target.processor.as_str(),
+                        "eq" | "gate" | "compressor" | "channel_processing"
+                    ) && processors.insert(&target.processor),
+                    "Invalid or duplicate guarded processor descriptor"
+                );
+                let mut keys = std::collections::BTreeSet::new();
+                for strip_key in &target.strip_keys {
+                    let canonical =
+                        openfader_core::strip_index_for_key(&native_topology, strip_key).and_then(
+                            |index| openfader_core::strip_key_for_index(&native_topology, index),
+                        );
+                    anyhow::ensure!(
+                        keys.insert(strip_key) && canonical.as_ref() == Some(strip_key),
+                        "Invalid or duplicate guarded processor strip key"
+                    );
+                }
+            }
+            anyhow::ensure!(
+                targets.iter().any(|target| target.processor == processor
+                    && key
+                        .as_ref()
+                        .is_some_and(|key| target.strip_keys.contains(key))),
+                "Guarded processor unavailable for this strip"
+            );
+        }
         let params: Vec<_> = params
             .into_iter()
             .filter(|p| openfader_core::input_processors::member(processor, &p.id))
             .collect();
         anyhow::ensure!(!params.is_empty(), "Input processor catalogue unavailable");
         Ok(
-            json!({"driver":driver,"epoch":epoch,"key":self.active_strip_key(ch),"params":params,"topology":topology,"stereo_pairs":stereo_pairs}),
+            json!({"driver":driver,"epoch":epoch,"key":key,"params":params,"topology":topology,"stereo_pairs":stereo_pairs,"guarded_processor_targets":guarded_processor_targets}),
         )
     }
     fn input_processor_access(&self, ch: u16, epoch: u64, writer: &str) -> anyhow::Result<()> {

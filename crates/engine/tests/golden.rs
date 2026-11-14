@@ -117,6 +117,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "caps",
             Event::Caps {
+                guarded_processor_targets: None,
                 input_processor_guard: false,
                 channel_processing_guard: false,
                 stereo_pairs: Vec::new(),

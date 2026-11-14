@@ -5,6 +5,7 @@ import 'dart:io';
 
 import '../../app/lib/engine_protocol.dart';
 import 'osc.dart';
+import 'x32/output_processors.dart';
 
 class ProcessorProbe {
   ProcessorProbe(this.socket) {
@@ -44,6 +45,8 @@ class ProcessorProbe {
     Object? value,
     Map? guard,
     int? overrideEpoch,
+    int channel = 0,
+    String key = 'ch/01',
   }) async {
     final id = 'processor-lab-${++sequence}';
     socket.add(
@@ -51,8 +54,8 @@ class ProcessorProbe {
         'cmd': 'input_processor',
         'request_id': id,
         'epoch': overrideEpoch ?? epoch,
-        'ch': 0,
-        'key': 'ch/01',
+        'ch': channel,
+        'key': key,
         'processor': processor,
         if (field != null) 'field': field,
         if (field != null) 'value': value,
@@ -68,8 +71,12 @@ class ProcessorProbe {
     return replies.remove(id)!;
   }
 
-  Future<Map> capture(String processor) async {
-    final event = await request(processor);
+  Future<Map> capture(
+    String processor, {
+    int channel = 0,
+    String key = 'ch/01',
+  }) async {
+    final event = await request(processor, channel: channel, key: key);
     if (event['snapshot'] is! Map) {
       throw Blocked(
         'No complete $processor fixture readback: ${event['message']}',
@@ -79,7 +86,7 @@ class ProcessorProbe {
     require(
       snapshot['provider'] == 'x32' &&
           snapshot['processor'] == processor &&
-          snapshot['ch'] == 0 &&
+          snapshot['ch'] == channel &&
           snapshot['rows'] is List &&
           snapshot['links'] is List &&
           snapshot['engine_context'] is Map,
@@ -131,6 +138,8 @@ class ProcessorProbe {
     String nativePath,
     Object before, {
     int? overrideEpoch,
+    int channel = 0,
+    String key = 'ch/01',
   }) async {
     final response = await request(
       processor,
@@ -138,6 +147,8 @@ class ProcessorProbe {
       value: value,
       guard: guard,
       overrideEpoch: overrideEpoch,
+      channel: channel,
+      key: key,
     );
     require(
       response['snapshot'] == null && response['message'] is String,
@@ -374,6 +385,7 @@ Future<void> main(List<String> args) async {
       'status': 'blocked',
       'reason': 'No independently verified reversible link operation preserving both channel states; missed A→B→A transitions are not detectable and are not claimed.',
     });
+    await probe.outputProcessors(uri);
     probe.checks.add({
       'check': 'Restricted-role policy',
       'status': 'blocked',

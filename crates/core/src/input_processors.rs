@@ -2,6 +2,14 @@
 use crate::ParamValue;
 use serde_json::{json, Value};
 
+/// Strip keys on which a provider supports a guarded processor operation.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuardedProcessorTargets {
+    pub processor: String,
+    pub strip_keys: Vec<String>,
+}
+
 /// Complete processor membership, including excluded bypass witnesses.
 pub fn member(processor: &str, id: &str) -> bool {
     match processor {

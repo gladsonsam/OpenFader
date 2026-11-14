@@ -120,6 +120,11 @@ fn snapshot_still_observed(snapshot: &Value, generation: u64) -> anyhow::Result<
 }
 
 impl X32Driver {
+    /// Static processor-plane applicability, independent of live hydration.
+    pub fn guarded_processor_applicable(&self, strip: StripId, processor: &str) -> bool {
+        fields(strip, processor).is_ok()
+    }
+
     async fn processor_snapshot(
         &self,
         session: &Arc<OscSession>,
@@ -129,24 +134,26 @@ impl X32Driver {
     ) -> anyhow::Result<Value> {
         let console_revision = self.console_epoch.load(Ordering::Acquire);
         let ids = fields(strip, processor)?;
-        let link = crate::link::link_mapping(strip)?;
-        let (linked, link_revision) = read(session, generation, &link).await?;
-        ensure!(
-            linked == ParamValue::Bool(false),
-            "Input processor requires verified unlinked stereo pair"
-        );
+        let link = if crate::link::STEREO_PAIRS.iter().any(|pair| pair.contains(&strip.0)) {
+            let mapping = crate::link::link_mapping(strip)?;
+            let (value, revision) = read(session, generation, &mapping).await?;
+            ensure!(value == ParamValue::Bool(false), "Processor requires a verified unlinked stereo pair");
+            Some((mapping, revision))
+        } else {
+            None
+        };
         let mut rows = Vec::with_capacity(ids.len());
         for id in &ids {
             let m = mapping(strip, id)?;
             let (observed, revision) = read(session, generation, &m).await?;
             rows.push(json!({"id":id,"value":value(&observed),"revision":revision,"native":m.path,"encoding":format!("{:?}",m.kind)}));
         }
-        let (link_after, link_revision_after) = read(session, generation, &link).await?;
+        if let Some((mapping, revision)) = &link {
+            let (after, after_revision) = read(session, generation, mapping).await?;
+            ensure!(after == ParamValue::Bool(false) && after_revision == *revision,
+                "Stereo link changed during processor capture");
+        }
         self.ensure_current(session)?;
-        ensure!(
-            link_after == linked && link_revision_after == link_revision,
-            "Stereo link changed during processor capture"
-        );
         {
             let observed = OBSERVED
                 .lock()
@@ -163,20 +170,19 @@ impl X32Driver {
                     "Input processor changed during capture"
                 );
             }
-            ensure!(
-                observed
-                    .get(&(generation, link.path.clone()))
-                    .is_some_and(|entry| entry.revision == link_revision),
-                "Stereo link changed during processor capture"
-            );
+            if let Some((mapping, revision)) = &link {
+                ensure!(observed.get(&(generation, mapping.path.clone()))
+                    .is_some_and(|entry| entry.revision == *revision),
+                    "Stereo link changed during processor capture");
+            }
         }
         ensure!(
             self.console_epoch.load(Ordering::Acquire) == console_revision,
             "Console controls changed during processor capture"
         );
-        Ok(
-            json!({"provider":"x32","generation":generation,"console_revision":console_revision,"ch":strip.0,"processor":processor,"domain":domain(&ids),"rows":rows,"links":[{"value":false,"revision":link_revision,"native":link.path}]}),
-        )
+        let links = link.map(|(mapping, revision)| vec![json!({"value":false,"revision":revision,"native":mapping.path})]).unwrap_or_default();
+        let link_mode = if links.is_empty() { "non_linkable" } else { "unlinked" };
+        Ok(json!({"provider":"x32","generation":generation,"console_revision":console_revision,"ch":strip.0,"processor":processor,"domain":domain(&ids),"rows":rows,"links":links,"link_mode":link_mode}))
     }
 
     pub(crate) async fn guarded_input_processor(

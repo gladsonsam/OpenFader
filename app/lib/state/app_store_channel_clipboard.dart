@@ -37,14 +37,13 @@ extension _ChannelClipboard on _AppStorePresets {
   String _channelProcessingDomain(ChannelProcessingTarget target) =>
       jsonEncode({
         for (final f in (_channelProcessingFields(target.blocks.first)..sort()))
-          f: engine.parameterMetadata[f],
+          f: _presetPresentation(target.blocks.first, f),
       });
 
   ChannelProcessingTarget? _captureChannelProcessingTarget(
     ChannelNameTarget target,
   ) {
-    if (!const {'in', 'ret', 'fxret', 'return'}
-        .contains(_presetFamily(target.channel)?['kind'])) {
+    if (!_guardedProcessorApplies(target.channel, 'channel_processing')) {
       return null;
     }
     final blocks = <ProcessorPresetTarget>[];

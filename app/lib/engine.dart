@@ -466,10 +466,23 @@ class OfflineChange {
   });
 }
 
+/// Provider-advertised guarded processor applicability for exact strip keys.
+class GuardedProcessorTargets {
+  const GuardedProcessorTargets(this.processor, this.stripKeys);
+  final String processor;
+  final Set<String> stripKeys;
+
+  Map<String, Object> toJson() => {
+    'processor': processor,
+    'strip_keys': stripKeys.toList()..sort(),
+  };
+}
+
 class EngineState {
   String clientId = '';
   String driver = 'sim';
   List<Strip> strips = [];
+  List<GuardedProcessorTargets>? guardedProcessorTargets;
   List<double> meters = [];
   List<String> outputMeterTargets = const [];
   final _outputTelemetry = OutputMeterTelemetry();
@@ -645,6 +658,7 @@ class EngineState {
     knownValues.clear();
     capsReady = false;
     inputProcessorGuard = false;
+    guardedProcessorTargets = null;
     channelProcessingGuard = false;
     supportedParams.clear();
     parameterMetadata = {};
@@ -950,6 +964,37 @@ class EngineState {
           for (final entry in params.entries.toList()) {
             _applyStripValues(entry.key, entry.value);
           }
+        }
+        // Absent means a legacy provider. A malformed advertised descriptor
+        // denies every target, rather than falling back to legacy assumptions.
+        if (!e.containsKey('guarded_processor_targets')) {
+          guardedProcessorTargets = null;
+        } else {
+          final raw = e['guarded_processor_targets'];
+          final known = strips.map((strip) => strip.key).toSet();
+          final seen = <String>{};
+          final parsed = <GuardedProcessorTargets>[];
+          var valid = raw is List;
+          if (raw is List) {
+            for (final item in raw) {
+              if (item is! Map || item['processor'] is! String ||
+                  (item['processor'] as String).isEmpty ||
+                  !seen.add(item['processor'] as String) ||
+                  item['strip_keys'] is! List) {
+                valid = false;
+                break;
+              }
+              final keys = item['strip_keys'] as List;
+              if (keys.any((key) => key is! String || key.isEmpty || !known.contains(key)) ||
+                  keys.toSet().length != keys.length) {
+                valid = false;
+                break;
+              }
+              parsed.add(GuardedProcessorTargets(item['processor'] as String,
+                  Set<String>.unmodifiable(keys.cast<String>())));
+            }
+          }
+          guardedProcessorTargets = valid ? List.unmodifiable(parsed) : const [];
         }
         final rawPairs = e['stereo_pairs'];
         final parsedPairs = <List<int>>[];
