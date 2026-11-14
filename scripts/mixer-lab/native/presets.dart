@@ -107,6 +107,9 @@ extension NativePresetChecks on NativeProbe {
                 },
               );
             }
+            throw Blocked(
+              'Recall acceptance observed, but restored preset contents were not independently verified',
+            );
           }
         });
       }

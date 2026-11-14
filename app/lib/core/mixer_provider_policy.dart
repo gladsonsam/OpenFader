@@ -49,7 +49,13 @@ abstract class MixerProviderPolicy {
   int compKnee(bool soft) => soft ? 3 : 0;
   bool isSoftKnee(double value) => value > 0;
   int hpfSlope(double? native) => 12;
-  int eqBandCount(double? reported, bool hasSix) => hasSix ? 6 : 4;
+  int eqBandCount(double? reported, bool hasSix) =>
+      reported != null &&
+              reported.isFinite &&
+              reported > 0 &&
+              reported == reported.roundToDouble()
+          ? reported.toInt()
+          : (hasSix ? 6 : 4);
   bool skipRecalledField(String field, Map<String, dynamic> values) => false;
   bool validRawPreset(String field, double value) => true;
   bool eqQEditable(EqFilterShape? shape) => true;
