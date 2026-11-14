@@ -218,6 +218,14 @@ impl Outbox {
     fn store(&mut self, frame: openfader_engine::SharedEvent) {
         use openfader_engine::Event as E;
         match &*frame.event {
+            E::SyncEpoch { .. } => {
+                self.meters = None;
+                self.outputs = None;
+                self.taps.clear();
+                self.spectrum.clear();
+                self.gr.clear();
+                self.control.push_back(frame);
+            }
             E::OutputMeters { .. } => {
                 self.outputs = Some(frame);
             }

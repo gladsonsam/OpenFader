@@ -312,6 +312,7 @@ mixin _AppStoreInput on _AppStoreContext {
     return ChannelDelayVm(
         context: (
           engine.session,
+          controlAccessEpoch,
           _channel,
           report.unit,
           report.min,

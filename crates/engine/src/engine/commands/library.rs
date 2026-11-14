@@ -103,6 +103,7 @@ impl Engine {
                         rta: None,
                         output_eq: None,
                         link_settings: None,
+                        native_processors: None,
                     }
                 };
                 let overrode = self

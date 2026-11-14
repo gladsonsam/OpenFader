@@ -69,7 +69,9 @@ part 'app_store_output_presets.dart';
 String _providerLeaf(EngineState engine, String leaf) =>
     mixerProviderPolicy(engine.driver).parameterLeaf(AppStore.deskLeaf(leaf));
 
-double _linToDb(double l) => (l <= 0 || !l.isFinite)
+double _linToDb(double l) => l.isNaN
+    ? double.nan
+    : (l <= 0 || !l.isFinite)
     ? double.negativeInfinity
     : 20 * math.log(l) / math.ln10;
 
@@ -147,7 +149,7 @@ class AppStore extends _AppStoreContext
         _AppStoreOutputPresets
     implements MixerStore, MetersStore, ChannelStore, OutputProcessingStore {
   AppStore(this._api, this._clientId)
-      : _coalescer = WriteCoalescer(TimerCoalescerClock()) {
+    : _coalescer = WriteCoalescer(TimerCoalescerClock()) {
     _blockedAccess = PrefsService.instance.blockedAccess;
     _accessRevision = PrefsService.instance.accessRevision;
     PrefsService.instance.addListener(_accessChanged);
@@ -221,7 +223,8 @@ class AppStore extends _AppStoreContext
   void dispose() {
     PrefsService.instance.removeListener(_accessChanged);
     _interruptDestinationEdits(
-        'Connection closed; the destination setting may have changed.');
+      'Connection closed; the destination setting may have changed.',
+    );
     _libraryDisposed = true;
     _interruptAllLibrary('The engine was closed.');
     _stopNativeLibrary();

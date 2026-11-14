@@ -42,6 +42,21 @@ fn route_prefix(strip: StripId, target: &str) -> anyhow::Result<String> {
 }
 
 impl WingDriver {
+    /// Physical local sockets differ between the WING variants. Unknown
+    /// identities expose no assumed local socket count.
+    pub fn local_input_count(&self) -> u8 {
+        let link = self.link.read().unwrap();
+        match link
+            .as_ref()
+            .map(|link| link.info.model.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("ngc-full" | "wing-bk") => 8,
+            Some("wing-compact" | "wing-rack") => 24,
+            _ => 0,
+        }
+    }
+
     pub(crate) async fn source_id(&self, strip: StripId, target: &str) -> anyhow::Result<f32> {
         let label = self.routing_source(strip, target).await?;
         if label == "-" {
@@ -79,7 +94,12 @@ impl WingDriver {
         );
         let index: u8 = index.parse()?;
         ensure!(
-            (1..=if group == "LCL" { 24 } else { 48 }).contains(&index),
+            (1..=if group == "LCL" {
+                self.local_input_count()
+            } else {
+                48
+            })
+                .contains(&index),
             "WING: preamp out of range"
         );
         Ok(Mapping {
@@ -135,6 +155,11 @@ impl WingDriver {
             .find(|(g, _, _)| *g == group)
             .map(|(_, _, n)| *n)
             .context("WING: unknown source group")?;
+        let max = if group == "LCL" {
+            self.local_input_count()
+        } else {
+            max
+        };
         ensure!(
             group == "OFF" || (1..=max).contains(&index),
             "WING: source index out of range"
@@ -142,8 +167,9 @@ impl WingDriver {
         let session = self.session()?;
         let _guard = self.writes.lock().await;
         self.ensure_current(&session)?;
-        // One documented node update applies the pair together, avoiding an interim
-        // group/index combination routed to an unintended source (manual p.21).
+        // One documented node update carries both assignments (manual p.21).
+        // The protocol does not guarantee atomic application of the pair;
+        // confirm both fields afterward rather than assuming it did so.
         let alt = if target == "alt" { "alt" } else { "" };
         let node = if group == "OFF" {
             format!("{alt}grp=OFF")
@@ -164,7 +190,7 @@ impl WingDriver {
         };
         ensure!(
             actual == expected,
-            "WING: routing readback did not match requested source"
+            "WING: routing readback did not match requested source at {}/in/conn ({target:?}): expected {expected:?}, got {actual:?}", root(strip)?.0
         );
         Ok(actual)
     }

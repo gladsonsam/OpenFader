@@ -58,7 +58,8 @@ use super::engine::{
 /// Combined library file name under the engine data dir.
 pub const LIBRARY_FILE_NAME: &str = "scenes.json";
 /// Current combined document version.
-pub const LIBRARY_VERSION: u64 = 10;
+pub const LIBRARY_VERSION: u64 = 11;
+const LIBRARY_VERSION_V10: u64 = 10;
 const LIBRARY_VERSION_V9: u64 = 9;
 const LIBRARY_VERSION_V8: u64 = 8;
 const LIBRARY_VERSION_V7: u64 = 7;
@@ -315,6 +316,8 @@ struct NumberedSceneDoc {
     output_eq: Option<OutputEqDoc>,
     #[serde(default)]
     link_settings: Option<LinkSettingsDoc>,
+    #[serde(default)]
+    native_processors: Option<openfader_core::native_processor::NativeProcessorSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -504,6 +507,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
             | LIBRARY_VERSION_V7
             | LIBRARY_VERSION_V8
             | LIBRARY_VERSION_V9
+            | LIBRARY_VERSION_V10
             | LIBRARY_VERSION
     ) {
         return Err(format!(
@@ -582,6 +586,9 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
         {
             return Err(format!("scenes[{i}]: FX insert requires library version 3"));
         }
+        if version < LIBRARY_VERSION && raw.as_object().is_some_and(|s| s.contains_key("native_processors")) {
+            return Err(format!("scenes[{i}]: native processors require library version 11"));
+        }
         let doc: NumberedSceneDoc =
             serde_json::from_value(raw.clone()).map_err(|e| format!("scenes[{i}]: {e}"))?;
         if !(SCENE_MIN..=SCENE_MAX).contains(&doc.number) {
@@ -639,6 +646,9 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
         });
         if let Some(link) = &link_settings {
             validate_stored_link_settings(link, &format!("scenes[{i}].link_settings"))?;
+        }
+        if let Some(native) = &doc.native_processors {
+            provider_library_validation::native_processors(native, &format!("scenes[{i}].native_processors"))?;
         }
         let output_eq = doc.output_eq.map(|eq| StoredOutputEq {
             provider: eq.provider,
@@ -851,6 +861,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
                 rta,
                 output_eq,
                 link_settings,
+                native_processors: doc.native_processors,
             },
         );
     }
@@ -866,7 +877,7 @@ fn parse_shows(named: &[Value], version: u64) -> Result<Vec<Show>, String> {
         if let Some(rows) = adapted.get_mut("scenes").and_then(Value::as_array_mut) {
             for (j, row) in rows.iter_mut().enumerate() {
                 if row.as_object().is_some_and(|o| o.contains_key("snapshot")) {
-                    if version < LIBRARY_VERSION {
+                    if version < LIBRARY_VERSION_V10 {
                         return Err(format!(
                             "shows[{i}].scenes[{j}]: snapshot requires version 10"
                         ));
@@ -1271,6 +1282,9 @@ pub fn validate_candidate(
             return Err(format!("{what}: key/number mismatch"));
         }
         check_name(&s.name, &format!("{what}.name"))?;
+        if let Some(native) = &s.native_processors {
+            provider_library_validation::native_processors(native, &format!("{what}.native_processors"))?;
+        }
         if let Some(link) = &s.link_settings {
             validate_stored_link_settings(link, &format!("{what}.link_settings"))?;
         }
@@ -1461,11 +1475,15 @@ fn param_value_json(pv: &ParamValue) -> Value {
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
     slots.sort_by_key(|s| s.number);
-    let version = if shows
+    let has_native = slots.iter().any(|s| s.native_processors.is_some()) || shows.iter().any(|show|
+        show.scenes.iter().any(|s| s.full().is_some_and(|f| f.native_processors.is_some())));
+    let version = if has_native {
+        LIBRARY_VERSION
+    } else if shows
         .iter()
         .any(|show| show.scenes.iter().any(|s| s.full().is_some()))
     {
-        LIBRARY_VERSION
+        LIBRARY_VERSION_V10
     } else if slots.iter().any(|s| s.link_settings.is_some()) {
         LIBRARY_VERSION_V9
     } else if slots.iter().any(|s| s.output_eq.is_some()) {
@@ -1552,6 +1570,9 @@ fn render_numbered(s: &StoredScene) -> Value {
             row
         }).collect::<Vec<_>>(),
     });
+    if let Some(native) = &s.native_processors {
+        scene["native_processors"] = serde_json::to_value(native).expect("native processors serialize");
+    }
     if let Some(link) = &s.link_settings {
         scene["link_settings"] = serde_json::json!({"provider": link.provider, "bus_links": link.settings.bus_links, "policies": link.settings.policies});
     }

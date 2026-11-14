@@ -107,6 +107,7 @@ impl Engine {
                 let mut audio_spectrum_generation = 0;
                 let mut last_audio_spectrum_epoch = 0;
                 let mut meters_live = false;
+                let mut live_taps = std::collections::HashSet::new();
                 let mut dynamics_live = false;
                 let mut outputs_live = false;
                 let mut output_source_generation = 0;
@@ -125,6 +126,7 @@ impl Engine {
                     let Some(engine) = weak.upgrade() else {
                         break;
                     };
+                    let meter_generation = engine.connection_gen.load(Ordering::Acquire);
                     let stamps = engine.active_drv().telemetry_timestamps();
                     let level_updated =
                         stamps.is_none_or(|(at, _)| at.is_some() && at != last_level_sample);
@@ -136,60 +138,57 @@ impl Engine {
                     }
                     let levels = engine.meter_levels().await;
                     let frame = MeterFrame { levels };
-                    if !frame.levels.is_empty() {
-                        if level_updated {
-                            engine.broadcast(Event::Meters {
-                                levels: frame.levels.clone(),
-                            });
+                    let tap_frames = if engine.any_taps_client() && (level_updated || gr_updated) {
+                        engine.tap_frames().await
+                    } else {
+                        Vec::new()
+                    };
+                    {
+                        let _sync = engine.sync_state.lock().unwrap();
+                        if engine.connection_gen.load(Ordering::Acquire) != meter_generation {
+                            continue;
                         }
-                        meters_live = true;
-                    } else if meters_live {
-                        // Fresh -> unavailable transition (DL32S stale >1 s,
-                        // disconnect, or suspended switch): clear the UI once
-                        // instead of leaving the last levels frozen (stuck
-                        // clip). One-shot; stays silent until live again.
-                        // Mirrors the `had_audio_spectrum` clear below, on
-                        // the same tick, no new timers.
-                        meters_live = false;
-                        engine.broadcast(Event::Meters { levels: Vec::new() });
-                        if engine.any_taps_client() {
-                            let tap_drv = engine.active_drv();
-                            // Fallback taps only: `poll_taps` drivers keep
-                            // serving their own tap frames, so only clear the
-                            // meter-derived level tap here, mirroring the
-                            // `tap_frames` fallback name (declared post,
-                            // else declared pre). Drivers declaring neither
-                            // serve no meter-derived level tap: nothing to
-                            // clear.
-                            if tap_drv.poll_taps().is_none() {
-                                let taps = tap_drv.meter_taps();
-                                let tap = if taps.contains(&"post") {
-                                    Some("post")
-                                } else if taps.contains(&"in") {
-                                    Some("in")
-                                } else {
-                                    None
-                                };
-                                if let Some(tap) = tap {
-                                    engine.broadcast(Event::Taps {
-                                        tap: tap.to_string(),
-                                        levels: Vec::new(),
-                                    });
+                        let suspended = engine.reads_suspended.load(Ordering::Acquire);
+                        if !frame.levels.is_empty() && !suspended {
+                            if level_updated {
+                                engine.broadcast(Event::Meters {
+                                    levels: frame.levels.clone(),
+                                });
+                            }
+                            meters_live = true;
+                        } else if meters_live {
+                            // Fresh -> unavailable transition (DL32S stale >1 s,
+                            // disconnect, or suspended switch): clear the UI once
+                            // instead of leaving the last levels frozen (stuck
+                            // clip). One-shot; stays silent until live again.
+                            // Mirrors the `had_audio_spectrum` clear below, on
+                            // the same tick, no new timers.
+                            meters_live = false;
+                            engine.broadcast(Event::Meters { levels: Vec::new() });
+                            for tap in live_taps.drain() {
+                                engine.broadcast(Event::Taps {
+                                    tap,
+                                    levels: Vec::new(),
+                                });
+                            }
+                        }
+                        if !suspended && !frame.levels.is_empty() {
+                            for (tap, tap_levels) in tap_frames {
+                                if ((tap == "post" || tap == "in") && !level_updated)
+                                    || (tap.starts_with("gr_") && !gr_updated)
+                                {
+                                    continue;
                                 }
+                                if tap_levels.is_empty() {
+                                    live_taps.remove(&tap);
+                                } else {
+                                    live_taps.insert(tap.clone());
+                                }
+                                engine.broadcast(Event::Taps {
+                                    tap,
+                                    levels: tap_levels,
+                                });
                             }
-                        }
-                    }
-                    if engine.any_taps_client() && (level_updated || gr_updated) {
-                        for (tap, tap_levels) in engine.tap_frames().await {
-                            if (tap == "post" && !level_updated)
-                                || (tap.starts_with("gr_") && !gr_updated)
-                            {
-                                continue;
-                            }
-                            engine.broadcast(Event::Taps {
-                                tap,
-                                levels: tap_levels,
-                            });
                         }
                     }
                     let spectrum_generation = engine.connection_gen.load(Ordering::Acquire);

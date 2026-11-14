@@ -107,3 +107,14 @@ impl LibraryPolicy for XAirLibraryPolicy {
         key == "aux"
     }
 }
+
+/// Reject unknown provider payloads; provider validators own native rosters.
+pub(super) fn native_processors(snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, what: &str) -> Result<(), String> {
+    openfader_core::native_processor::validate_structure(snapshot)
+        .map_err(|e| format!("{what}: {e}"))?;
+    match snapshot.provider.as_str() {
+        "wing" => openfader_proto_wing::validate_complete_native_processor_snapshot(snapshot)
+            .map_err(|e| format!("{what}: {e:#}")),
+        _ => Err(format!("{what}: no registered provider snapshot schema")),
+    }
+}

@@ -8,11 +8,13 @@
 //! identity validation, and the remaining modules one domain each.
 pub mod addrs;
 mod codec;
+pub mod console_controls;
 mod discovery;
 mod driver;
 pub mod fx;
 mod groups;
 mod inbound;
+mod input_processors;
 mod lifecycle;
 mod link;
 mod mapping;
@@ -41,6 +43,7 @@ pub struct X32Driver {
     link: RwLock<Option<Link>>,
     lifecycle: tokio::sync::Mutex<()>,
     writes: tokio::sync::Mutex<()>,
+    console_epoch: std::sync::atomic::AtomicU64,
     updates: broadcast::Sender<ParamUpdate>,
     last_control: Arc<Mutex<Option<Instant>>>,
     pub(crate) telemetry: Arc<telemetry::Telemetry>,
@@ -59,6 +62,7 @@ impl X32Driver {
             link: RwLock::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
             writes: tokio::sync::Mutex::new(()),
+            console_epoch: std::sync::atomic::AtomicU64::new(1),
             updates: broadcast::channel(2048).0,
             last_control: Arc::new(Mutex::new(None)),
             telemetry: Arc::new(telemetry::Telemetry::default()),

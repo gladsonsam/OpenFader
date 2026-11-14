@@ -20,6 +20,10 @@ impl Engine {
         }
         let drv = self.active_drv();
         if let Some(taps) = drv.poll_taps() {
+            let supported = drv.meter_taps();
+            if !supported.contains(&"gr_gate") && !supported.contains(&"gr_comp") {
+                return None;
+            }
             return taps.get(ch).map(|t| (t.gr_gate_db, t.gr_comp_db));
         }
         if !drv.dyn_gr() {
@@ -56,6 +60,7 @@ impl Engine {
         }
         let drv = self.active_drv();
         if let Some(taps) = drv.poll_taps() {
+            let supported = drv.meter_taps();
             return vec![
                 ("in".to_string(), taps.iter().map(|t| t.input).collect()),
                 ("post".to_string(), taps.iter().map(|t| t.post).collect()),
@@ -67,7 +72,10 @@ impl Engine {
                     "gr_comp".to_string(),
                     taps.iter().map(|t| t.gr_comp_db).collect(),
                 ),
-            ];
+            ]
+            .into_iter()
+            .filter(|(tap, _)| supported.contains(&tap.as_str()))
+            .collect();
         }
         let post = drv.poll_meters().levels;
         if drv.meter_taps().is_empty() {
@@ -99,8 +107,12 @@ impl Engine {
                 }
             }
             if available {
-                out.push(("gr_gate".to_string(), gr_gate));
-                out.push(("gr_comp".to_string(), gr_comp));
+                if drv.meter_taps().contains(&"gr_gate") {
+                    out.push(("gr_gate".to_string(), gr_gate));
+                }
+                if drv.meter_taps().contains(&"gr_comp") {
+                    out.push(("gr_comp".to_string(), gr_comp));
+                }
             }
         }
         out

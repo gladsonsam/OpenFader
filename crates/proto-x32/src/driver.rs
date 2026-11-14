@@ -83,7 +83,7 @@ impl X32Driver {
 /// Anything else — including a refused write still sitting at its old
 /// value — is a mismatch, never a confirm. Unknown `linf`/`logf`
 /// quanta never guess: only an exact echo passes.
-fn readback_agrees(written: &ParamValue, read: &ParamValue, kind: &WireKind) -> bool {
+pub(crate) fn readback_agrees(written: &ParamValue, read: &ParamValue, kind: &WireKind) -> bool {
     use crate::codec;
     match (written, read) {
         (ParamValue::Bool(a), ParamValue::Bool(b)) => a == b,
@@ -172,6 +172,44 @@ fn readback_agrees(written: &ParamValue, read: &ParamValue, kind: &WireKind) -> 
 }
 
 impl MixerDriver for X32Driver {
+    fn input_processor_guard(&self) -> bool {
+        true
+    }
+    fn channel_processing_guard(&self) -> bool {
+        true
+    }
+    async fn input_processor(
+        &self,
+        strip: StripId,
+        processor: &str,
+        write: Option<(&str, ParamValue)>,
+        expected: Option<&serde_json::Value>,
+        check: openfader_core::input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.guarded_input_processor(strip, processor, write, expected, check)
+            .await
+    }
+    fn console_controls_capability(
+        &self,
+    ) -> openfader_core::console_controls::ConsoleControlsCapability {
+        openfader_core::console_controls::ConsoleControlsCapability {
+            available: true,
+            unavailable_reason: None,
+        }
+    }
+    async fn console_controls_node(
+        &self,
+        path: &str,
+    ) -> anyhow::Result<openfader_core::console_controls::ConsoleControlNode> {
+        self.console_node(path).await
+    }
+    async fn console_control_write(
+        &self,
+        request: &openfader_core::console_controls::ConsoleControlWrite,
+        check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<openfader_core::console_controls::ConsoleControlResult> {
+        self.console_write(request, check).await
+    }
     fn name(&self) -> &'static str {
         "x32"
     }
@@ -267,9 +305,7 @@ impl MixerDriver for X32Driver {
         Some(self.updates.subscribe())
     }
     fn telemetry_timestamps(&self) -> Option<(Option<Instant>, Option<Instant>)> {
-        // Control-path stamp plus the freshest meter-stream stamp.
-        // Replaying a cache never advances either clock.
-        Some((*self.last_control.lock().unwrap(), self.last_meter_at()))
+        Some(self.meter_timestamps())
     }
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
         self.connect_session(addr).await

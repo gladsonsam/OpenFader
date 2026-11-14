@@ -85,6 +85,16 @@ pub enum ParamCondition {
     },
 }
 
+/// Provider-owned engineering range for one strip kind. Unlisted kinds use
+/// the parameter's global range.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamKindRange {
+    pub id: &'static str,
+    pub kind: crate::StripKind,
+    pub min: f32,
+    pub max: f32,
+}
+
 /// Optional presentation for a parameter, selected by another parameter's
 /// value on the same strip. Providers own model names and model-specific
 /// controls; consumers must not infer them from a provider name.

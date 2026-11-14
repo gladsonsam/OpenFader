@@ -18,7 +18,11 @@ class X32Probe {
   final destinationReceipts = <String, Map<String, dynamic>>{};
   final latest = <String, Map<String, dynamic>>{};
   final values = <String, Object?>{}, valueSequence = <String, int>{};
-  var sequence = 0, infoSequence = 0, helloSequence = 0, meters = 0;
+  var sequence = 0,
+      infoSequence = 0,
+      helloSequence = 0,
+      routingSequence = 0,
+      meters = 0;
   Map<String, dynamic>? caps;
 
   List<Map> get families => (caps!['topology'] as List).cast<Map>();
@@ -33,6 +37,7 @@ class X32Probe {
       if (e['type'] == 'caps' && e['driver'] == 'x32') caps = e;
       if (e['type'] == 'info') infoSequence = sequence;
       if (e['type'] == 'hello') helloSequence = sequence;
+      if (e['type'] == 'routing') routingSequence = sequence;
       if (e['type'] == 'error') errors.add(e);
       if (e['type'] == 'destination_control_result' &&
           e['request_id'] is String) {

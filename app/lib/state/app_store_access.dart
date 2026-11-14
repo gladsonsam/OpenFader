@@ -15,7 +15,7 @@ mixin _AppStoreAccess on _AppStoreContext {
   Set<String> _blockedAccess = const {};
   int _controlAccessEpoch = 0;
   @override
-  int get controlAccessEpoch => _controlAccessEpoch;
+  int get controlAccessEpoch => _controlAccessEpoch + engine.nativeProofRevision;
 
   // Existing provider input fields. Trim, polarity, balance, width and
   // sidechain sources remain independent processing controls.
@@ -371,7 +371,7 @@ mixin _AppStoreAccess on _AppStoreContext {
   String _processingTargetForAccessBus(String id) => id.startsWith('solo:')
       ? id.split(':')[1]
       : id == 'main'
-          ? 'main'
+          ? _primaryMainTarget
           : id.startsWith('subgroup')
               ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
               : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';

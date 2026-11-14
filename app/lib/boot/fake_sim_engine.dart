@@ -19,28 +19,34 @@ class FakeSimEngine implements EngineApi {
   static String _family(int ch) => ch < 8
       ? 'ch'
       : ch < 10
-          ? 'ret'
-          : ch < 14
-              ? 'fxret'
-              : 'dca';
+      ? 'ret'
+      : ch < 14
+      ? 'fxret'
+      : 'dca';
   static String _kind(int ch) => ch < 8
       ? 'in'
       : ch < 10
-          ? 'ret'
-          : ch < 14
-              ? 'fxret'
-              : 'dca';
+      ? 'ret'
+      : ch < 14
+      ? 'fxret'
+      : 'dca';
   static int _number(int ch) => ch < 8
       ? ch + 1
       : ch < 10
-          ? ch - 7
-          : ch < 14
-              ? ch - 9
-              : ch - 13;
+      ? ch - 7
+      : ch < 14
+      ? ch - 9
+      : ch - 13;
   static String _key(int ch) =>
       '${_family(ch)}/${_number(ch).toString().padLeft(2, '0')}';
   static String _name(int ch) =>
-      '${ch < 8 ? 'CH' : ch < 10 ? 'Return' : ch < 14 ? 'FX Return' : 'VCA'} ${_number(ch)}';
+      '${ch < 8
+          ? 'CH'
+          : ch < 10
+          ? 'Return'
+          : ch < 14
+          ? 'FX Return'
+          : 'VCA'} ${_number(ch)}';
   FakeSimEngine() {
     for (var ch = 8; ch < _stripCount; ch++) {
       _params[ch].removeWhere((id, _) {
@@ -63,8 +69,9 @@ class FakeSimEngine implements EngineApi {
                 id.startsWith('comp_'))) {
           return true;
         }
-        final slot =
-            int.tryParse(RegExp(r'^send(\d+)_').firstMatch(id)?[1] ?? '');
+        final slot = int.tryParse(
+          RegExp(r'^send(\d+)_').firstMatch(id)?[1] ?? '',
+        );
         return ch >= 10 && slot != null && slot > 6;
       });
     }
@@ -72,9 +79,10 @@ class FakeSimEngine implements EngineApi {
   int _processorRevision = 0;
   int _processorEpoch = 0;
   final List<Strip> _strips = List.generate(
-      _stripCount,
-      (i) => Strip(
-          ch: i, key: _key(i), name: _name(i), fader: 0.75, muted: false));
+    _stripCount,
+    (i) =>
+        Strip(ch: i, key: _key(i), name: _name(i), fader: 0.75, muted: false),
+  );
   // Every advertised leaf carries an engineering-unit value and survives resync.
   static const _defaults = <String, Object>{
     'fader': 0.75,
@@ -106,26 +114,27 @@ class FakeSimEngine implements EngineApi {
     'comp_rel': 100.0,
   };
   final List<Map<String, Object>> _params = List.generate(
-      _stripCount,
-      (ch) => {
-            ..._defaults,
-            'name': _name(ch),
-            for (var g = 1; g <= 6; g++) 'dca${g}_assign': false,
-            for (var g = 1; g <= 6; g++) 'view${g}_assign': false,
-            'source': 'Local ${ch + 1}',
-            for (var band = 1; band <= 4; band++) ...{
-              'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
-              'eq${band}_gain': 0.0,
-              'eq${band}_q': 1.0,
-              'eq${band}_type': [1, 2, 2, 4][band - 1],
-            },
-            for (var slot = 1; slot <= 10; slot++) ...{
-              'send${slot}_level': -90.0,
-              'send${slot}_pan': 0.0,
-              'send${slot}_tap': 4,
-              'send${slot}_on': true,
-            },
-          });
+    _stripCount,
+    (ch) => {
+      ..._defaults,
+      'name': _name(ch),
+      for (var g = 1; g <= 6; g++) 'dca${g}_assign': false,
+      for (var g = 1; g <= 6; g++) 'view${g}_assign': false,
+      'source': 'Local ${ch + 1}',
+      for (var band = 1; band <= 4; band++) ...{
+        'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
+        'eq${band}_gain': 0.0,
+        'eq${band}_q': 1.0,
+        'eq${band}_type': [1, 2, 2, 4][band - 1],
+      },
+      for (var slot = 1; slot <= 10; slot++) ...{
+        'send${slot}_level': -90.0,
+        'send${slot}_pan': 0.0,
+        'send${slot}_tap': 4,
+        'send${slot}_on': true,
+      },
+    },
+  );
   double _mainFader = 0.8;
   bool _mainMuted = false;
   final List<bool> _solos = List.filled(_stripCount, false);
@@ -149,137 +158,145 @@ class FakeSimEngine implements EngineApi {
   }
 
   void _snapshot() {
-    _mailbox.add(jsonEncode({
-      'type': 'caps',
-      'input_processor_guard': true,
-      'channel_processing_guard': true,
-      'driver': 'sim',
-      'topology': [
-        for (final first in [0, 8, 10, 14])
-          {
-            'key': _family(first),
-            'kind': _kind(first),
-            'params_scope': [_kind(first)],
-            'label': first == 0
-                ? 'Inputs'
-                : first == 8
-                    ? 'Returns'
-                    : first == 10
-                        ? 'FX returns'
-                        : 'VCA 1-6',
-            'name_prefix': first == 0
-                ? 'CH'
-                : first == 8
-                    ? 'Return'
-                    : first == 10
-                        ? 'FX Return'
-                        : 'VCA',
-            'first': first,
-            'count': first == 0
-                ? 8
-                : first == 8
-                    ? 2
-                    : first == 10
-                        ? 4
-                        : 6,
-          },
-      ],
-      'stereo_pairs': [
-        for (var i = 0; i < 10; i += 2) [i, i + 1]
-      ],
-      'groups': {'subgroups': _subgroupFaders.length},
-      'params': [
-        for (final id in _params.first.keys)
-          {
-            'id': id,
-            if (id == 'name')
-              'presentations': [
-                {
-                  'text': {
-                    'max_utf8_bytes': 16,
-                    'allow_empty': false,
-                    'allow_edge_whitespace': true,
-                  }
-                }
-              ],
-            'scope': 'channel',
-            'scopes': [
-              for (final first in [0, 8, 10, 14])
-                if (_params[first].containsKey(id)) _kind(first)
-            ],
-            'kind': _params.first[id] is bool
-                ? 'bool'
-                : _params.first[id] is String
-                    ? 'text'
-                    : id.endsWith('_type') ||
-                            id.endsWith('_tap') ||
-                            id == 'usbreturn'
-                        ? 'enum'
-                        : 'float',
-            if (RegExp(r'^eq[1-4]_type$').hasMatch(id)) ...{
-              'min': 0,
-              'max': 5,
-              'unit': '',
+    _mailbox.add(
+      jsonEncode({
+        'type': 'caps',
+        'input_processor_guard': true,
+        'channel_processing_guard': true,
+        'driver': 'sim',
+        'topology': [
+          for (final first in [0, 8, 10, 14])
+            {
+              'key': _family(first),
+              'kind': _kind(first),
+              'params_scope': [_kind(first)],
+              'label': first == 0
+                  ? 'Inputs'
+                  : first == 8
+                  ? 'Returns'
+                  : first == 10
+                  ? 'FX returns'
+                  : 'VCA 1-6',
+              'name_prefix': first == 0
+                  ? 'CH'
+                  : first == 8
+                  ? 'Return'
+                  : first == 10
+                  ? 'FX Return'
+                  : 'VCA',
+              'first': first,
+              'count': first == 0
+                  ? 8
+                  : first == 8
+                  ? 2
+                  : first == 10
+                  ? 4
+                  : 6,
             },
-            if (RegExp(r'^send\d+_level$').hasMatch(id)) ...{
-              'min': -90,
-              'max': 10,
-              'unit': 'dB',
-              'destination': {
-                'key': int.parse(id.substring(4, id.indexOf('_'))) <= 6
-                    ? 'bus/${int.parse(id.substring(4, id.indexOf('_'))).toString().padLeft(2, '0')}'
-                    : 'fx/${(int.parse(id.substring(4, id.indexOf('_'))) - 6).toString().padLeft(2, '0')}',
+        ],
+        'stereo_pairs': [
+          for (var i = 0; i < 10; i += 2) [i, i + 1],
+        ],
+        'groups': {'subgroups': _subgroupFaders.length},
+        'params': [
+          for (final id in _params.first.keys)
+            {
+              'id': id,
+              if (id == 'name')
+                'presentations': [
+                  {
+                    'text': {
+                      'max_utf8_bytes': 16,
+                      'allow_empty': false,
+                      'allow_edge_whitespace': true,
+                    },
+                  },
+                ],
+              'scope': 'channel',
+              'scopes': [
+                for (final first in [0, 8, 10, 14])
+                  if (_params[first].containsKey(id)) _kind(first),
+              ],
+              'kind': _params.first[id] is bool
+                  ? 'bool'
+                  : _params.first[id] is String
+                  ? 'text'
+                  : id.endsWith('_type') ||
+                        id.endsWith('_tap') ||
+                        id == 'usbreturn'
+                  ? 'enum'
+                  : 'float',
+              if (RegExp(r'^eq[1-4]_type$').hasMatch(id)) ...{
+                'min': 0,
+                'max': 5,
+                'unit': '',
+              },
+              if (RegExp(r'^send\d+_level$').hasMatch(id)) ...{
+                'min': -90,
+                'max': 10,
+                'unit': 'dB',
+                'destination': {
+                  'key': int.parse(id.substring(4, id.indexOf('_'))) <= 6
+                      ? 'bus/${int.parse(id.substring(4, id.indexOf('_'))).toString().padLeft(2, '0')}'
+                      : 'fx/${(int.parse(id.substring(4, id.indexOf('_'))) - 6).toString().padLeft(2, '0')}',
+                },
+              },
+              if (RegExp(r'^send\d+_pan$').hasMatch(id)) ...{
+                'min': -100,
+                'max': 100,
+                'unit': '%',
+              },
+              if (canonicalSimDspRange(id) case final range?) ...{
+                'min': range.first,
+                'max': range.last,
+                'kind': 'float',
+                'unit': id.endsWith('_freq')
+                    ? 'Hz'
+                    : RegExp(r'_(att|hold|rel)$').hasMatch(id)
+                    ? 'ms'
+                    : id == 'gain' ||
+                          id == 'trim' ||
+                          RegExp(r'_(thr|range|makeup|gain)$').hasMatch(id)
+                    ? 'dB'
+                    : '',
               },
             },
-            if (RegExp(r'^send\d+_pan$').hasMatch(id)) ...{
-              'min': -100,
-              'max': 100,
-              'unit': '%',
-            },
-            if (canonicalSimDspRange(id) case final range?) ...{
-              'min': range.first,
-              'max': range.last,
-              'kind': 'float',
-              'unit': id.endsWith('_freq')
-                  ? 'Hz'
-                  : RegExp(r'_(att|hold|rel)$').hasMatch(id)
-                      ? 'ms'
-                      : id == 'gain' ||
-                              id == 'trim' ||
-                              RegExp(r'_(thr|range|makeup|gain)$').hasMatch(id)
-                          ? 'dB'
-                          : '',
-            },
-          }
-      ],
-    }));
+        ],
+      }),
+    );
     _echoMain();
     for (var group = 0; group < _subgroupFaders.length; group++) {
       _echoSubgroup(group);
     }
     for (var ch = 0; ch < _params.length; ch++) {
       _echoSolo(ch);
-      _mailbox.add(jsonEncode({
-        'type': 'params',
-        'ch': ch,
-        'values': _params[ch],
-        'authority': {for (final field in _params[ch].keys) field: 'verified'},
-      }));
+      _mailbox.add(
+        jsonEncode({
+          'type': 'params',
+          'ch': ch,
+          'values': _params[ch],
+          'authority': {
+            for (final field in _params[ch].keys) field: 'verified',
+          },
+        }),
+      );
     }
-    _mailbox.add(jsonEncode({
-      'type': 'state',
-      'driver': 'sim',
-      'strips': [
-        for (final s in _strips)
-          {
-            'ch': s.ch,
-            'key': s.key,
-            'name': s.name,
-            'fader': s.fader,
-            'muted': s.muted
-          }
-      ],
-    }));
+    _mailbox.add(
+      jsonEncode({
+        'type': 'state',
+        'driver': 'sim',
+        'strips': [
+          for (final s in _strips)
+            {
+              'ch': s.ch,
+              'key': s.key,
+              'name': s.name,
+              'fader': s.fader,
+              'muted': s.muted,
+            },
+        ],
+      }),
+    );
   }
 
   @override
@@ -292,48 +309,96 @@ class FakeSimEngine implements EngineApi {
       return;
     }
     switch (c['cmd']) {
+      case 'console_controls':
+        _mailbox.add(
+          jsonEncode({
+            'type': 'console_controls',
+            'driver': 'sim',
+            'epoch': _processorEpoch,
+            'request_id': c['request_id'],
+            'node': {
+              'path': c['path'],
+              'label': 'Console controls',
+              'items': [],
+              'unavailable_reason':
+                  'The offline simulator has no native console controls.',
+            },
+          }),
+        );
+        return;
+      case 'console_control_set':
+        _mailbox.add(
+          jsonEncode({
+            'type': 'console_control_result',
+            'driver': 'sim',
+            'epoch': _processorEpoch,
+            'request_id': c['request_id'],
+            'status': 'rejected',
+            'message': 'The offline simulator has no native console controls.',
+          }),
+        );
+        return;
       case 'diagnostics':
-        _mailbox.add(jsonEncode({
-          'type': 'diagnostics', 'driver': 'sim', 'epoch': _processorEpoch,
-          'data': {'supported': false, 'offset': 0, 'total': 0, 'rows': [],
-            'reason': 'The offline fallback has no received hardware data.'},
-        }));
+        _mailbox.add(
+          jsonEncode({
+            'type': 'diagnostics',
+            'driver': 'sim',
+            'epoch': _processorEpoch,
+            'data': {
+              'supported': false,
+              'offset': 0,
+              'total': 0,
+              'rows': [],
+              'reason': 'The offline fallback has no received hardware data.',
+            },
+          }),
+        );
         return;
       case 'native_library':
-        _mailbox.add(jsonEncode({'type':'native_library_result',
-          'request_id':c['request_id'], 'driver':c['driver'], 'epoch':c['epoch'],
-          'operation':(c['action'] as Map?)?['op'],
-          'result':{'status':'rejected',
-            'message':'Provider libraries unavailable in the fallback engine. Use the Rust simulator.',
-            'inventory':null}}));
+        _mailbox.add(
+          jsonEncode({
+            'type': 'native_library_result',
+            'request_id': c['request_id'],
+            'driver': c['driver'],
+            'epoch': c['epoch'],
+            'operation': (c['action'] as Map?)?['op'],
+            'result': {
+              'status': 'rejected',
+              'message': 'Provider libraries unavailable in the fallback engine. Use the Rust simulator.',
+              'inventory': null,
+            },
+          }),
+        );
         return;
       case 'native_library_cancel':
         return;
       case 'local_library_status':
-        _mailbox.add(jsonEncode({
-          'type': 'local_library_status',
-          'mode': 'memory',
-          'status': 'error',
-          'revision': 0,
-          'error':
-              'Local scenes/shows are unsupported in the offline fallback. No durable library is available.',
-        }));
+        _mailbox.add(
+          jsonEncode({
+            'type': 'local_library_status',
+            'mode': 'memory',
+            'status': 'error',
+            'revision': 0,
+            'error': 'Local scenes/shows are unsupported in the offline fallback. No durable library is available.',
+          }),
+        );
         return;
       case 'local_library_mutate':
         final action = c['action'];
         if (c['request_id'] is String &&
             action is Map &&
             LocalLibraryAction.operations.contains(action['op'])) {
-          _mailbox.add(jsonEncode({
-            'type': 'local_library_result',
-            'request_id': c['request_id'],
-            'operation': action['op'],
-            'revision': 0,
-            'status': 'rejected',
-            'mode': 'memory',
-            'error':
-                'Local scenes/shows and library reset are unsupported in the offline fallback. Nothing was changed.',
-          }));
+          _mailbox.add(
+            jsonEncode({
+              'type': 'local_library_result',
+              'request_id': c['request_id'],
+              'operation': action['op'],
+              'revision': 0,
+              'status': 'rejected',
+              'mode': 'memory',
+              'error': 'Local scenes/shows and library reset are unsupported in the offline fallback. Nothing was changed.',
+            }),
+          );
         }
         return;
       case 'forget_saved_mixers':
@@ -341,40 +406,48 @@ class FakeSimEngine implements EngineApi {
         // Clearing its empty memory-only map performs no hardware action.
         if (c['request_id'] is String &&
             (c['request_id'] as String).isNotEmpty) {
-          _mailbox.add(jsonEncode({
-            'type': 'device_operation_complete',
-            'request_id': c['request_id'],
-            'operation': 'forget_saved_mixers',
-            'results': [],
-            'error': null,
-          }));
+          _mailbox.add(
+            jsonEncode({
+              'type': 'device_operation_complete',
+              'request_id': c['request_id'],
+              'operation': 'forget_saved_mixers',
+              'results': [],
+              'error': null,
+            }),
+          );
         }
         return;
       case 'refresh_devices':
       case 'discover_devices':
-        _mailbox
-            .add(jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}));
-        _mailbox.add(jsonEncode({
-          'type': 'device_operation_complete',
-          'request_id': c['request_id'],
-          'operation': c['cmd'] == 'refresh_devices' ? 'refresh' : 'discover',
-          'results': [
-            if (c['cmd'] == 'refresh_devices')
-              for (final addr in (c['hosts'] as List? ?? const []))
-                {'addr': addr, 'status': 'unsupported'},
-          ],
-          'error': 'Hardware discovery is unavailable in the offline fallback',
-        }));
+        _mailbox.add(
+          jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}),
+        );
+        _mailbox.add(
+          jsonEncode({
+            'type': 'device_operation_complete',
+            'request_id': c['request_id'],
+            'operation': c['cmd'] == 'refresh_devices' ? 'refresh' : 'discover',
+            'results': [
+              if (c['cmd'] == 'refresh_devices')
+                for (final addr in (c['hosts'] as List? ?? const []))
+                  {'addr': addr, 'status': 'unsupported'},
+            ],
+            'error':
+                'Hardware discovery is unavailable in the offline fallback',
+          }),
+        );
         return;
       case 'destination_param':
-        _mailbox.add(jsonEncode({
-          'type': 'destination_control_result',
-          'request_id': c['request_id'],
-          'epoch': c['epoch'],
-          'accepted': false,
-          'message':
-              'Destination controls are unavailable in the offline fallback.',
-        }));
+        _mailbox.add(
+          jsonEncode({
+            'type': 'destination_control_result',
+            'request_id': c['request_id'],
+            'epoch': c['epoch'],
+            'accepted': false,
+            'message':
+                'Destination controls are unavailable in the offline fallback.',
+          }),
+        );
         return;
       case 'input_processor':
         _inputProcessor(c);
@@ -388,11 +461,13 @@ class FakeSimEngine implements EngineApi {
               expected.isEmpty ||
               expected.length > 8 ||
               expected.entries.any((e) => _params[ch][e.key] != e.value)) {
-            _mailbox.add(jsonEncode({
-              'type': 'error',
-              'ch': ch,
-              'message': 'Input source changed; reopen the control.'
-            }));
+            _mailbox.add(
+              jsonEncode({
+                'type': 'error',
+                'ch': ch,
+                'message': 'Input source changed; reopen the control.',
+              }),
+            );
             return;
           }
         }
@@ -417,7 +492,7 @@ class FakeSimEngine implements EngineApi {
                 'phantom',
                 'usbreturn',
                 'link',
-                'pan'
+                'pan',
               }.contains(entry.key)) {
                 continue;
               }
@@ -430,14 +505,16 @@ class FakeSimEngine implements EngineApi {
           }
           for (final member in [left, right]) {
             _params[member]['link'] = value;
-            _mailbox.add(jsonEncode({
-              'type': 'params',
-              'ch': member,
-              'values': _params[member],
-              'authority': {
-                for (final id in _params[member].keys) id: 'verified'
-              }
-            }));
+            _mailbox.add(
+              jsonEncode({
+                'type': 'params',
+                'ch': member,
+                'values': _params[member],
+                'authority': {
+                  for (final id in _params[member].keys) id: 'verified',
+                },
+              }),
+            );
           }
           return;
         }
@@ -445,12 +522,14 @@ class FakeSimEngine implements EngineApi {
             (value is! String ||
                 value.isEmpty ||
                 utf8.encode(value).length > 16)) {
-          _mailbox.add(jsonEncode({
-            'type': 'error',
-            'ch': ch,
-            'message':
-                'This channel name is empty or too long. Try a shorter name.',
-          }));
+          _mailbox.add(
+            jsonEncode({
+              'type': 'error',
+              'ch': ch,
+              'message':
+                  'This channel name is empty or too long. Try a shorter name.',
+            }),
+          );
           return;
         }
         final current = _params[ch][field];
@@ -464,39 +543,46 @@ class FakeSimEngine implements EngineApi {
           }
           if (field == 'name' && value is String) _strips[ch].name = value;
           if (field == 'mute' && value is bool) _strips[ch].muted = value;
-          _mailbox.add(jsonEncode({
-            'type': 'param',
-            'ch': ch,
-            'field': field,
-            'value': value,
-            'authority': 'verified'
-          }));
+          _mailbox.add(
+            jsonEncode({
+              'type': 'param',
+              'ch': ch,
+              'field': field,
+              'value': value,
+              'authority': 'verified',
+            }),
+          );
         }
         return;
       case 'scan':
-        _mailbox
-            .add(jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}));
+        _mailbox.add(
+          jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}),
+        );
         return;
       case 'probe':
       case 'connect_device':
-        _mailbox.add(jsonEncode({
-          'type': 'error',
-          'message':
-              'Hardware connections are unavailable in the offline fallback'
-        }));
+        _mailbox.add(
+          jsonEncode({
+            'type': 'error',
+            'message':
+                'Hardware connections are unavailable in the offline fallback',
+          }),
+        );
         return;
       case 'connect':
         if (c['driver'] != null && c['driver'] != 'sim') {
-          _mailbox.add(jsonEncode({
-            'type': 'error',
-            'message':
-                'Hardware connections are unavailable in the offline fallback'
-          }));
+          _mailbox.add(
+            jsonEncode({
+              'type': 'error',
+              'message': 'Hardware connections are unavailable in the offline fallback',
+            }),
+          );
           return;
         }
         _processorEpoch++;
-        _mailbox
-            .add(jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}));
+        _mailbox.add(
+          jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}),
+        );
         _snapshot();
         return;
       case 'main_fader':
@@ -561,30 +647,32 @@ class FakeSimEngine implements EngineApi {
   }
 
   void _echoMain() {
-    _mailbox.add(jsonEncode({
-      'type': 'main',
-      'fader': _mainFader,
-      'muted': _mainMuted,
-    }));
+    _mailbox.add(
+      jsonEncode({'type': 'main', 'fader': _mainFader, 'muted': _mainMuted}),
+    );
   }
 
   void _echoSolo(int ch) {
-    _mailbox.add(jsonEncode({
-      'type': 'solo',
-      'ch': ch,
-      'key': _strips[ch].key,
-      'soloed': _solos[ch],
-    }));
+    _mailbox.add(
+      jsonEncode({
+        'type': 'solo',
+        'ch': ch,
+        'key': _strips[ch].key,
+        'soloed': _solos[ch],
+      }),
+    );
   }
 
   void _echoSubgroup(int group) {
-    _mailbox.add(jsonEncode({
-      'type': 'subgroup',
-      'group': group,
-      'fader': _subgroupFaders[group],
-      'muted': _subgroupMuted[group],
-      'key': 'subgroup/${(group + 1).toString().padLeft(2, '0')}',
-    }));
+    _mailbox.add(
+      jsonEncode({
+        'type': 'subgroup',
+        'group': group,
+        'fader': _subgroupFaders[group],
+        'muted': _subgroupMuted[group],
+        'key': 'subgroup/${(group + 1).toString().padLeft(2, '0')}',
+      }),
+    );
   }
 
   void _echo(int ch, String field, Object value) {
@@ -594,7 +682,7 @@ class FakeSimEngine implements EngineApi {
         'ch': ch,
         'field': field,
         'value': value,
-        'authority': 'verified'
+        'authority': 'verified',
       }),
     );
     _snapshot();
@@ -619,7 +707,7 @@ class FakeSimEngine implements EngineApi {
     }
     return [
       for (var i = 0; i < _strips.length; i++)
-        _inputLevel(i, t) * _strips[i].fader
+        _inputLevel(i, t) * _strips[i].fader,
     ];
   }
 
@@ -627,23 +715,27 @@ class FakeSimEngine implements EngineApi {
     if (_kind(i) == 'dca') return 0;
     final phase = i * 0.7;
     final rate = 0.65 + (i % 5) * 0.07;
-    final phrase = (0.5 +
-            0.35 * math.sin(t * rate + phase) +
-            0.15 * math.sin(t * 1.7 + phase * 1.3))
-        .clamp(0.0, 1.0);
+    final phrase =
+        (0.5 +
+                0.35 * math.sin(t * rate + phase) +
+                0.15 * math.sin(t * 1.7 + phase * 1.3))
+            .clamp(0.0, 1.0);
     return math.pow(10.0, (-36.0 + 24.0 * phrase) / 20.0).toDouble();
   }
 
   // Kept in sync with SimDriver.demo_spectrum.
   List<double> _demoSpectrum(int ch, double level) {
     if (level <= 0) return List.filled(64, 0);
-    final envelope =
-        ((20 * math.log(level) / math.ln10 + 90) / 70).clamp(0.0, 1.0);
+    final envelope = ((20 * math.log(level) / math.ln10 + 90) / 70).clamp(
+      0.0,
+      1.0,
+    );
     return List.generate(64, (bin) {
       final x = bin.toDouble();
       double peak(double center, double width) =>
           math.exp(-.5 * math.pow((x - center) / width, 2));
-      final profile = .012 +
+      final profile =
+          .012 +
           .92 * peak(12 + (ch % 3).toDouble(), 3) +
           .55 * peak(23 + (ch % 4).toDouble(), 3.8) +
           .20 * peak(34, 5);
@@ -688,8 +780,11 @@ class FakeSimEngine implements EngineApi {
     _binSeq = (_binSeq + 1) & 0xffffffff;
     frame.setUint32(8, (_lastMeterTick * 50) & 0xffffffff, Endian.little);
     for (var i = 0; i < n; i++) {
-      frame.setUint16(binHeaderLen + i * 2,
-          (levels[i].clamp(0.0, 1.0) * 65535).round(), Endian.little);
+      frame.setUint16(
+        binHeaderLen + i * 2,
+        (levels[i].clamp(0.0, 1.0) * 65535).round(),
+        Endian.little,
+      );
     }
     final frameBytes = frame.buffer.asUint8List();
     final out = Uint8List(4 + frameBytes.length);

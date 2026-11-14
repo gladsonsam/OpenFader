@@ -467,7 +467,7 @@ class NativeLibrarySection extends StatelessWidget {
               ),
             Text(
               '${view.authority} · ${view.complete ? 'complete provider index' : 'partial observed index'} · '
-              '${view.capacity} user slots',
+              '${view.capacityLabel}',
               style: TextStyle(color: palette.text7),
             ),
             for (final header in view.headers)

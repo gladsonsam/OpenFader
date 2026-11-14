@@ -3,6 +3,48 @@
 use super::*;
 
 impl Engine {
+    /// Retire all shared observations after an unscoped native control write.
+    /// The provider may have changed any strip or FX model; no cached value
+    /// remains proof until a subsequent read or desk push re-establishes it.
+    /// This is a timestamp barrier, not a connection-generation change.
+    pub(super) fn invalidate_after_native_attempt(&self, driver: &str, generation: u64) {
+        let mut sync = self.sync_state.lock().unwrap();
+        if self.connection_gen.load(Ordering::Acquire) != generation
+            || self.active_driver() != driver
+            || self.reads_suspended.load(Ordering::Acquire)
+        {
+            return;
+        }
+        sync.epoch = Instant::now();
+        sync.revision += 1;
+        sync.typed.clear();
+        let mut cache = self.param_cache.write().unwrap();
+        let invalidated: Vec<(u16, Vec<String>)> = cache
+            .iter()
+            .filter_map(|(ch, values)| {
+                let fields: Vec<String> = values.keys().cloned().collect();
+                (!fields.is_empty()).then_some((*ch, fields))
+            })
+            .collect();
+        cache.clear();
+        drop(cache);
+        let mut fx = self.fx_cache.write().unwrap();
+        for row in fx.iter_mut() {
+            row.fx_type = "-".to_string();
+            row.params.clear();
+        }
+        drop(fx);
+        self.broadcast(Event::NativeControlsInvalidated { epoch: generation });
+        for (ch, fields) in invalidated {
+            self.broadcast(Event::ParamInvalidated { ch, fields });
+        }
+        self.broadcast(self.fx_message_cached());
+        self.repair_dirty.store(true, Ordering::Release);
+        self.routing_dirty.store(true, Ordering::Release);
+        self.fx_tick.store(0, Ordering::Release);
+        self.fx_refill_requested.store(true, Ordering::Release);
+    }
+
     fn invalidate_preamp(&self, ch: u16, received: Instant, source: bool) {
         let candidates = self.active_drv().preamp_invalidation_fields(source);
         let mut fields = Vec::new();
@@ -138,7 +180,7 @@ impl Engine {
             return;
         }
         let mut sync = self.sync_state.lock().unwrap();
-        if received < sync.epoch {
+        if received < sync.epoch || query_started.is_some_and(|started| started < sync.epoch) {
             return;
         }
         let key = (ch, param.to_string());

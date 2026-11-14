@@ -64,9 +64,9 @@ impl Engine {
             .map(|s| {
                 let level = if design {
                     let idx = 56 + ((s.slot as usize - 1) % 4);
-                    levels.get(idx).copied().unwrap_or(0.0)
+                    levels.get(idx).copied().filter(|level| level.is_finite())
                 } else {
-                    0.0
+                    None
                 };
                 FxSlotState {
                     slot: s.slot,
@@ -152,8 +152,13 @@ impl Engine {
             }
             return;
         }
+        let started = Instant::now();
+        let generation = self.connection_gen.load(Ordering::Acquire);
         let rows = self.read_fx_rows().await;
-        *self.fx_cache.write().unwrap() = rows;
+        let sync = self.sync_state.lock().unwrap();
+        if generation == self.connection_gen.load(Ordering::Acquire) && started >= sync.epoch {
+            *self.fx_cache.write().unwrap() = rows;
+        }
     }
 
     /// Connect-time FX seed: in-memory Design rows, honest placeholders

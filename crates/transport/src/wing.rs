@@ -10,7 +10,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, UdpSocket},
     sync::broadcast,
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -114,8 +114,9 @@ impl WingMeterSession {
         let udp = UdpSocket::bind(bind).await?;
         let port = udp.local_addr()?.port();
         let report = 0x4f46_0000 | port as u32;
-        // Independent collections keep datagrams small. A firmware/model
-        // that omits a DCA meter cannot invalidate channel/bus/main meters.
+        // Keep each collection on its own control connection. This is valid
+        // for desks that support several IDs per connection and also works
+        // with peers that keep only one active report per TCP client.
         let mut collections = Vec::new();
         let mut start = 0;
         while start < specs.len() {
@@ -131,31 +132,45 @@ impl WingMeterSession {
             start = end;
         }
         anyhow::ensure!(!collections.is_empty(), "WING: empty meter collection");
-        let mut request = Vec::new();
+        let mut connections = Vec::with_capacity(collections.len());
         for (id, range) in &collections {
-            request.extend(meter_request(port, *id, &specs[range.clone()])?);
+            let request = meter_request(port, *id, &specs[range.clone()])?;
+            let mut tcp =
+                tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(peer)).await??;
+            tcp.set_nodelay(true)?;
+            tokio::time::timeout(Duration::from_secs(1), tcp.write_all(&request)).await??;
+            connections.push((tcp, request));
         }
-        let mut tcp =
-            tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(peer)).await??;
-        tcp.set_nodelay(true)?;
-        tokio::time::timeout(Duration::from_secs(1), tcp.write_all(&request)).await??;
         let latest = Arc::new(Mutex::new(None));
         let (tx, _) = broadcast::channel(64);
         let cache = latest.clone();
         let sender = tx.clone();
         let task = tokio::spawn(async move {
-            let mut tick = keepalive_ticker(Duration::from_secs(2));
+            // JoinSet owns the connections: aborting this session aborts every
+            // worker, and loss of any one connection invalidates the aggregate.
+            let mut workers = JoinSet::new();
+            for (mut tcp, request) in connections {
+                workers.spawn(async move {
+                    let mut tick = keepalive_ticker(Duration::from_secs(2));
+                    let mut control = [0u8; 1024];
+                    loop {
+                        tokio::select! {
+                            _ = tick.tick() => {
+                                if !matches!(tokio::time::timeout(Duration::from_secs(1), tcp.write_all(&request)).await, Ok(Ok(()))) { break; }
+                            }
+                            result = tcp.read(&mut control) => {
+                                if !matches!(result, Ok(n) if n > 0) { break; }
+                            }
+                        }
+                    }
+                });
+            }
             let mut data = [0u8; 8192];
-            let mut control = [0u8; 1024];
             let mut combined = vec![WingLevel::default(); specs.len()];
             let mut received = vec![None::<Instant>; collections.len()];
             loop {
                 tokio::select! {
-                    _ = tick.tick() => {
-                        // Re-define the collection too: recovers expired subscriptions
-                        // after suspend/network stalls, unlike renewal alone.
-                        if !matches!(tokio::time::timeout(Duration::from_secs(1), tcp.write_all(&request)).await, Ok(Ok(()))) { break; }
-                    }
+                    _ = workers.join_next() => break,
                     packet = udp.recv_from(&mut data) => {
                         let Ok((n, from)) = packet else { break };
                         if from.ip() != peer.ip() { continue; }
@@ -165,17 +180,18 @@ impl WingMeterSession {
                         let now = Instant::now();
                         combined[range.clone()].copy_from_slice(&levels);
                         received[index] = Some(now);
-                        for ((_, range), last) in collections.iter().zip(&received) {
-                            if last.is_none_or(|at| now.duration_since(at) >= Duration::from_secs(1)) {
-                                combined[range.clone()].fill(WingLevel::default());
-                            }
-                        }
-                        let sample = WingMeterSample { received: now, levels: combined.clone() };
+                        // Partial and stale sets carry no proof of the missing
+                        // readings. Age the aggregate by its oldest component.
+                        let oldest = received.iter().try_fold(now, |oldest, at| {
+                            Some(oldest.min((*at)?))
+                        });
+                        let Some(oldest) = oldest.filter(|at| now.duration_since(*at) < Duration::from_secs(1)) else {
+                            *cache.lock().unwrap() = None;
+                            continue;
+                        };
+                        let sample = WingMeterSample { received: oldest, levels: combined.clone() };
                         *cache.lock().unwrap() = Some(sample.clone());
                         let _ = sender.send(sample);
-                    }
-                    control = tcp.read(&mut control) => {
-                        if !matches!(control, Ok(n) if n > 0) { break; }
                     }
                 }
             }
@@ -187,7 +203,11 @@ impl WingMeterSession {
         !self.task.is_finished()
     }
     pub fn latest(&self) -> Option<WingMeterSample> {
-        self.latest.lock().unwrap().clone()
+        self.latest
+            .lock()
+            .unwrap()
+            .clone()
+            .filter(|sample| sample.received.elapsed() < Duration::from_secs(1))
     }
     pub fn subscribe(&self) -> broadcast::Receiver<WingMeterSample> {
         self.tx.subscribe()

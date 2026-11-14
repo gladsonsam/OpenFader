@@ -42,8 +42,8 @@ mod commands;
 mod destinations;
 mod discovery;
 mod fx;
-mod hydration;
 mod group_updates;
+mod hydration;
 mod library_status;
 mod library_transactions;
 mod link;
@@ -232,6 +232,7 @@ pub struct Engine {
     lib_lock: Mutex<()>,
     native_lane: Mutex<()>,
     native_requests: std::sync::Mutex<commands::NativeRequests>,
+    console_requests: std::sync::Mutex<commands::ConsoleRequests>,
     /// Durability health of the local library (ready/error/uncertain +
     /// mode + latch message + owned file bytes).
     lib_health: RwLock<LibraryHealth>,
@@ -340,6 +341,9 @@ pub struct Engine {
     /// Invalidates in-flight reads even when reconnecting the same driver.
     selector_nonce: [u8; 16],
     connection_gen: AtomicU64,
+    /// Advances before native console writes without changing the connection epoch.
+    native_control_generation: AtomicU64,
+    native_control_in_flight: AtomicBool,
     fill_connection_gen: AtomicU64,
     connection_changed: Notify,
     connection_lifecycle: crate::connection_lifecycle::ConnectionLifecycle,
@@ -437,6 +441,7 @@ impl Engine {
             lib_lock: Mutex::new(()),
             native_lane: Mutex::new(()),
             native_requests: std::sync::Mutex::new(Default::default()),
+            console_requests: std::sync::Mutex::new(Default::default()),
             lib_health: RwLock::new(lib_health),
             lib_revision: AtomicU64::new(0),
             lib_temp: AtomicU64::new(0),
@@ -471,6 +476,8 @@ impl Engine {
                 nonce
             },
             connection_gen: AtomicU64::new(1),
+            native_control_generation: AtomicU64::new(0),
+            native_control_in_flight: AtomicBool::new(false),
             fill_connection_gen: AtomicU64::new(1),
             connection_changed: Notify::new(),
             connection_lifecycle: Default::default(),

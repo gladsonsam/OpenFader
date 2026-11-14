@@ -115,6 +115,48 @@ impl Mapping {
             [OscType::String(_), OscType::Float(raw), value] if raw.is_finite() => value,
             _ => anyhow::bail!("WING: malformed reply at {}", self.path),
         };
+        // Some WING integer query replies encode the final field as a
+        // zero-based step, while others carry the engineering integer.
+        // The documented normalized position and parameter domain identify
+        // the value independently. Do not apply this to one-argument events.
+        if let (
+            WireKind::Int(lo, hi),
+            [OscType::String(display), OscType::Float(raw), OscType::Int(wire)],
+        ) = (&self.kind, msg.args.as_slice())
+        {
+            anyhow::ensure!(
+                raw.is_finite() && (0.0..=1.0).contains(raw),
+                "WING: invalid integer position at {}: {:?}",
+                self.path,
+                msg.args
+            );
+            let position = f64::from(*lo) + f64::from(*raw) * (f64::from(*hi) - f64::from(*lo));
+            let rounded = position.round();
+            anyhow::ensure!(
+                (position - rounded).abs() <= 0.001
+                    && rounded >= f64::from(*lo)
+                    && rounded <= f64::from(*hi),
+                "WING: inconsistent integer position at {}: {:?}",
+                self.path,
+                msg.args
+            );
+            let value = rounded as i32;
+            anyhow::ensure!(
+                *wire == value || i64::from(*wire) == i64::from(value) - i64::from(*lo),
+                "WING: inconsistent integer reply at {}: {:?}",
+                self.path,
+                msg.args
+            );
+            if let Ok(shown) = display.trim().parse::<i32>() {
+                anyhow::ensure!(
+                    shown == value,
+                    "WING: inconsistent integer display at {}: {:?}",
+                    self.path,
+                    msg.args
+                );
+            }
+            return Ok(ParamValue::Float(value as f32));
+        }
         Ok(match (&self.kind, arg) {
             (WireKind::Fixed(v), OscType::String(s)) if s == "STD" => ParamValue::Float(*v),
             (WireKind::Choices(choices), OscType::String(s)) => ParamValue::Float(
@@ -148,7 +190,12 @@ impl Mapping {
                     .ok_or_else(|| anyhow::anyhow!("WING: unknown enum {v:?}"))?
                     as f32,
             ),
-            _ => anyhow::bail!("WING: wrong value type at {}", self.path),
+            _ => anyhow::bail!(
+                "WING: invalid value at {} for {:?}: {:?}",
+                self.path,
+                self.kind,
+                msg.args
+            ),
         })
     }
     pub fn encode(&self, value: ParamValue) -> anyhow::Result<OscType> {
@@ -296,8 +343,10 @@ pub fn mapping(strip: StripId, param: &str) -> anyhow::Result<Mapping> {
             };
             let (leaf, wire) = match leaf {
                 "gain" => ("g", WireKind::Float(-15., 15.)),
+                "freq" if n == 1 => ("f", WireKind::Float(20., 2000.)),
+                "freq" if n == bands => ("f", WireKind::Float(50., 20000.)),
                 "freq" => ("f", WireKind::Float(20., 20000.)),
-                "q" => ("q", WireKind::Float(0.442, 10.)),
+                "q" => ("q", WireKind::Float(0.44, 10.)),
                 "type" => {
                     model = Some(("eq", "STD"));
                     if n == 1 || n == bands {

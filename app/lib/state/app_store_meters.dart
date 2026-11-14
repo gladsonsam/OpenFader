@@ -19,7 +19,7 @@ mixin _AppStoreMeters on _AppStoreContext {
   // --- meter notifiers (stable, updated in place) ---
   final List<ValueNotifier<double>> _meters = [];
   @override
-  final ValueNotifier<double> _masterMeter = ValueNotifier(0);
+  final ValueNotifier<double> _masterMeter = ValueNotifier(double.nan);
   final Map<int, BridgeTap> _taps = {};
   @override
   final Map<String, ValueNotifier<double>> _busMeters = {};
@@ -34,20 +34,21 @@ mixin _AppStoreMeters on _AppStoreContext {
   final _automixGain = ValueNotifier<double?>(null);
   final _dynamicsMeters = ValueNotifier<ChannelDynamicsMetersVm?>(null);
   @override
-  final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
+  final ValueNotifier<double> _levelDb = ValueNotifier(double.nan);
   @override
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
   List<double>? _lastSyntheticBins;
   @override
   final ValueNotifier<AudioSpectrumFrame?> _audioSpectrum = ValueNotifier(null);
-  final ValueNotifier<AudioSpectrumPeaks> _audioSpectrumPeaks =
-      ValueNotifier(const AudioSpectrumPeaks.empty());
+  final ValueNotifier<AudioSpectrumPeaks> _audioSpectrumPeaks = ValueNotifier(
+    const AudioSpectrumPeaks.empty(),
+  );
   AudioSpectrumFrame? _lastPeakFrame;
 
   @override
   void _syncMeters(double nowMs) {
     while (_meters.length < engine.strips.length) {
-      _meters.add(ValueNotifier(0));
+      _meters.add(ValueNotifier(double.nan));
     }
     while (_meters.length > engine.strips.length) {
       _meters.removeLast().dispose();
@@ -56,13 +57,20 @@ mixin _AppStoreMeters on _AppStoreContext {
       final measured = engine.outputMeter(engine.strips[i].key);
       final lv = measured.available
           ? measured.peak
-          : i < engine.meters.length
-              ? engine.meters[i].clamp(0.0, 1.0)
-              : 0.0;
+          : i < engine.meters.length && engine.meters[i].isFinite
+          ? engine.meters[i].clamp(0.0, 1.0)
+          : double.nan;
       _meters[i].value = lv;
       final ch = engine.strips[i].ch;
       final tap = _taps.putIfAbsent(ch, () => BridgeTap());
       final db = _linToDb(lv);
+      if (lv.isNaN) {
+        tap.db.value = double.nan;
+        tap.peakDb.value = double.nan;
+        tap.clip.value = false;
+        _peakAtMs.remove(ch);
+        continue;
+      }
       tap.db.value = db;
       final prevPeak = tap.peakDb.value;
       if (!prevPeak.isFinite || db > prevPeak) {
@@ -74,25 +82,25 @@ mixin _AppStoreMeters on _AppStoreContext {
       }
       tap.clip.value = db.isFinite && db >= -0.5;
     }
-    final masterKey = _busId == 'main'
-        ? 'main'
-        : _selectedSubgroup != null
-            ? 'subgroup/${(_selectedSubgroup! + 1).toString().padLeft(2, '0')}'
-            : 'bus/${((int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
-    _masterMeter.value = engine.outputMeter(masterKey).peak;
+    final masterKey = masterProcessingTarget;
+    final master = engine.outputMeter(masterKey);
+    _masterMeter.value = master.available ? master.peak : double.nan;
     for (final entry in _busMeters.entries) {
       final id = entry.key;
-      final target = id.startsWith('subgroup')
+      final target = id.startsWith('solo:')
+          ? id.split(':')[1]
+          : id.startsWith('subgroup')
           ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
           : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
-      entry.value.value = engine.outputMeter(target).peak;
+      final measured = engine.outputMeter(target);
+      entry.value.value = measured.available ? measured.peak : double.nan;
     }
     for (final entry in _outputMeters.entries) {
       entry.value.value = engine.outputMeter(entry.key);
     }
     // Open-channel feeds.
     final ci = engine.strips.indexWhere((s) => s.ch == _channel);
-    final lv = ci >= 0 && ci < _meters.length ? _meters[ci].value : 0.0;
+    final lv = ci >= 0 && ci < _meters.length ? _meters[ci].value : double.nan;
     _levelDb.value = _linToDb(lv);
     _automixGain.value = engine.freshAutomixGain(_channel);
     final dynamics = engine.dynamicsMeters[_channel];
@@ -104,7 +112,8 @@ mixin _AppStoreMeters on _AppStoreContext {
             gateOut: dynamics['gate_out']!,
             compIn: dynamics['comp_in']!,
             compReduction: dynamics['comp_reduction']!,
-            compOut: dynamics['comp_out']!);
+            compOut: dynamics['comp_out']!,
+          );
 
     _syncSpectrum();
   }
@@ -120,12 +129,14 @@ mixin _AppStoreMeters on _AppStoreContext {
     // can reuse that snapshot without allocating or rebuilding the graph.
     if (!identical(visibleBins, _lastSyntheticBins)) {
       _lastSyntheticBins = visibleBins;
-      _spectrum.value =
-          visibleBins == null ? const [] : List.unmodifiable(visibleBins);
+      _spectrum.value = visibleBins == null
+          ? const []
+          : List.unmodifiable(visibleBins);
     }
     final frame = engine.audioSpectrum;
     if (frame != null && !frame.isFresh) engine.clearAudioSpectrum();
-    _audioSpectrum.value = engine.connected &&
+    _audioSpectrum.value =
+        engine.connected &&
             frame != null &&
             frame.isFresh &&
             (frame.ch == null || frame.ch == _channel)
@@ -166,6 +177,9 @@ mixin _AppStoreMeters on _AppStoreContext {
   ValueNotifier<double> meterOf(int ch) {
     final i = engine.strips.indexWhere((s) => s.ch == ch);
     if (i < 0) return _masterMeter;
+    while (_meters.length <= i) {
+      _meters.add(ValueNotifier(double.nan));
+    }
     return _meters[i];
   }
 
@@ -174,9 +188,9 @@ mixin _AppStoreMeters on _AppStoreContext {
 
   // ------------------------------------------------------------------
   @override
-  List<DestinationControlVm> get monitorControls =>
-      List.unmodifiable(engine.destinationControls
-          .where((row) => row.surface == 'output_monitor'));
+  List<DestinationControlVm> get monitorControls => List.unmodifiable(
+    engine.destinationControls.where((row) => row.surface == 'output_monitor'),
+  );
 
   @override
   bool monitorControlIsCurrent(DestinationControlVm control) =>
@@ -184,8 +198,9 @@ mixin _AppStoreMeters on _AppStoreContext {
 
   @override
   Future<String?> setMonitorControl(
-          DestinationControlVm control, double value) =>
-      setDestinationControl(control, value);
+    DestinationControlVm control,
+    double value,
+  ) => setDestinationControl(control, value);
 
   // MetersStore
   // ------------------------------------------------------------------
@@ -205,10 +220,11 @@ mixin _AppStoreMeters on _AppStoreContext {
     final built = (!_online || engine.strips.isEmpty)
         ? const [
             BridgeGroup(
-                key: 'in',
-                title: 'Channels',
-                ladders: [],
-                collapsedReason: 'offline'),
+              key: 'in',
+              title: 'Channels',
+              ladders: [],
+              collapsedReason: 'offline',
+            ),
           ]
         : List<BridgeGroup>.unmodifiable([
             BridgeGroup(
@@ -217,9 +233,10 @@ mixin _AppStoreMeters on _AppStoreContext {
               ladders: [
                 for (final s in engine.strips)
                   BridgeLadder(
-                      ch: s.ch,
-                      label: s.name.isEmpty ? null : s.name,
-                      sub: '${s.ch + 1}'),
+                    ch: s.ch,
+                    label: s.name.isEmpty ? null : s.name,
+                    sub: '${s.ch + 1}',
+                  ),
               ],
             ),
           ]);
@@ -262,8 +279,9 @@ mixin _AppStoreMeters on _AppStoreContext {
         ('physical', 'usb') => 'USB',
         _ => family,
       };
-      final suffix =
-          parts.length > 2 ? ' ${int.tryParse(parts.last) ?? parts.last}' : '';
+      final suffix = parts.length > 2
+          ? ' ${int.tryParse(parts.last) ?? parts.last}'
+          : '';
       groups
           .putIfAbsent(group, () => [])
           .add(BridgeOutputMeter(target, '$label$suffix'));

@@ -77,7 +77,17 @@ impl Desk {
                             O::Float(v) => {
                                 vec![O::String(v.to_string()), O::Float(0.123), O::Float(v)]
                             }
-                            O::Int(v) => vec![O::String(v.to_string()), O::Float(0.456), O::Int(v)],
+                            O::Int(v) => {
+                                let (min, max) = if msg.addr.ends_with("/in/conn/in")
+                                    || msg.addr.ends_with("/in/conn/altin")
+                                {
+                                    (1, 64)
+                                } else {
+                                    (0, 1)
+                                };
+                                let position = (v - min) as f32 / (max - min) as f32;
+                                vec![O::String(v.to_string()), O::Float(position), O::Int(v)]
+                            }
                             v => vec![v],
                         };
                         let bytes = osc::encode_message(&msg.addr, args).unwrap();

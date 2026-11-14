@@ -40,6 +40,7 @@ import '../mixer/components/strip.dart';
 import '../screens/channel_toolbar.dart';
 import '../screens/connection.dart';
 import '../screens/debug.dart';
+import '../screens/console_controls.dart';
 import '../screens/fx.dart';
 import '../screens/meters.dart';
 import '../screens/start.dart';
@@ -57,6 +58,7 @@ import 'scenes_store.dart';
 import 'settings_store.dart';
 import 'fx_store.dart';
 import 'debug_store.dart';
+import 'console_controls_store.dart';
 
 enum AppTab {
   home('Tools'),
@@ -69,7 +71,8 @@ enum AppTab {
   routing('Routing'),
   connect('Connection'),
   settings('Settings'),
-  debug('Diagnostics');
+  debug('Diagnostics'),
+  consoleControls('Console controls');
 
   const AppTab(this.label);
   final String label;
@@ -134,6 +137,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final ShellSettingsStore _settings;
   late final ShellFxStore _fx;
   late final ShellDebugStore _debug;
+  late final ShellConsoleControlsStore _consoleControls;
   late final ShellRecorderStore _recorder;
   bool _desktopQuitting = false;
 
@@ -165,6 +169,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _settings = ShellSettingsStore(widget.store);
     _fx = ShellFxStore(widget.store);
     _debug = ShellDebugStore(widget.store);
+    _consoleControls = ShellConsoleControlsStore(widget.store);
     _applyMeterTuning();
     PrefsService.instance.addListener(_onPrefs);
     // Single shared ticker: the only poll loop in the app because pages own no timer.
@@ -425,6 +430,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _conn.tickRecovery();
       if (widget.api is HostTransport) _recorder.tick();
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
+      if (mounted && _tab == AppTab.consoleControls) _consoleControls.poll();
     } catch (_) {
       // A transport hiccup must not crash the shell loop.
     }
@@ -450,6 +456,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _settings.dispose();
     _fx.dispose();
     _debug.dispose();
+    _consoleControls.dispose();
     _recorder.dispose();
     super.dispose();
   }
@@ -857,6 +864,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           onQuit: widget.desktop?.requestQuit,
           onMixer: () => _go(AppTab.mixer),
           onConnections: () => _openConnectionsHome(),
+          onConsoleControls: () => _go(AppTab.consoleControls),
           onRecorder:
               (widget.api is HostTransport) ? () => _go(AppTab.recorder) : null,
           onNavigate: _navigateMixer,
@@ -923,6 +931,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             _go(AppTab.mixer);
           }),
       AppTab.debug => U4DebugPage(store: _debug),
+      AppTab.consoleControls => ConsoleControlsPage(store: _consoleControls),
     };
   }
 

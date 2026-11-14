@@ -37,7 +37,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
 
   @override
   Object get controlSession =>
-      (engine.driver, engine.session, engine.connected);
+      (engine.driver, engine.session, engine.connected, engine.nativeProofRevision);
 
   @override
   bool get stateControlsSupported =>
@@ -299,10 +299,12 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
 
   @override
   ValueNotifier<double> meterOf(int slot) {
-    final n = _meters.putIfAbsent(slot, () => ValueNotifier(0));
+    final n = _meters.putIfAbsent(slot, () => ValueNotifier(double.nan));
     final i = _raw.indexWhere((s) => s.slot == slot);
-    if (i >= 0 && i < engine.meters.length) {
-      n.value = _raw[i].level.clamp(0.0, 1.0);
+    if (i >= 0 && engine.connected && engine.meters.isNotEmpty) {
+      n.value = _raw[i].level.isFinite ? _raw[i].level.clamp(0.0, 1.0) : double.nan;
+    } else {
+      n.value = double.nan;
     }
     return n;
   }
@@ -327,8 +329,10 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     }
     for (final e in _meters.entries) {
       final i = _raw.indexWhere((s) => s.slot == e.key);
-      if (i >= 0 && i < engine.meters.length) {
-        e.value.value = _raw[i].level.clamp(0.0, 1.0);
+      if (i >= 0 && engine.connected && engine.meters.isNotEmpty) {
+        e.value.value = _raw[i].level.isFinite ? _raw[i].level.clamp(0.0, 1.0) : double.nan;
+      } else {
+        e.value.value = double.nan;
       }
     }
   }

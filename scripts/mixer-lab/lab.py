@@ -16,6 +16,9 @@ import sys
 import time
 import urllib.request
 
+sys.dont_write_bytecode = True
+from probes import SCENARIOS, stages
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 MATRIX = json.loads((HERE / 'matrix.json').read_text())
@@ -180,6 +183,10 @@ def revision():
         'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT)),
         'diff_sha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD'], cwd=ROOT)).hexdigest(),
+        'untracked_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                             for name in subprocess.check_output(
+                                 ['git', 'ls-files', '--others', '--exclude-standard', '-z'],
+                                 cwd=ROOT, text=True).split('\0') if name},
     }
 
 
@@ -217,26 +224,13 @@ def run(models, output, quick=False, scenario=None):
                 continue
             directory = output / model
             directory.mkdir()
+            emulator = None
             try:
-                with environment(model, directory) as (_, port):
-                    stages = []
-                    if scenario:
-                        script = 'verify-x32-native.dart' if scenario == 'native' else 'verify-x32-full.dart'
-                        extra = [] if scenario == 'native' else ['--scenario', scenario]
-                        stages.append((scenario, HERE / script, extra, 900))
-                    else:
-                        stages.append(('basics', HERE / 'verify-basics.dart',
-                                       ['--driver', fixture['driver'], '--expected-model', fixture['expected_model']], 180))
-                        if model == 'x32':
-                            stages.append(('extended', ROOT / 'scripts/verify-x32-emulator.dart',
-                                           ['--emulator', '127.0.0.1'], 240))
-                            if not quick:
-                                stages.extend([('full', HERE / 'verify-x32-full.dart', [], 900),
-                                               ('native', HERE / 'verify-x32-native.dart', [], 600)])
+                with environment(model, directory) as (emulator, port):
                     result['status'] = 'pass'
                     result['stages'] = []
                     with (directory / 'verification.log').open('w') as log:
-                        for name, script, extra, timeout in stages:
+                        for name, script, extra, timeout in stages(fixture, quick, scenario):
                             stage = {'name': name, 'status': 'fail'}
                             result['stages'].append(stage)
                             probe = call([dart(), script, '--ws', f'ws://127.0.0.1:{port}/ws',
@@ -250,6 +244,10 @@ def run(models, output, quick=False, scenario=None):
                                 raise subprocess.CalledProcessError(probe.returncode, probe.args)
             except Exception as error:
                 result.update(status='fail', reason=str(error))
+            if emulator is not None:
+                result['fixture_disposed'] = emulator.poll() is not None
+                if not result['fixture_disposed']:
+                    result.update(status='fail', reason='Owned emulator did not stop')
             result['evidence'] = str(directory)
             print(f'{result["status"].upper()} {model}: {directory}', flush=True)
     except Exception as error:
@@ -272,8 +270,8 @@ def main():
     p = sub.add_parser('run')
     p.add_argument('models', nargs='*', choices=list(MATRIX['fixtures']) + ['all'])
     p.add_argument('--output', type=Path)
-    p.add_argument('--quick', action='store_true', help='Run basic and extended checks without the full X32 feature sweep')
-    p.add_argument('--scenario', choices=['processing', 'fx', 'routing', 'reconnect', 'native'], help='Focused X32 verification with fresh isolated processes')
+    p.add_argument('--quick', action='store_true', help='Run basic checks and X32 extended checks without full sweeps')
+    p.add_argument('--scenario', choices=sorted(set(sum(SCENARIOS.values(), ()))), help='Focused provider verification with fresh isolated processes')
     p = sub.add_parser('emulator', help='Foreground emulator for manual app work; Ctrl-C stops it')
     p.add_argument('model', choices=['wing', 'wing-compact', 'wing-rack', 'x32', 'sq5', 'dlive'])
     args = parser.parse_args()
@@ -293,8 +291,11 @@ def main():
         if 'all' in models:
             models = list(MATRIX['fixtures'])
         output = (args.output or CACHE / 'runs' / dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')).resolve()
-        if args.scenario and (models != ['x32'] or args.quick):
-            parser.error('--scenario requires only x32 and cannot combine with --quick')
+        if args.scenario and (len(models) != 1 or models[0] == 'all' or
+                              MATRIX['fixtures'][models[0]]['driver'] not in SCENARIOS or args.quick):
+            parser.error('--scenario requires one X32 or WING fixture and cannot combine with --quick')
+        if args.scenario and args.scenario not in SCENARIOS[MATRIX['fixtures'][models[0]]['driver']]:
+            parser.error('Scenario is not supported by this provider')
         return run(list(dict.fromkeys(models)), output, quick=args.quick, scenario=args.scenario)
     return 0
 

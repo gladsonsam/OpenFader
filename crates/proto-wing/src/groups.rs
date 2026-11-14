@@ -51,6 +51,34 @@ pub fn edit(tags: &str, kind: GroupKind, group: u8, member: bool) -> anyhow::Res
     );
     Ok(out)
 }
+/// A console may reorder membership tokens while retaining the same groups.
+/// User tags remain byte-for-byte and in their original relative order.
+pub fn equivalent(expected: &str, actual: &str) -> bool {
+    let split = |tags: &str| {
+        let mut dca = [0u16; 16];
+        let mut mute = [0u16; 8];
+        let mut other = Vec::new();
+        for token in tags.split(',') {
+            let trimmed = token.trim();
+            let index = |prefix: &str, limit: usize| {
+                let suffix = trimmed.strip_prefix(prefix)?;
+                let number: usize = suffix.parse().ok()?;
+                (number >= 1 && number <= limit && suffix == number.to_string())
+                    .then_some(number - 1)
+            };
+            if let Some(i) = index("#D", 16) {
+                dca[i] = dca[i].saturating_add(1);
+            } else if let Some(i) = index("#M", 8) {
+                mute[i] = mute[i].saturating_add(1);
+            } else {
+                other.push(token.to_string());
+            }
+        }
+        (dca, mute, other)
+    };
+    split(expected) == split(actual)
+}
+
 // Preserve the original public DCA helper API.
 pub fn assigned(tags: &str, group: u8) -> anyhow::Result<bool> {
     member(tags, GroupKind::Dca, group)

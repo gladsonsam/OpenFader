@@ -130,15 +130,10 @@ pub(crate) fn note_solo_push(
     if !(1..=80).contains(&index) {
         return;
     }
-    match crate::mapping::strict_bool(msg) {
-        Ok(value) => {
-            let _ = remember_solo(index, generation, value);
-        }
-        Err(_) => {
-            invalidate_one(generation, index);
-            let _ = dirty.send(SoloRefresh::One(index));
-        }
-    }
+    // A push can have been queued before a console-wide mutation; re-read
+    // the leaf before treating it as current proof.
+    invalidate_one(generation, index);
+    let _ = dirty.send(SoloRefresh::One(index));
 }
 
 pub fn solosw_index(strip: StripId) -> anyhow::Result<u8> {
@@ -288,6 +283,7 @@ async fn refresh_solo_on(
     generation: u64,
     index: u8,
 ) -> anyhow::Result<()> {
+    let proof = crate::routing::proof_stamp()?;
     anyhow::ensure!(
         crate::routing::generation_for_session(session)? == generation,
         "x32: solo session changed during refresh"
@@ -299,7 +295,7 @@ async fn refresh_solo_on(
         "x32: solo session changed during refresh"
     );
     let value = crate::mapping::strict_bool(&reply).map_err(|e| anyhow::anyhow!("x32: {e}"))?;
-    let _ = remember_solo(index, generation, value);
+    crate::routing::with_proof(proof, || remember_solo(index, generation, value))?;
     Ok(())
 }
 

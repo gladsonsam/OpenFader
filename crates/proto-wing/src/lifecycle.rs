@@ -53,18 +53,65 @@ impl WingDriver {
     }
     pub(crate) async fn read(&self, m: &Mapping) -> anyhow::Result<ParamValue> {
         let session = self.session()?;
+        let generation = self.generation.load(std::sync::atomic::Ordering::Acquire);
+        let native_revision = self
+            .native_revision
+            .load(std::sync::atomic::Ordering::Acquire);
         let msg = session
             .query_with_args_timeout(&m.path, vec![], QUERY_TIMEOUT, |msg| {
                 !matches!(msg.args.as_slice(), [OscType::Blob(_)])
             })
             .await?;
         self.ensure_current(&session)?;
-        let value = m.decode(&msg)?;
+        let value = if m.path.ends_with("/col")
+            && matches!(m.kind, crate::mapping::WireKind::Int(..))
+        {
+            let cached = self.color_domains.lock().unwrap().get(&m.path).copied();
+            let (min, max) = match cached {
+                Some(domain) => domain,
+                None => {
+                    let def = self.parameter_definition(&m.path).await?;
+                    let crate::native::Kind::Integer { min, max } = def.kind else {
+                        anyhow::bail!("WING: color definition is not integer");
+                    };
+                    self.ensure_current(&session)?;
+                    let mut domains = self.color_domains.lock().unwrap();
+                    ensure!(
+                        self.generation.load(std::sync::atomic::Ordering::Acquire) == generation
+                            && self
+                                .native_revision
+                                .load(std::sync::atomic::Ordering::Acquire)
+                                == native_revision,
+                        "WING: session or native state changed during color definition read"
+                    );
+                    domains.insert(m.path.clone(), (min, max));
+                    (min, max)
+                }
+            };
+            let value = Mapping {
+                path: m.path.clone(),
+                kind: crate::mapping::WireKind::Int(min, max),
+                model: None,
+            }
+            .decode(&msg)?;
+            if let ParamValue::Float(v) = value {
+                ensure!(
+                    (1.0..=12.0).contains(&v),
+                    "WING: color {v} is outside the curated palette; use native console controls"
+                );
+            }
+            value
+        } else {
+            m.decode(&msg)?
+        };
         *self.last_control.lock().unwrap() = Some(Instant::now());
         Ok(value)
     }
     pub(crate) async fn connect_session(&self, addr: &str) -> anyhow::Result<()> {
         let _guard = self.lifecycle.lock().await;
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.color_domains.lock().unwrap().clear();
         self.link.write().unwrap().take();
         *self.last_control.lock().unwrap() = None;
         let peer = openfader_transport::resolve_peer(addr, 2223)?;
@@ -126,10 +173,17 @@ impl WingDriver {
             .iter()
             .enumerate()
             .flat_map(|(family, f)| {
-                (0..f.count).map(move |index| openfader_transport::wing::WingMeterSpec {
-                    token: 0xa0 + family as u8,
-                    index: index as u8,
+                // The published native meter table exposes DCA 1–8 only,
+                // although all 16 DCA strips remain controllable.
+                (0..if f.key == "dca" {
+                    f.count.min(8)
+                } else {
+                    f.count
                 })
+                    .map(move |index| openfader_transport::wing::WingMeterSpec {
+                        token: 0xa0 + family as u8,
+                        index: index as u8,
+                    })
             })
             .collect();
         let meters = match openfader_transport::wing::WingMeterSession::connect(
@@ -165,10 +219,17 @@ impl WingDriver {
             .iter()
             .enumerate()
             .flat_map(|(family, f)| {
-                (0..f.count).map(move |index| openfader_transport::wing::WingMeterSpec {
-                    token: 0xa0 + family as u8,
-                    index: index as u8,
+                // The published native meter table exposes DCA 1–8 only,
+                // although all 16 DCA strips remain controllable.
+                (0..if f.key == "dca" {
+                    f.count.min(8)
+                } else {
+                    f.count
                 })
+                    .map(move |index| openfader_transport::wing::WingMeterSpec {
+                        token: 0xa0 + family as u8,
+                        index: index as u8,
+                    })
             })
             .collect();
         let meters = openfader_transport::wing::WingMeterSession::connect(
@@ -186,6 +247,9 @@ impl WingDriver {
     }
     pub(crate) async fn disconnect_session(&self) -> anyhow::Result<()> {
         let _guard = self.lifecycle.lock().await;
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.color_domains.lock().unwrap().clear();
         self.link.write().unwrap().take();
         *self.last_control.lock().unwrap() = None;
         Ok(())

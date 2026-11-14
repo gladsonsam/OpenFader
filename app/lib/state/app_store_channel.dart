@@ -201,7 +201,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   Map<String, dynamic>? paramMetadata(String leaf) {
     final desk = _providerLeaf(engine, leaf);
     final metadata =
-        parameterPresentation(engine.parameterMetadata[desk], paramNum);
+        parameterPresentation(engine.parameterMetadata[desk], paramNum,
+            stripKind: _presetFamily(_channel)?['kind'] as String?);
     if (desk == _providerLeaf(engine, 'provider:delay_unit') &&
         metadata != null) {
       final choices = metadata['choices'];

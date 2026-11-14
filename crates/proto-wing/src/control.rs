@@ -39,6 +39,85 @@ impl WingDriver {
         }
         Ok(())
     }
+    /// Capture only fields that exist for the current strip and loaded model.
+    /// An unreadable selector is an error, not evidence of inapplicability.
+    pub async fn capture_applicable(&self, strip: StripId, param: &str) -> anyhow::Result<bool> {
+        if group_assignment(param).is_some() {
+            return Ok(tag_mapping(strip).is_ok());
+        }
+        if param == delay::VALUE {
+            return Ok(self.delay_state(strip).await?.editable);
+        }
+        if matches!(param, "source_a" | "source_b") {
+            return Ok(strip.0 < 48);
+        }
+        if matches!(param, "gain" | "phantom" | source::MODE) {
+            let selector = self.read(&mapping(strip, "source_select")?).await?;
+            let route = self
+                .routing_source(
+                    strip,
+                    if selector == ParamValue::Float(1.) {
+                        "alt"
+                    } else {
+                        "main"
+                    },
+                )
+                .await?;
+            let Some((group, index)) = route.split_once(' ') else {
+                return Ok(false);
+            };
+            if matches!(param, "gain" | "phantom") {
+                if !matches!(group, "LCL" | "A" | "B" | "C") {
+                    return Ok(false);
+                }
+                if group == "LCL" {
+                    let index: u8 = index.parse()?;
+                    if index == 0 || index > self.local_input_count() {
+                        return Ok(false);
+                    }
+                }
+                return Ok(true);
+            }
+            if matches!(group, "BUS" | "MAIN" | "MTX") {
+                return Ok(false);
+            }
+            return self.source_mode_writable(strip).await;
+        }
+        // A bus cannot feed itself; the family-wide send catalogue also
+        // contains these per-strip holes, so never capture them for recall.
+        if root(strip)?.1 == openfader_core::StripKind::Bus {
+            if let Some(slot) = param
+                .strip_prefix("send")
+                .and_then(|p| p.split_once('_'))
+                .and_then(|(n, _)| n.parse::<u16>().ok())
+            {
+                if (1..=16).contains(&slot) && strip.0 - 48 + 1 == slot {
+                    return Ok(false);
+                }
+            }
+        }
+        let m = match mapping(strip, param) {
+            Ok(m) => m,
+            Err(_) => return Ok(false),
+        };
+        // Fixed middle-band types are derived from the loaded standard EQ,
+        // not writable leaves (notably band six on 8-band outputs).
+        if matches!(m.kind, WireKind::Fixed(_)) {
+            return Ok(false);
+        }
+        if let Some((block, model)) = m.model {
+            let current = self
+                .read(&Mapping {
+                    path: format!("{}/{block}/mdl", root(strip)?.0),
+                    kind: WireKind::Text(32),
+                    model: None,
+                })
+                .await?;
+            return Ok(current == ParamValue::Text(model.into()));
+        }
+        Ok(true)
+    }
+
     pub async fn set_guarded(
         &self,
         strip: StripId,
@@ -110,8 +189,11 @@ impl WingDriver {
                 .await?;
             let actual = self.read(&m).await?;
             self.ensure_current(&session)?;
+            let ParamValue::Text(actual) = actual else {
+                anyhow::bail!("WING: invalid group tag readback")
+            };
             ensure!(
-                actual == ParamValue::Text(tags),
+                groups::equivalent(&tags, &actual),
                 "WING: group tag readback did not match the requested edit"
             );
             return Ok(());

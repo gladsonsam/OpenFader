@@ -99,7 +99,7 @@ fn examples() -> Vec<(String, Value)> {
                     on: true,
                     bypass: false,
                     ret_label: "Ret 1/2".to_string(),
-                    level: 0.5,
+                    level: Some(0.5),
                     params: [("decay".to_string(), 0.42), ("mix".to_string(), 1.0)]
                         .into_iter()
                         .collect::<BTreeMap<_, _>>(),

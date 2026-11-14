@@ -12,7 +12,7 @@ impl Engine {
     pub(super) async fn build_library_candidate(
         &self,
         action: &LibraryAction,
-        pin: Option<(u64, String)>,
+        pin: Option<(u64, String, u64)>,
     ) -> anyhow::Result<(HashMap<u16, StoredScene>, Vec<Show>, Option<u16>)> {
         let mut numbered = self.scenes_lib.read().unwrap().clone();
         let mut shows = self.shows.read().unwrap().clone();
@@ -23,7 +23,7 @@ impl Engine {
                 let name = clean_name(name, "name")?;
                 let (pin_gen, pin_driver) = pin
                     .as_ref()
-                    .map(|(g, d)| (*g, d.clone()))
+                    .map(|(g, d, _)| (*g, d.clone()))
                     .unwrap_or_else(|| {
                         (
                             self.connection_gen.load(Ordering::Acquire),
@@ -60,7 +60,7 @@ impl Engine {
                 let name = clean_name(name, "name")?;
                 let (pin_gen, pin_driver) = pin
                     .as_ref()
-                    .map(|(g, d)| (*g, d.clone()))
+                    .map(|(g, d, _)| (*g, d.clone()))
                     .unwrap_or_else(|| {
                         (
                             self.connection_gen.load(Ordering::Acquire),
@@ -98,6 +98,26 @@ impl Engine {
         Ok((numbered, shows, current))
     }
 
+    async fn revalidate_candidate_native(
+        &self, action: &LibraryAction, pin: &Option<(u64, String, u64)>,
+        numbered: &HashMap<u16, StoredScene>, shows: &[Show],
+    ) -> anyhow::Result<()> {
+        let Some((generation, driver, native_generation)) = pin else { return Ok(()); };
+        let scene = match action {
+            LibraryAction::Save { n, .. } => numbered.get(n),
+            LibraryAction::Capture { show, name } => {
+                let show = clean_name(show, "show")?;
+                let name = clean_name(name, "name")?;
+                shows.iter().find(|s| s.name == show).and_then(|s| s.get(&name)).and_then(|s| s.full())
+            }
+            _ => None,
+        };
+        if let Some(snapshot) = scene.and_then(|s| s.native_processors.as_ref()) {
+            self.revalidate_scene_native_processors(driver, *generation, *native_generation, snapshot).await?;
+        }
+        Ok(())
+    }
+
     /// Run one library action through the serialized candidate commit:
     /// lock, block-check, build, commit-and-swap. Pre-replace failures are
     /// `Err` with disk AND memory untouched.
@@ -111,13 +131,14 @@ impl Engine {
         // sampled under the `sync_state` barrier; a suspended read lane
         // fails fast before any driver I/O. Pure-local actions skip this.
         let pin_full = Self::action_needs_capture_pin(action).then(|| self.sample_capture_pin());
-        if let Some((_, _, suspended)) = &pin_full {
+        if let Some((_, _, suspended, _)) = &pin_full {
             if *suspended {
                 anyhow::bail!("scene capture rejected: desk session changed (reads suspended)");
             }
         }
-        let pin = pin_full.map(|(g, d, _)| (g, d));
+        let pin = pin_full.map(|(g, d, _, n)| (g, d, n));
         let (numbered, shows, current) = self.build_library_candidate(action, pin.clone()).await?;
+        self.revalidate_candidate_native(action, &pin, &numbered, &shows).await?;
         self.commit_with_capture_guard(pin, numbered, shows, current)
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
@@ -187,7 +208,7 @@ impl Engine {
         // suspension fails fast with the correlated result+error preserved.
         // Pure-local actions skip the pin entirely.
         let pin_full = Self::action_needs_capture_pin(&action).then(|| self.sample_capture_pin());
-        if let Some((_, _, suspended)) = &pin_full {
+        if let Some((_, _, suspended, _)) = &pin_full {
             if *suspended {
                 reject(
                     "scene capture rejected: desk session changed (reads suspended)".to_string(),
@@ -195,7 +216,7 @@ impl Engine {
                 return;
             }
         }
-        let pin = pin_full.map(|(g, d, _)| (g, d));
+        let pin = pin_full.map(|(g, d, _, n)| (g, d, n));
         let candidate = self.build_library_candidate(&action, pin.clone()).await;
         let (numbered, shows, current_slot) = match candidate {
             Ok(v) => v,
@@ -204,6 +225,10 @@ impl Engine {
                 return;
             }
         };
+        if let Err(error) = self.revalidate_candidate_native(&action, &pin, &numbered, &shows).await {
+            reject(format!("{error:#}"));
+            return;
+        }
         match self.commit_with_capture_guard(pin, numbered, shows, current_slot) {
             Ok(CommitDisposition::Committed { revision }) => {
                 self.unicast(
