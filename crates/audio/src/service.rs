@@ -702,18 +702,38 @@ impl RecorderService {
 
     /// Commit an already prepared stream to a new take.
     pub fn commit_capture(&mut self, id: &str) -> io::Result<()> {
-        self.commit_capture_named(id, Vec::new())
+        self.commit_capture_named(id, None)
     }
-    pub fn commit_capture_named(&mut self, id: &str, names: Vec<String>) -> io::Result<()> {
-        self.commit_capture_named_with(id, names, |_| {})
+
+    /// Commit a prepared stream with an optional user-facing take name.
+    pub fn commit_capture_named(&mut self, id: &str, name: Option<&str>) -> io::Result<()> {
+        self.commit_capture_with_channels(id, name, None)
     }
-    pub fn commit_capture_named_with(
+
+    pub fn commit_capture_with_channels(
         &mut self,
         id: &str,
-        names: Vec<String>,
+        name: Option<&str>,
+        channel_names: Option<&[String]>,
+    ) -> io::Result<()> {
+        self.commit_capture_with_channels_progress(id, name, channel_names, |_| {})
+    }
+
+    pub fn commit_capture_with_channels_progress(
+        &mut self,
+        id: &str,
+        name: Option<&str>,
+        channel_names: Option<&[String]>,
         mut progress: impl FnMut(&str),
     ) -> io::Result<()> {
+        let channels = self
+            .prepared
+            .as_ref()
+            .ok_or_else(|| error("capture not prepared"))?
+            .channels;
+        let names = crate::validate_channel_names(channel_names, channels as u16)?;
         valid_id(id)?;
+        let name = name.map(crate::validate_take_name).transpose()?;
         let PreparedCapture {
             stream,
             mut consumer,
@@ -734,14 +754,18 @@ impl RecorderService {
             .ok_or_else(|| error("capture not prepared"))?;
         let layout = ChannelLayout::new(channels as u16)?;
         progress("creating_take_manifest");
-        let mut writer = TakeWriter::create_with_layout(
+        let mut writer = TakeWriter::create_with_layout_name_and_channels(
             self.root.join(id),
             rate,
             capture_segment_frames(rate, layout),
             layout,
+            name,
+            if channel_names.is_some() {
+                Some(&names)
+            } else {
+                None
+            },
         )?;
-        progress("saving_capture_names");
-        writer.set_channel_names(names)?;
         let worker_done = done.clone();
         let worker_failed = failed.clone();
         let worker_frames = frames.clone();

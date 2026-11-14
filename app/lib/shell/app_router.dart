@@ -149,7 +149,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         host: host is HostTransport ? host : null,
         names: () => {
               for (final strip in widget.store.assignmentStrips)
-                if (strip.ch >= 0 && strip.ch < 64 && strip.name.isNotEmpty)
+                if (strip.ch >= 0 && strip.name.isNotEmpty)
                   strip.ch: strip.name
             });
     widget.desktop?.attach(this, _prepareDesktopQuit);
@@ -705,6 +705,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         return U4Shell(
           header: Column(mainAxisSize: MainAxisSize.min, children: [
             if (_tab != AppTab.recorder) _workspaceToolbar(),
+            if (widget.api is HostTransport && _tab != AppTab.recorder)
+              _recorderBanner(),
             if (_tab != AppTab.recorder)
               Container(
                   height: narrow ? 6 : 8,
@@ -717,6 +719,37 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       },
     );
   }
+
+  Widget _recorderBanner() => ListenableBuilder(
+      listenable: _recorder,
+      builder: (context, _) {
+        final state = _recorder.state;
+        final mode = '${state['input_mode']}';
+        final recording = state['transport'] == 'recording';
+        final recovery = mode.contains('recovery');
+        if (!recording && mode != 'soundcheck' && !recovery) {
+          return const SizedBox.shrink();
+        }
+        return Row(children: [
+          const SizedBox(width: 12),
+          Icon(recording ? Icons.fiber_manual_record : Icons.play_arrow,
+              size: 16,
+              color: recording ? ConsolePalette.of(context).meterRed : ConsolePalette.of(context).lime),
+          const SizedBox(width: 8),
+          Expanded(child: Text(recording ? 'Recording' : recovery ? 'Routing recovery' : 'Playback')),
+          if (!recording)
+            IconButton(
+                tooltip: 'Return to live inputs',
+                onPressed: _recorder.pending ? null : state['manual_routing'] == true || recovery
+                    ? () => _go(AppTab.recorder)
+                    : () => _recorder.command('return_live'),
+                icon: const Icon(Icons.input)),
+          IconButton(
+              tooltip: 'Open recorder',
+              onPressed: () => _go(AppTab.recorder),
+              icon: const Icon(Icons.audio_file_outlined)),
+        ]);
+      });
 
   void _channelTool(ChannelTool t) {
     switch (t) {
