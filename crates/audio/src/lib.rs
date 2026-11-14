@@ -116,6 +116,19 @@ pub struct TakeManifest {
     pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
+/// Validate and normalize an optional user-facing take name.
+pub fn validate_take_name(name: &str) -> io::Result<&str> {
+    let name = name.trim();
+    if name.is_empty()
+        || name.len() > 512
+        || name.chars().count() > 120
+        || name.chars().any(char::is_control)
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "take name must contain 1 to 120 characters and at most 512 bytes, without control characters"));
+    }
+    Ok(name)
+}
+
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -200,6 +213,22 @@ pub struct TakeWriter {
     limit: u64,
     file: Option<BufWriter<File>>,
 }
+/// Validate explicit user-provided labels for the selected input layout.
+pub fn validate_channel_names(names: Option<&[String]>, channels: u16) -> io::Result<Vec<String>> {
+    let Some(names) = names else {
+        return Ok(Vec::new());
+    };
+    if names.len() != usize::from(channels) {
+        return Err(invalid(
+            "channel_names length must match the selected input count",
+        ));
+    }
+    names
+        .iter()
+        .map(|name| validate_take_name(name).map(str::to_owned))
+        .collect()
+}
+
 impl TakeWriter {
     /// Create a take with the caller's explicit device or imported channel layout.
     ///
@@ -220,6 +249,34 @@ impl TakeWriter {
         segment_frames: u64,
         layout: ChannelLayout,
     ) -> io::Result<Self> {
+        Self::create_with_layout_and_name(dir, sample_rate, segment_frames, layout, None)
+    }
+    pub fn create_with_layout_and_name(
+        dir: impl AsRef<Path>,
+        sample_rate: u32,
+        segment_frames: u64,
+        layout: ChannelLayout,
+        name: Option<&str>,
+    ) -> io::Result<Self> {
+        Self::create_with_layout_name_and_channels(
+            dir,
+            sample_rate,
+            segment_frames,
+            layout,
+            name,
+            None,
+        )
+    }
+    pub fn create_with_layout_name_and_channels(
+        dir: impl AsRef<Path>,
+        sample_rate: u32,
+        segment_frames: u64,
+        layout: ChannelLayout,
+        name: Option<&str>,
+        channel_names: Option<&[String]>,
+    ) -> io::Result<Self> {
+        let channel_names = validate_channel_names(channel_names, layout.channels())?;
+        let name = name.map(validate_take_name).transpose()?;
         if sample_rate == 0
             || sample_rate
                 .checked_mul(layout.frame_bytes() as u32)
@@ -241,8 +298,17 @@ impl TakeWriter {
             frames: 0,
             complete: false,
             segments: vec![],
-            channel_names: vec![],
-            metadata: Default::default(),
+            channel_names,
+            metadata: name
+                .map(|name| {
+                    [(
+                        "name".to_owned(),
+                        serde_json::Value::String(name.to_owned()),
+                    )]
+                    .into_iter()
+                    .collect()
+                })
+                .unwrap_or_default(),
         };
         publish(&dir, &manifest)?;
         Ok(Self {

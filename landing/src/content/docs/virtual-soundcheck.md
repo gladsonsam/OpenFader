@@ -27,26 +27,26 @@ Automatic routing is limited to setups that have been checked on real hardware. 
 
 ## Run an automatic soundcheck
 
-1. In the recorder, select a take and tap **Soundcheck**.
-2. Pick a playback interface if asked.
-3. Tap **Automatic mixer routing**, then **Play**.
+1. In the recorder, open a take from **Browse takes** and tap **Play**.
+2. Pick a playback interface if asked. When the provider has a verified automatic routing profile, playback starts using that profile.
+3. Tap the mixer icon at the top left to use the normal mixer EQ, dynamics and levels.
 
 OpenFader saves your live input patching, switches the channels to the USB returns, and starts playback. Your faders, mutes and processing work as normal while it plays.
 
-To finish, tap the input button in the transport bar, then **Return to live**. OpenFader writes your original patching back. On other screens, a recorder banner at the top also has a **Return to live** button.
+To finish, tap the return-to-live icon beside the timecode. OpenFader writes your original input patching back. EQ, dynamics, faders and other mix adjustments remain as you left them. On other screens, a recorder banner at the top also has a **Return to live** button.
 
 Pressing **Stop** only stops playback. The mixer stays patched to the USB returns until you return to live.
 
 ## Run a manual soundcheck
 
 1. On the mixer, patch the channels you want to the interface's playback returns, and bring output levels down to a safe level.
-2. In the recorder, select a take and tap **Soundcheck**. Choose **Manual routing** if asked.
+2. In the recorder, open a take from **Browse takes** and tap **Play**. When automatic routing is unavailable, the manual mapping dialog opens.
 3. In **Prepare manual playback**, choose an output for each track of the take. Each output can only be used once.
 4. Tap **Routing is ready · play**.
 
 OpenFader never changes the mixer in manual mode.
 
-To finish, tap the input button in the transport bar. OpenFader stops playback and asks you to put the mixer back to its live inputs. Do that on the mixer, then tap **Live routing restored**. Until you do, OpenFader will not start a new recording or soundcheck, and will not close.
+To finish, tap the return-to-live icon beside the timecode. OpenFader stops playback and asks you to put the mixer back to its live inputs. Do that on the mixer, then tap **Live routing restored**. Until you do, OpenFader will not start a new recording or soundcheck, and will not close.
 
 ## If something goes wrong
 

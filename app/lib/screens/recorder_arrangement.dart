@@ -1,17 +1,29 @@
 import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
+
 import '../ui/console.dart';
 import 'recorder.dart';
 
 /// A shared time axis for all capture channels. No page-owned ticker: the
 /// shell's recorder store supplies each new transport and meter snapshot.
 class RecorderArrangement extends StatefulWidget {
-  const RecorderArrangement(
-      {super.key,
-      required this.store,
-      required this.previewTakeId,
-      required this.onLoopSelection});
+  const RecorderArrangement({
+    super.key,
+    required this.store,
+    required this.previewTakeId,
+    required this.onLoopSelection,
+    this.takeName,
+    this.loopStartFrame,
+    this.loopEndFrame,
+    this.onNewTake,
+    this.onAudioSetup,
+  });
   final void Function(int start, int end, int total) onLoopSelection;
+  final String? takeName;
+  final int? loopStartFrame, loopEndFrame;
+  final VoidCallback? onNewTake;
+  final VoidCallback? onAudioSetup;
   final RecorderStore store;
   final String? previewTakeId;
   @override
@@ -19,7 +31,6 @@ class RecorderArrangement extends StatefulWidget {
 }
 
 class _RecorderArrangementState extends State<RecorderArrangement> {
-  String? _inspectionError;
   double _zoom = 1;
   bool _followRecording = true;
   double? _loopStart;
@@ -35,6 +46,57 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   String? _overviewKey;
   String? _peakError;
 
+  final Map<int, Offset> _touches = {};
+  bool _touchNavigation = false;
+  double _pinchSpan = 1;
+  double _pinchZoom = 1;
+  double _pinchAnchor = 0;
+  int _gestureRevision = 0;
+
+  void _startPinch() {
+    if (_touches.length != 2 || !_horizontal.hasClients) return;
+    final points = _touches.values.toList();
+    final focus = (points[0] + points[1]) / 2;
+    final position = _horizontal.position;
+    _pinchSpan = math.max(1, (points[0] - points[1]).distance);
+    _pinchZoom = _zoom;
+    _pinchAnchor =
+        (position.pixels + focus.dx) /
+        (position.maxScrollExtent + position.viewportDimension);
+    setState(() {
+      _touchNavigation = true;
+      _followRecording = false;
+      _loopStart = _loopEnd = null;
+    });
+  }
+
+  void _movePinch() {
+    if (!_touchNavigation || _touches.length != 2) return;
+    final points = _touches.values.toList();
+    final focus = (points[0] + points[1]) / 2;
+    final next = (_pinchZoom * (points[0] - points[1]).distance / _pinchSpan)
+        .clamp(1.0, 8.0);
+    final revision = ++_gestureRevision;
+    setState(() => _zoom = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_horizontal.hasClients || revision != _gestureRevision) {
+        return;
+      }
+      final position = _horizontal.position;
+      final target =
+          _pinchAnchor *
+              (position.maxScrollExtent + position.viewportDimension) -
+          focus.dx;
+      _horizontal.jumpTo(target.clamp(0.0, position.maxScrollExtent));
+    });
+  }
+
+  void _releaseTouch(int pointer) {
+    _touches.remove(pointer);
+    if (_touches.length == 2) _startPinch();
+    if (_touches.isEmpty && mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +106,10 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   @override
   void didUpdateWidget(covariant RecorderArrangement oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.loopStartFrame != widget.loopStartFrame ||
+        oldWidget.loopEndFrame != widget.loopEndFrame) {
+      _loopStart = _loopEnd = null;
+    }
     if (oldWidget.previewTakeId != widget.previewTakeId) {
       _peaks = [];
       _overviewPeaks = [];
@@ -59,11 +125,34 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
         if (_vertical.hasClients) _vertical.jumpTo(0);
         if (_horizontal.hasClients) _horizontal.jumpTo(0);
       });
+      _touches.clear();
+      _touchNavigation = false;
+      _gestureRevision++;
     }
   }
 
   void _onScroll() {
     if (mounted) setState(() {});
+  }
+
+  void _setZoom(double value) {
+    final next = value.clamp(1.0, 8.0);
+    if (next == _zoom) return;
+    final anchor = _horizontal.hasClients
+        ? (_horizontal.offset + _horizontal.position.viewportDimension / 2) /
+              (_horizontal.position.maxScrollExtent +
+                  _horizontal.position.viewportDimension)
+        : 0.0;
+    setState(() => _zoom = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_horizontal.hasClients) return;
+      final position = _horizontal.position;
+      final target = next == 1
+          ? 0.0
+          : anchor * (position.maxScrollExtent + position.viewportDimension) -
+                position.viewportDimension / 2;
+      _horizontal.jumpTo(target.clamp(0.0, position.maxScrollExtent));
+    });
   }
 
   @override
@@ -74,17 +163,27 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   }
 
   void _requestVisible(
-      String? id, double frames, double width, double viewport, int takeFrames,
-      {bool live = false, int refreshFrames = 1}) {
+    String? id,
+    double frames,
+    double width,
+    double viewport,
+    int takeFrames, {
+    bool live = false,
+    int refreshFrames = 1,
+  }) {
     if (id == null || takeFrames <= 0 || viewport <= 0) return;
     final offset = _horizontal.hasClients ? _horizontal.offset : 0.0;
     final visibleStart = (offset / width * frames).floor().clamp(0, takeFrames);
-    final start =
-        live ? visibleStart ~/ refreshFrames * refreshFrames : visibleStart;
-    final published =
-        live ? takeFrames ~/ refreshFrames * refreshFrames : takeFrames;
-    final end =
-        ((offset + viewport) / width * frames).ceil().clamp(0, published);
+    final start = live
+        ? visibleStart ~/ refreshFrames * refreshFrames
+        : visibleStart;
+    final published = live
+        ? takeFrames ~/ refreshFrames * refreshFrames
+        : takeFrames;
+    final end = ((offset + viewport) / width * frames).ceil().clamp(
+      0,
+      published,
+    );
     if (end <= start) return;
     final key = '$id:$start:$end:${viewport.round()}';
     if (_desiredKey != key && !live) {
@@ -101,9 +200,12 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
         for (var from = start; from < end; from += 1000000) {
           final to = math.min(end, from + 1000000);
           final buckets = math.min(
-              to - from, math.max(1, ((to - from) / frames * width).ceil()));
-          chunks.add(await widget.store
-              .waveform(id, from, to, buckets.clamp(1, 2048)));
+            to - from,
+            math.max(1, ((to - from) / frames * width).ceil()),
+          );
+          chunks.add(
+            await widget.store.waveform(id, from, to, buckets.clamp(1, 2048)),
+          );
         }
         if (mounted &&
             (_desiredKey == key || live && widget.previewTakeId == id)) {
@@ -139,8 +241,14 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
         for (var from = 0; from < frames; from += 1000000) {
           if (!mounted || _overviewKey != key) return;
           final to = math.min(frames, from + 1000000);
-          chunks.add(await widget.store.waveform(
-              id, from, to, math.max(1, ((to - from) / frames * 512).ceil())));
+          chunks.add(
+            await widget.store.waveform(
+              id,
+              from,
+              to,
+              math.max(1, ((to - from) / frames * 512).ceil()),
+            ),
+          );
         }
         if (mounted && _overviewKey == key) {
           setState(() => _overviewPeaks = chunks);
@@ -159,7 +267,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
       p.arrangementBlue,
       p.arrangementOrange,
       p.arrangementPurple,
-      p.arrangementGrey
+      p.arrangementGrey,
     ];
     return colors[i % colors.length];
   }
@@ -176,511 +284,634 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     final laneSource = recording
         ? s
         : take ??
-            (widget.previewTakeId == null ||
-                    '${s['transport']}'.toLowerCase().contains('record')
-                ? s
-                : const <String, dynamic>{});
-    final names = recorderChannelNames(laneSource);
-    final manifest = laneSource['manifest'];
-    final namesReason = laneSource['channel_names_reason'] ??
-        (manifest is Map ? manifest['channel_names_reason'] : null);
-    final knownRate = (take?['sample_rate'] as num?)?.toDouble() ??
+              (widget.previewTakeId == null ||
+                      '${s['transport']}'.toLowerCase().contains('record')
+                  ? s
+                  : const <String, dynamic>{});
+    final names = recorderChannelNames(
+      take ??
+          {
+            ...laneSource,
+            'channel_names':
+                (s['channel_names'] is List &&
+                    (s['channel_names'] as List).isNotEmpty)
+                ? s['channel_names']
+                : s['capture_channel_names'] ?? laneSource['channel_names'],
+          },
+    );
+    final knownRate =
+        (take?['sample_rate'] as num?)?.toDouble() ??
         (s['sample_rate'] as num?)?.toDouble();
     final rateKnown = knownRate != null && knownRate > 0;
     final laneCount = rateKnown ? recorderChannelCount(laneSource) : 0;
     // Arithmetic placeholder only; no tracks or sample-rate claim until known.
     final rate = rateKnown ? knownRate : 1.0;
-    final active = '${s['input_mode']}'.toLowerCase().contains('soundcheck') ||
+    final active =
+        '${s['input_mode']}'.toLowerCase().contains('soundcheck') ||
         '${s['transport']}'.toLowerCase().contains('record');
     final prepared =
         '${s['input_mode']}'.toLowerCase().contains('soundcheck') &&
-            widget.previewTakeId == s['selected_take_id'];
+        widget.previewTakeId == s['selected_take_id'];
     final recordedFrames = (s['recorded_frames'] as num?)?.toInt() ?? 0;
     final frames = recording
         ? math.max(
-            rate * 30, ((recordedFrames + 1) / (rate * 30)).ceil() * rate * 30)
+            rate * 30,
+            ((recordedFrames + 1) / (rate * 30)).ceil() * rate * 30,
+          )
         : math.max(
             1.0,
             (take?['duration_frames'] as num?)?.toDouble() ??
                 (active ? (s['recorded_frames'] as num?)?.toDouble() : null) ??
-                rate * 30);
-    final position = (s['transport'] == 'recording'
-        ? s['recorded_frames']
-        : s['position_frames']) as num?;
-    final current =
-        (active ? (position?.toDouble() ?? 0) : 0.0).clamp(0.0, frames);
+                rate * 30,
+          );
+    final position =
+        (s['transport'] == 'recording'
+                ? s['recorded_frames']
+                : s['position_frames'])
+            as num?;
+    final current = (active ? (position?.toDouble() ?? 0) : 0.0).clamp(
+      0.0,
+      frames,
+    );
     final enabled = widget.store.connected && !widget.store.pending;
     final canSeek = enabled && prepared && caps['seek'] == true;
     final canLoop = enabled && prepared && caps['loop'] == true;
     final meters = s['live_peaks'] is List ? s['live_peaks'] as List : const [];
-    return Container(
-      decoration: BoxDecoration(
-          color: p.panel,
-          border: Border.all(color: p.linePanel),
-          borderRadius: BorderRadius.zero),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_inspectionError != null)
-          Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(_inspectionError!)),
-        Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-                height: 60,
-                child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text('Arrangement',
-                              style: TextStyle(
-                                  color: p.text1,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 20)),
-                          const SizedBox(width: 20),
-                          Text('$laneCount tracks',
-                              style:
-                                  TextStyle(color: p.mutedText, fontSize: 14)),
-                          const SizedBox(width: 20),
-                          if (_peakError != null)
-                            Tooltip(
-                                message: _peakError!,
-                                child: TextButton(
-                                    onPressed: () => setState(() {
-                                          _requestKey = null;
-                                          _peakError = null;
-                                        }),
-                                    child: const Text('Retry waveform'))),
-                          if (take != null)
-                            TextButton(
-                                onPressed: () async {
-                                  setState(() => _inspectionError = null);
-                                  try {
-                                    final data = await widget.store
-                                        .inspectTake(take['id'] as String);
-                                    if (!context.mounted) return;
-                                    final manifest = data['manifest'] as Map;
-                                    await showDialog<void>(
-                                        context: context,
-                                        builder: (context) =>
-                                            ConsoleAlertDialog(
-                                              title: Text(
-                                                  'Take details · ${take['id']}'),
-                                              content: SizedBox(
-                                                  width: 600,
-                                                  child: SingleChildScrollView(
-                                                      child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                        Text(
-                                                            'Manifest: ${manifest['frames']} frames · ${manifest['sample_rate']} Hz · ${manifest['channels']} channels · complete ${manifest['complete']}'),
-                                                        for (final h in data[
-                                                                'wav_headers']
-                                                            as List)
-                                                          Text(
-                                                              'WAV ${h['file']}: ${h['channels']} channels · ${h['bits_per_sample']} bit · ${h['sample_rate']} Hz · ${h['frames']} frames'),
-                                                        Text(
-                                                            'Measured frames ${data['start_frame']}–${data['end_frame']} (end exclusive), normalized PCM'),
-                                                        for (final c
-                                                            in data['channels']
-                                                                as List)
-                                                          SelectableText(
-                                                              'Ch ${c['channel']}: min ${(c['min'] as num).toStringAsFixed(8)}  max ${(c['max'] as num).toStringAsFixed(8)}  RMS ${(c['rms'] as num).toStringAsFixed(8)}'),
-                                                      ]))),
-                                              actions: [
-                                                TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context),
-                                                    child: const Text('Close'))
-                                              ],
-                                            ));
-                                  } catch (e) {
-                                    if (mounted) {
-                                      setState(() => _inspectionError =
-                                          'Inspection failed: $e');
-                                    }
-                                  }
-                                },
-                                child: const Text('Take details')),
-                          const SizedBox(width: 16),
-                          if (recording)
+    return LayoutBuilder(
+      builder: (context, arrangementConstraints) {
+        final labelWidth = arrangementConstraints.maxWidth < 600
+            ? 120.0
+            : 220.0;
+        return Container(
+          decoration: BoxDecoration(
+            color: p.panel,
+            border: Border.all(color: p.linePanel),
+            borderRadius: BorderRadius.zero,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    Text(
+                      '$laneCount tracks',
+                      style: TextStyle(color: p.mutedText, fontSize: 14),
+                    ),
+                    if (_peakError != null)
+                      Tooltip(
+                        message: _peakError!,
+                        child: TextButton(
+                          onPressed: () => setState(() {
+                            _requestKey = null;
+                            _peakError = null;
+                          }),
+                          child: const Text('Retry waveform'),
+                        ),
+                      ),
+                    if (recording)
+                      IconButton(
+                        tooltip: _followRecording
+                            ? 'Following recording · click to scroll freely'
+                            : 'Follow recording playhead',
+                        isSelected: _followRecording,
+                        onPressed: () => setState(
+                          () => _followRecording = !_followRecording,
+                        ),
+                        icon: const Icon(Icons.follow_the_signs),
+                      ),
+                    if (laneCount > 0)
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: p.linePanel),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             IconButton(
-                                tooltip: _followRecording
-                                    ? 'Following recording · click to scroll freely'
-                                    : 'Follow recording playhead',
-                                isSelected: _followRecording,
-                                onPressed: () => setState(
-                                    () => _followRecording = !_followRecording),
-                                icon: const Icon(Icons.follow_the_signs)),
-                          Text('Time zoom',
-                              style: TextStyle(color: p.mutedText)),
-                          SizedBox(
-                              width: 100,
-                              child: Slider(
-                                  value: _zoom,
-                                  min: 1,
-                                  max: 8,
-                                  onChanged: (v) => setState(() => _zoom = v))),
-                          TextButton(
-                              onPressed: () {
-                                setState(() => _zoom = 1);
-                                if (_horizontal.hasClients) {
-                                  _horizontal.jumpTo(0);
-                                }
-                              },
-                              child: const Text('Fit')),
-                        ])))),
-        if (laneCount > 0 &&
-            (namesReason is String && namesReason.isNotEmpty || names.isEmpty))
-          Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                  namesReason is String && namesReason.isNotEmpty
-                      ? namesReason
-                      : 'Track names are unavailable for this capture. Interface input numbers are shown.',
-                  style: TextStyle(color: p.mutedText, fontSize: 13))),
-        if (laneCount == 0)
-          Expanded(
-              child: Center(
-                  child: Text(
-                      take == null
-                          ? 'Configure an audio interface to see capture tracks.'
-                          : 'Track layout is unavailable for this take.',
-                      style: TextStyle(color: p.mutedText))))
-        else
-          Expanded(child: LayoutBuilder(builder: (context, constraints) {
-            final trackWidth = (constraints.maxWidth * .28).clamp(140.0, 240.0);
-            final viewport = math.max(1.0, constraints.maxWidth - trackWidth);
-            final width = math.max(
-                600.0,
-                recording
-                    ? frames / rate / 30 * viewport * _zoom
-                    : viewport * _zoom);
-            _requestVisible(
-                recording
-                    ? s['selected_take_id'] as String?
-                    : take?['id'] as String?,
-                frames,
-                width,
-                constraints.maxWidth - trackWidth,
-                recording
-                    ? recordedFrames
-                    : (take?['duration_frames'] as num?)?.toInt() ?? 0,
-                live: recording,
-                refreshFrames: math.max(1, (rate / 4).round()));
-            if (recording && _followRecording) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted || !_horizontal.hasClients || !_followRecording) {
-                  return;
-                }
-                final target = (current / frames * width - viewport * .8)
-                    .clamp(0.0, _horizontal.position.maxScrollExtent);
-                if ((_horizontal.offset - target).abs() > .5) {
-                  _horizontal.jumpTo(target);
-                }
-              });
-            }
-            _requestOverview(recording ? null : take?['id'] as String?,
-                (take?['duration_frames'] as num?)?.toInt() ?? 0);
-            return Stack(children: [
-              SingleChildScrollView(
-                  controller: _vertical,
-                  scrollDirection: Axis.vertical,
-                  child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                            width: trackWidth,
-                            child: Column(children: [
-                              SizedBox(
-                                  height: 56,
-                                  child: Center(
+                              tooltip: 'Zoom out',
+                              onPressed: _zoom > 1
+                                  ? () => _setZoom(_zoom / 2)
+                                  : null,
+                              icon: const Icon(Icons.remove, size: 20),
+                            ),
+                            SizedBox(
+                              height: 16,
+                              child: VerticalDivider(
+                                width: 1,
+                                color: p.linePanel,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Zoom in',
+                              onPressed: _zoom < 8
+                                  ? () => _setZoom(_zoom * 2)
+                                  : null,
+                              icon: const Icon(Icons.add, size: 20),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (laneCount > 0 && _zoom > 1)
+                      IconButton(
+                        tooltip: 'Show whole take',
+                        onPressed: () => _setZoom(1),
+                        icon: const Icon(Icons.fit_screen, size: 20),
+                      ),
+                  ],
+                ),
+              ),
+              if (laneCount == 0)
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.graphic_eq, size: 40, color: p.mutedText),
+                          const SizedBox(height: 12),
+                          Text(
+                            take == null
+                                ? 'No tracks yet'
+                                : 'Track layout unavailable',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: p.text1,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            take == null
+                                ? 'Set up an audio interface and start a take to see its tracks here.'
+                                : 'This take does not have a usable track layout.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: p.mutedText),
+                          ),
+                          if (widget.onNewTake != null ||
+                              widget.onAudioSetup != null) ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              children: [
+                                if (widget.onNewTake != null)
+                                  TextButton(
+                                    onPressed: widget.onNewTake,
+                                    child: const Text('New take'),
+                                  ),
+                                if (widget.onAudioSetup != null)
+                                  TextButton(
+                                    onPressed: widget.onAudioSetup,
+                                    child: const Text('Audio setup'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final viewport = math.max(
+                        1.0,
+                        constraints.maxWidth - labelWidth,
+                      );
+                      final width = math.max(
+                        viewport,
+                        recording
+                            ? frames / rate / 30 * viewport * _zoom
+                            : viewport * _zoom,
+                      );
+                      _requestVisible(
+                        recording
+                            ? s['selected_take_id'] as String?
+                            : take?['id'] as String?,
+                        frames,
+                        width,
+                        constraints.maxWidth - labelWidth,
+                        recording
+                            ? recordedFrames
+                            : (take?['duration_frames'] as num?)?.toInt() ?? 0,
+                        live: recording,
+                        refreshFrames: math.max(1, (rate / 4).round()),
+                      );
+                      if (recording && _followRecording) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted ||
+                              !_horizontal.hasClients ||
+                              !_followRecording) {
+                            return;
+                          }
+                          final target =
+                              (current / frames * width - viewport * .8).clamp(
+                                0.0,
+                                _horizontal.position.maxScrollExtent,
+                              );
+                          if ((_horizontal.offset - target).abs() > .5) {
+                            _horizontal.jumpTo(target);
+                          }
+                        });
+                      }
+                      _requestOverview(
+                        recording ? null : take?['id'] as String?,
+                        (take?['duration_frames'] as num?)?.toInt() ?? 0,
+                      );
+                      return SingleChildScrollView(
+                        controller: _vertical,
+                        physics: _touchNavigation && _touches.isNotEmpty
+                            ? const NeverScrollableScrollPhysics()
+                            : null,
+                        scrollDirection: Axis.vertical,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: labelWidth,
+                              child: Column(
+                                children: [
+                                  SizedBox(
+                                    height: 56,
+                                    child: Center(
                                       child: Text(
-                                          'Track · captures available interface inputs\nPer-track arm, mute and solo unavailable',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                              color: p.mutedText,
-                                              fontSize: 14)))),
-                              for (var i = 0; i < laneCount; i++)
-                                Container(
-                                    height: laneHeight,
-                                    padding: const EdgeInsets.only(right: 8),
-                                    decoration: BoxDecoration(
+                                        'Tracks',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: p.mutedText,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  for (var i = 0; i < laneCount; i++)
+                                    Container(
+                                      height: laneHeight,
+                                      padding: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
                                         color: p.arrangementTrack,
                                         border: Border(
-                                            top: BorderSide(color: p.line))),
-                                    child: Stack(children: [
-                                      Row(children: [
-                                        Container(
-                                            width: 7,
-                                            color: _channelColor(p, i)),
-                                        const SizedBox(width: 12),
-                                        Text((i + 1).toString(),
-                                            style:
-                                                TextStyle(color: p.mutedText)),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                            child: Text(
-                                                names[i] ?? 'Channel ${i + 1}',
-                                                overflow: TextOverflow.ellipsis,
+                                          top: BorderSide(color: p.line),
+                                        ),
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 7,
+                                                color: _channelColor(p, i),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                (i + 1).toString(),
                                                 style: TextStyle(
+                                                  color: p.mutedText,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  names[i] ??
+                                                      'Channel ${i + 1}',
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
                                                     color: p.text1,
-                                                    fontSize: 16,
-                                                    fontWeight:
-                                                        FontWeight.w600))),
-                                      ]),
-                                      Positioned(
-                                          left: 7,
-                                          right: 0,
-                                          bottom: 0,
-                                          height: 4,
-                                          child: LayoutBuilder(
-                                              builder: (context, box) =>
-                                                  Stack(children: [
-                                                    ColoredBox(
-                                                        color: p.slot,
-                                                        child: SizedBox(
-                                                            width: box.maxWidth,
-                                                            height: 4)),
-                                                    SizedBox(
-                                                        width: box.maxWidth *
-                                                            (i < meters.length &&
-                                                                    meters[i]
-                                                                        is num
-                                                                ? (meters[i]
-                                                                        as num)
-                                                                    .toDouble()
-                                                                    .clamp(0, 1)
-                                                                : 0),
-                                                        height: 4,
-                                                        child: ColoredBox(
-                                                            color:
-                                                                _channelColor(
-                                                                    p, i))),
-                                                  ]))),
-                                    ])),
-                            ])),
-                        Expanded(
-                            child: SingleChildScrollView(
-                                controller: _horizontal,
-                                scrollDirection: Axis.horizontal,
-                                child: SizedBox(
-                                    width: width,
-                                    height: 56 + laneHeight * laneCount,
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTapUp: canSeek
-                                          ? (d) => widget.store.command(
-                                                  'seek', {
-                                                'position_frames':
-                                                    (d.localPosition.dx /
-                                                            width *
-                                                            frames)
-                                                        .round()
-                                              })
-                                          : null,
-                                      onHorizontalDragStart: canLoop
-                                          ? (d) => setState(() {
-                                                _loopStart =
-                                                    (d.localPosition.dx / width)
-                                                        .clamp(0, 1);
-                                                _loopEnd = _loopStart;
-                                              })
-                                          : null,
-                                      onHorizontalDragUpdate: canLoop
-                                          ? (d) => setState(() => _loopEnd =
-                                              (d.localPosition.dx / width)
-                                                  .clamp(0, 1))
-                                          : null,
-                                      onHorizontalDragEnd: canLoop
-                                          ? (_) {
-                                              if (_loopStart != null &&
-                                                  _loopEnd != null) {
-                                                widget.onLoopSelection(
-                                                    (math
-                                                                .min(
-                                                                    _loopStart!,
-                                                                    _loopEnd!) *
-                                                            frames)
-                                                        .round(),
-                                                    (math.max(_loopStart!,
-                                                                _loopEnd!) *
-                                                            frames)
-                                                        .round(),
-                                                    frames.round());
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Positioned(
+                                            left: 7,
+                                            right: 0,
+                                            bottom: 0,
+                                            height: 4,
+                                            child: LayoutBuilder(
+                                              builder: (context, box) => Stack(
+                                                children: [
+                                                  ColoredBox(
+                                                    color: p.slot,
+                                                    child: SizedBox(
+                                                      width: box.maxWidth,
+                                                      height: 4,
+                                                    ),
+                                                  ),
+                                                  SizedBox(
+                                                    width:
+                                                        box.maxWidth *
+                                                        (i < meters.length &&
+                                                                meters[i] is num
+                                                            ? (meters[i] as num)
+                                                                  .toDouble()
+                                                                  .clamp(0, 1)
+                                                            : 0),
+                                                    height: 4,
+                                                    child: ColoredBox(
+                                                      color: _channelColor(
+                                                        p,
+                                                        i,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: NotificationListener<ScrollStartNotification>(
+                                onNotification: (notification) {
+                                  if (notification.dragDetails != null &&
+                                      _followRecording) {
+                                    setState(() => _followRecording = false);
+                                  }
+                                  return false;
+                                },
+                                child: Listener(
+                                  onPointerDown: (event) {
+                                    if (_touches.isEmpty) {
+                                      _touchNavigation = false;
+                                    }
+                                    _touches[event.pointer] =
+                                        event.localPosition;
+                                    _startPinch();
+                                  },
+                                  onPointerMove: (event) {
+                                    if (!_touches.containsKey(event.pointer)) {
+                                      return;
+                                    }
+                                    _touches[event.pointer] =
+                                        event.localPosition;
+                                    _movePinch();
+                                  },
+                                  onPointerUp: (event) =>
+                                      _releaseTouch(event.pointer),
+                                  onPointerCancel: (event) =>
+                                      _releaseTouch(event.pointer),
+                                  child: SingleChildScrollView(
+                                    physics:
+                                        _touchNavigation && _touches.isNotEmpty
+                                        ? const NeverScrollableScrollPhysics()
+                                        : null,
+                                    controller: _horizontal,
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: width,
+                                      height: 56 + laneHeight * laneCount,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onDoubleTap: () {
+                                          if (!_touchNavigation) {
+                                            _setZoom(1);
+                                          }
+                                        },
+                                        onTapUp: canSeek
+                                            ? (d) {
+                                                if (_touchNavigation) {
+                                                  return;
+                                                }
+                                                widget.store.command('seek', {
+                                                  'position_frames':
+                                                      (d.localPosition.dx /
+                                                              width *
+                                                              frames)
+                                                          .round(),
+                                                });
                                               }
-                                            }
-                                          : null,
-                                      child: CustomPaint(
+                                            : null,
+                                        onLongPressStart: canLoop
+                                            ? (d) {
+                                                if (_touchNavigation) {
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _loopStart =
+                                                      (d.localPosition.dx /
+                                                              width)
+                                                          .clamp(0, 1);
+                                                  _loopEnd = _loopStart;
+                                                });
+                                              }
+                                            : null,
+                                        onLongPressMoveUpdate: canLoop
+                                            ? (d) {
+                                                if (_touchNavigation) {
+                                                  return;
+                                                }
+                                                setState(
+                                                  () => _loopEnd =
+                                                      (d.localPosition.dx /
+                                                              width)
+                                                          .clamp(0, 1),
+                                                );
+                                              }
+                                            : null,
+                                        onLongPressEnd: canLoop
+                                            ? (_) {
+                                                if (_touchNavigation) {
+                                                  return;
+                                                }
+                                                if (_loopStart != null &&
+                                                    _loopEnd != null) {
+                                                  widget.onLoopSelection(
+                                                    (math.min(
+                                                              _loopStart!,
+                                                              _loopEnd!,
+                                                            ) *
+                                                            frames)
+                                                        .round(),
+                                                    (math.max(
+                                                              _loopStart!,
+                                                              _loopEnd!,
+                                                            ) *
+                                                            frames)
+                                                        .round(),
+                                                    frames.round(),
+                                                  );
+                                                }
+                                              }
+                                            : null,
+                                        child: CustomPaint(
                                           painter: _TimelinePainter(
-                                              palette: p,
-                                              frames: frames,
-                                              rate: rate,
-                                              position: current,
-                                              visibleStart:
-                                                  (_horizontal.hasClients
-                                                          ? _horizontal.offset
-                                                          : 0) /
-                                                      width,
-                                              visibleEnd: ((_horizontal
-                                                              .hasClients
-                                                          ? _horizontal.offset
-                                                          : 0) +
-                                                      viewport) /
-                                                  width,
-                                              clipFrames: recording
-                                                  ? recordedFrames.toDouble()
-                                                  : frames,
-                                              peaks: _peaks,
-                                              names: names,
-                                              takeName: recording
-                                                  ? 'Recording'
-                                                  : take == null
-                                                      ? null
-                                                      : ((take['name'] is String &&
+                                            palette: p,
+                                            frames: frames,
+                                            rate: rate,
+                                            position: current,
+                                            visibleStart:
+                                                (_horizontal.hasClients
+                                                    ? _horizontal.offset
+                                                    : 0) /
+                                                width,
+                                            visibleEnd:
+                                                ((_horizontal.hasClients
+                                                        ? _horizontal.offset
+                                                        : 0) +
+                                                    viewport) /
+                                                width,
+                                            clipFrames: recording
+                                                ? recordedFrames.toDouble()
+                                                : take == null
+                                                ? 0
+                                                : frames,
+                                            peaks: _peaks,
+                                            names: names,
+                                            takeName:
+                                                widget.takeName ??
+                                                (recording
+                                                    ? 'Recording'
+                                                    : take == null
+                                                    ? null
+                                                    : ((take['name']
+                                                                      is String &&
                                                                   (take['name']
                                                                           as String)
                                                                       .trim()
                                                                       .isNotEmpty)
                                                               ? take['name']
                                                               : 'Take ${widget.store.takes.indexOf(take) + 1}')
-                                                          .toString(),
-                                              colors: List.generate(laneCount,
-                                                  (i) => _channelColor(p, i)),
-                                              loopStart: _loopStart,
-                                              loopEnd: _loopEnd)),
-                                    )))),
-                      ])),
-              Positioned(
-                  left: 0,
-                  top: 0,
-                  width: trackWidth,
+                                                          .toString()),
+                                            colors: List.generate(
+                                              laneCount,
+                                              (i) => _channelColor(p, i),
+                                            ),
+                                            loopStart:
+                                                _loopStart ??
+                                                (widget.loopStartFrame == null
+                                                    ? null
+                                                    : widget.loopStartFrame! /
+                                                          frames),
+                                            loopEnd:
+                                                _loopEnd ??
+                                                (widget.loopEndFrame == null
+                                                    ? null
+                                                    : widget.loopEndFrame! /
+                                                          frames),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              if (laneCount > 0)
+                SizedBox(
                   height: 56,
-                  child: IgnorePointer(
-                      child: ColoredBox(
-                          color: p.panel,
-                          child: Center(
-                              child: Text('Interface inputs',
-                                  style: TextStyle(
-                                      color: p.mutedText, fontSize: 13)))))),
-              Positioned(
-                  left: trackWidth,
-                  top: 0,
-                  right: 0,
-                  height: 56,
-                  child: IgnorePointer(
-                      child: ClipRect(
-                          child: CustomPaint(
-                              painter: _StickyRulerPainter(
-                                  p,
-                                  frames,
-                                  rate,
-                                  current,
-                                  width,
-                                  _horizontal.hasClients
-                                      ? _horizontal.offset
-                                      : 0))))),
-            ]);
-          })),
-        SizedBox(
-            height: 72,
-            child: LayoutBuilder(builder: (context, box) {
-              final view = math.max(
-                  1.0, box.maxWidth - (box.maxWidth * .28).clamp(140.0, 240.0));
-              final total = math.max(600.0, view * _zoom);
-              final offset = _horizontal.hasClients ? _horizontal.offset : 0.0;
-              void move(double x) {
-                if (_horizontal.hasClients) {
-                  _horizontal.jumpTo(
-                      (x / math.max(1, box.maxWidth - 160) * total - view / 2)
-                          .clamp(0.0, _horizontal.position.maxScrollExtent));
-                }
-              }
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      final view = math.max(1.0, box.maxWidth - labelWidth);
+                      final total = recording
+                          ? math.max(view, frames / rate / 30 * view * _zoom)
+                          : view * _zoom;
+                      final offset = _horizontal.hasClients
+                          ? _horizontal.offset
+                          : 0.0;
+                      void move(double x, double overviewWidth) {
+                        if (_horizontal.hasClients) {
+                          _horizontal.jumpTo(
+                            (x / math.max(1, overviewWidth) * total - view / 2)
+                                .clamp(
+                                  0.0,
+                                  _horizontal.position.maxScrollExtent,
+                                ),
+                          );
+                        }
+                      }
 
-              return Row(children: [
-                const SizedBox(width: 18),
-                Text('00:00', style: TextStyle(color: p.mutedText)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: (d) => move(d.localPosition.dx),
-                        onHorizontalDragUpdate: (d) => move(d.localPosition.dx),
-                        child: SizedBox(
-                            height: 44,
-                            child: CustomPaint(
-                                painter: _OverviewPainter(
-                                    p,
-                                    _overviewPeaks,
-                                    frames,
-                                    offset / total,
-                                    (view / total).clamp(0, 1),
-                                    current / frames,
-                                    laneCount))))),
-                const SizedBox(width: 12),
-                Text(
-                    '${(frames / rate ~/ 60).toString().padLeft(2, '0')}:${(frames / rate % 60).floor().toString().padLeft(2, '0')}',
-                    style: TextStyle(color: p.mutedText)),
-                const SizedBox(width: 18),
-              ]);
-            })),
-      ]),
+                      return Row(
+                        children: [
+                          const SizedBox(width: 18),
+                          Text('00:00', style: TextStyle(color: p.mutedText)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, overviewBox) =>
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapDown: (d) => move(
+                                      d.localPosition.dx,
+                                      overviewBox.maxWidth,
+                                    ),
+                                    onHorizontalDragUpdate: (d) => move(
+                                      d.localPosition.dx,
+                                      overviewBox.maxWidth,
+                                    ),
+                                    child: SizedBox(
+                                      height: 44,
+                                      child: CustomPaint(
+                                        painter: _OverviewPainter(
+                                          p,
+                                          _overviewPeaks,
+                                          frames,
+                                          offset / total,
+                                          (view / total).clamp(0, 1),
+                                          current / frames,
+                                          laneCount,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${(frames / rate ~/ 60).toString().padLeft(2, '0')}:${(frames / rate % 60).floor().toString().padLeft(2, '0')}',
+                            style: TextStyle(color: p.mutedText),
+                          ),
+                          const SizedBox(width: 18),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-/// Draws the same time axis above the independently scrolling track lanes.
-class _StickyRulerPainter extends CustomPainter {
-  final ConsolePalette palette;
-  final double frames, rate, position, timelineWidth, offset;
-  const _StickyRulerPainter(this.palette, this.frames, this.rate, this.position,
-      this.timelineWidth, this.offset);
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.translate(-offset, 0);
-    _TimelinePainter(
-        palette: palette,
-        frames: frames,
-        rate: rate,
-        position: position,
-        clipFrames: frames,
-        visibleStart: offset / timelineWidth,
-        visibleEnd: (offset + size.width) / timelineWidth,
-        peaks: const [],
-        names: const {},
-        takeName: null,
-        colors: const []).paint(canvas, Size(timelineWidth, 56));
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _StickyRulerPainter oldDelegate) =>
-      palette != oldDelegate.palette ||
-      frames != oldDelegate.frames ||
-      rate != oldDelegate.rate ||
-      position != oldDelegate.position ||
-      timelineWidth != oldDelegate.timelineWidth ||
-      offset != oldDelegate.offset;
-}
-
 class _TimelinePainter extends CustomPainter {
-  const _TimelinePainter(
-      {required this.palette,
-      required this.frames,
-      required this.rate,
-      required this.position,
-      required this.clipFrames,
-      required this.visibleStart,
-      required this.visibleEnd,
-      required this.peaks,
-      required this.names,
-      required this.takeName,
-      required this.colors,
-      this.loopStart,
-      this.loopEnd});
+  const _TimelinePainter({
+    required this.palette,
+    required this.frames,
+    required this.rate,
+    required this.position,
+    required this.clipFrames,
+    required this.visibleStart,
+    required this.visibleEnd,
+    required this.peaks,
+    required this.names,
+    required this.takeName,
+    required this.colors,
+    this.loopStart,
+    this.loopEnd,
+  });
   final ConsolePalette palette;
   final Map<int, String> names;
   final String? takeName;
@@ -695,43 +926,43 @@ class _TimelinePainter extends CustomPainter {
     for (var i = 0; i < colors.length; i++) {
       final y = 56.0 + i * _RecorderArrangementState.laneHeight;
       canvas.drawRect(
-          Rect.fromLTWH(0, y, size.width, 62),
-          Paint()
-            ..color = i.isEven
-                ? palette.arrangementLane
-                : palette.arrangementLaneAlt);
-      if (takeName != null) {
-        final clipWidth =
-            (clipFrames / frames * size.width).clamp(0.0, size.width);
+        Rect.fromLTWH(0, y, size.width, 62),
+        Paint()
+          ..color = i.isEven
+              ? palette.arrangementLane
+              : palette.arrangementLaneAlt,
+      );
+      if (takeName != null && clipFrames > 0) {
+        final clipWidth = (clipFrames / frames * size.width).clamp(
+          0.0,
+          size.width,
+        );
         final rect = Rect.fromLTWH(0, y + 5, clipWidth, 52);
         canvas.drawRRect(
-            RRect.fromRectAndRadius(rect, const Radius.circular(5)),
-            Paint()..color = colors[i].withValues(alpha: .18));
-        canvas.drawRect(
-            Rect.fromLTWH(0, y + 5, clipWidth, 15), Paint()..color = colors[i]);
-        final label = TextPainter(
-            text: TextSpan(
-                text: '${names[i] ?? 'Channel ${i + 1}'} · $takeName',
-                style: TextStyle(
-                    color: palette.onTape,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-            ellipsis: '…')
-          ..layout(maxWidth: math.max(0, clipWidth - 14));
-        if (clipWidth > 14) label.paint(canvas, Offset(7, y + 5));
+          RRect.fromRectAndRadius(rect, const Radius.circular(5)),
+          Paint()..color = colors[i].withValues(alpha: .18),
+        );
       }
     }
     if (loopStart != null && loopEnd != null) {
       canvas.drawRect(
-          Rect.fromLTRB(math.min(loopStart!, loopEnd!) * size.width, 44,
-              math.max(loopStart!, loopEnd!) * size.width, 56),
-          Paint()..color = palette.lime);
+        Rect.fromLTRB(
+          math.min(loopStart!, loopEnd!) * size.width,
+          44,
+          math.max(loopStart!, loopEnd!) * size.width,
+          56,
+        ),
+        Paint()..color = palette.lime,
+      );
       canvas.drawRect(
-          Rect.fromLTRB(math.min(loopStart!, loopEnd!) * size.width, 0,
-              math.max(loopStart!, loopEnd!) * size.width, size.height),
-          Paint()..color = palette.selectionFill);
+        Rect.fromLTRB(
+          math.min(loopStart!, loopEnd!) * size.width,
+          0,
+          math.max(loopStart!, loopEnd!) * size.width,
+          size.height,
+        ),
+        Paint()..color = palette.selectionFill,
+      );
     }
     final grid = Paint()
       ..color = palette.line
@@ -740,37 +971,38 @@ class _TimelinePainter extends CustomPainter {
       final y = 56.0 + i * _RecorderArrangementState.laneHeight;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
-    final seconds = frames / rate;
-    final targetStep = seconds / math.max(1, (size.width / 120).floor());
-    final magnitude =
-        math.pow(10, (math.log(targetStep) / math.ln10).floor()).toDouble();
-    final normalized = targetStep / magnitude;
-    final step = (normalized <= 1
+    final duration = frames / rate;
+    final desiredStep = duration / size.width * 120;
+    final magnitude = math.pow(10, (math.log(desiredStep) / math.ln10).floor());
+    final normalized = desiredStep / magnitude;
+    final step =
+        magnitude *
+        (normalized <= 1
             ? 1
             : normalized <= 2
-                ? 2
-                : normalized <= 5
-                    ? 5
-                    : 10) *
-        magnitude;
-    final decimals = math.max(0, -(math.log(step) / math.ln10).floor());
-    final firstDivision = math.max(0, (visibleStart * seconds / step).floor());
-    final lastDivision = math.min(
-        (seconds / step).floor(), (visibleEnd * seconds / step).ceil());
-    for (var i = firstDivision; i <= lastDivision; i++) {
-      final tickSeconds = i * step;
-      final x = tickSeconds / seconds * size.width;
+            ? 2
+            : normalized <= 5
+            ? 5
+            : 10);
+    final firstTick = (visibleStart * duration / step).floor();
+    final lastTick = (visibleEnd * duration / step).ceil();
+    for (var i = firstTick; i <= lastTick; i++) {
+      final seconds = i * step;
+      final x = seconds / duration * size.width;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-      final minutes = (tickSeconds / 60).floor();
-      final remainder = (tickSeconds - minutes * 60).toStringAsFixed(decimals);
-      final tickLabel =
-          '${minutes.toString().padLeft(2, '0')}:${remainder.padLeft(decimals == 0 ? 2 : decimals + 3, '0')}';
+      final digits = step < 1
+          ? math.max(1, -(math.log(step) / math.ln10).floor())
+          : 0;
+      final secondsLabel = (seconds % 60)
+          .toStringAsFixed(digits)
+          .padLeft(digits == 0 ? 2 : digits + 3, '0');
       final text = TextPainter(
-          text: TextSpan(
-              text: tickLabel,
-              style: TextStyle(color: palette.recorderMuted, fontSize: 18)),
-          textDirection: TextDirection.ltr)
-        ..layout();
+        text: TextSpan(
+          text: '${(seconds ~/ 60).toString().padLeft(2, '0')}:$secondsLabel',
+          style: TextStyle(color: palette.recorderMuted, fontSize: 18),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
       text.paint(canvas, Offset(x + 4, 9));
     }
     final wave = Paint()
@@ -783,9 +1015,11 @@ class _TimelinePainter extends CustomPainter {
       if (channels is! List || start is! num || end is! num) {
         continue;
       }
-      for (var channel = 0;
-          channel < math.min(colors.length, channels.length);
-          channel++) {
+      for (
+        var channel = 0;
+        channel < math.min(colors.length, channels.length);
+        channel++
+      ) {
         wave.color = colors[channel];
         final values = channels[channel];
         if (values is! List || values.isEmpty) continue;
@@ -799,15 +1033,18 @@ class _TimelinePainter extends CustomPainter {
           }
           final frame = start + (end - start) * (i + .5) / values.length;
           final x = frame / frames * size.width;
-          final y = 56 +
+          final y =
+              56 +
               channel * _RecorderArrangementState.laneHeight +
-              _RecorderArrangementState.laneHeight / 2 +
-              7;
+              _RecorderArrangementState.laneHeight / 2;
           final top = y - (pair[1] as num).toDouble().clamp(-1, 1) * 16;
           final bottom = y - (pair[0] as num).toDouble().clamp(-1, 1) * 16;
           // A silent or very quiet bucket still needs a visible center line.
           canvas.drawLine(
-              Offset(x, top), Offset(x, math.max(bottom, top + 1)), wave);
+            Offset(x, top),
+            Offset(x, math.max(bottom, top + 1)),
+            wave,
+          );
         }
       }
     }
@@ -819,11 +1056,12 @@ class _TimelinePainter extends CustomPainter {
       ..close();
     canvas.drawPath(triangle, Paint()..color = palette.lime);
     canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        Paint()
-          ..color = palette.lime
-          ..strokeWidth = 2);
+      Offset(x, 0),
+      Offset(x, size.height),
+      Paint()
+        ..color = palette.lime
+        ..strokeWidth = 2,
+    );
   }
 
   @override
@@ -843,8 +1081,15 @@ class _TimelinePainter extends CustomPainter {
 }
 
 class _OverviewPainter extends CustomPainter {
-  _OverviewPainter(this.p, this.peaks, this.frames, this.offset, this.viewport,
-      this.position, this.laneCount);
+  _OverviewPainter(
+    this.p,
+    this.peaks,
+    this.frames,
+    this.offset,
+    this.viewport,
+    this.position,
+    this.laneCount,
+  );
   final ConsolePalette p;
   final List<Map<String, dynamic>> peaks;
   final double frames, offset, viewport, position;
@@ -852,8 +1097,9 @@ class _OverviewPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size size) {
     c.drawRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6)),
-        Paint()..color = p.panel);
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6)),
+      Paint()..color = p.panel,
+    );
     final paint = Paint()..color = p.meter.withValues(alpha: .55);
     for (final chunk in peaks) {
       final channels = chunk['channels'];
@@ -866,9 +1112,11 @@ class _OverviewPainter extends CustomPainter {
           end is! num) {
         continue;
       }
-      for (var channel = 0;
-          channel < math.min(laneCount, channels.length);
-          channel++) {
+      for (
+        var channel = 0;
+        channel < math.min(laneCount, channels.length);
+        channel++
+      ) {
         if (channels[channel] is! List) continue;
         final values = channels[channel] as List;
         for (var i = 0; i < values.length; i++) {
@@ -879,37 +1127,45 @@ class _OverviewPainter extends CustomPainter {
               pair[1] is! num) {
             continue;
           }
-          final x = (start + (end - start) * (i + .5) / values.length) /
+          final x =
+              (start + (end - start) * (i + .5) / values.length) /
               frames *
               size.width;
           c.drawLine(
-              Offset(
-                  x,
-                  size.height / 2 -
-                      (pair[1] as num).toDouble().clamp(-1, 1) * 16),
-              Offset(
-                  x,
-                  size.height / 2 -
-                      (pair[0] as num).toDouble().clamp(-1, 1) * 16),
-              paint);
+            Offset(
+              x,
+              size.height / 2 - (pair[1] as num).toDouble().clamp(-1, 1) * 16,
+            ),
+            Offset(
+              x,
+              size.height / 2 - (pair[0] as num).toDouble().clamp(-1, 1) * 16,
+            ),
+            paint,
+          );
         }
       }
     }
     final rect = Rect.fromLTWH(
-        offset * size.width, 0, viewport * size.width, size.height);
+      offset * size.width,
+      0,
+      viewport * size.width,
+      size.height,
+    );
     c.drawRect(rect, Paint()..color = p.text.withValues(alpha: .1));
     c.drawRect(
-        rect.deflate(1),
-        Paint()
-          ..color = p.recorderMuted
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2);
+      rect.deflate(1),
+      Paint()
+        ..color = p.recorderMuted
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
     c.drawLine(
-        Offset(position * size.width, 0),
-        Offset(position * size.width, size.height),
-        Paint()
-          ..color = p.lime
-          ..strokeWidth = 2);
+      Offset(position * size.width, 0),
+      Offset(position * size.width, size.height),
+      Paint()
+        ..color = p.lime
+        ..strokeWidth = 2,
+    );
   }
 
   @override

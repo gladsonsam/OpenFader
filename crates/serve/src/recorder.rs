@@ -142,6 +142,78 @@ pub fn data_dir() -> Option<PathBuf> {
         None
     }
 }
+// Device preferences belong to the recorder host and never imply mixer routing.
+fn same_device(a: &openfader_audio::DeviceInfo, b: &openfader_audio::DeviceInfo) -> bool {
+    a.id == b.id
+        && a.input_channels == b.input_channels
+        && a.output_channels == b.output_channels
+        && a.sample_rate == b.sample_rate
+}
+fn read_device_preference(
+    root: &std::path::Path,
+) -> Result<Option<(openfader_audio::DeviceInfo, Vec<String>)>, String> {
+    use std::io::Read;
+    let mut file = match std::fs::File::open(root.join("audio-device.json")) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("Cannot read saved audio interface: {e}")),
+    };
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(131073)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 131072 {
+        return Err("Saved audio interface preference is too large".into());
+    }
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| "Saved audio interface preference is invalid".to_string())?;
+    let device: openfader_audio::DeviceInfo = serde_json::from_value(value["device"].clone())
+        .map_err(|_| "Saved audio interface descriptor is invalid".to_string())?;
+    if device.id.is_empty() || device.id.len() > 4096 || device.sample_rate == 0 {
+        return Err("Saved audio interface descriptor is invalid".into());
+    }
+    let names: Vec<String> =
+        serde_json::from_value(value.get("channel_names").cloned().unwrap_or(json!([])))
+            .map_err(|_| "Saved input labels are invalid".to_string())?;
+    if !names.is_empty() {
+        openfader_audio::validate_channel_names(Some(&names), device.input_channels)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(Some((device, names)))
+}
+fn write_device_preference(
+    root: &std::path::Path,
+    device: &openfader_audio::DeviceInfo,
+    names: &[String],
+) -> Result<(), String> {
+    use std::io::Write;
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let temp = root.join(format!(
+        ".audio-device-{}-{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        serde_json::to_writer(&mut file, &json!({"device":device,"channel_names":names}))
+            .map_err(std::io::Error::other)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        std::fs::rename(&temp, root.join("audio-device.json"))?;
+        #[cfg(unix)]
+        std::fs::File::open(root)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result.map_err(|e| format!("Cannot save audio interface: {e}"))
+}
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 async fn worker(
     root: PathBuf,
@@ -183,7 +255,12 @@ async fn worker_with_config(
                 })
             })
         });
+    let (mut saved_device, mut restore_reason) = match read_device_preference(&root) {
+        Ok(saved) => (saved, None),
+        Err(error) => (None, Some(error)),
+    };
     let mut selected = None;
+    let mut capture_channel_names: Vec<String> = Vec::new();
     let helper = if let Some((path, device)) = fixture {
         devices.push(device.clone());
         selected = Some(device);
@@ -481,6 +558,8 @@ async fn worker_with_config(
                                 .unwrap_or_default();
                             let names = if client.is_some() {
                                 active_capture_names.clone()
+                            } else if names.is_empty() {
+                                capture_channel_names.clone()
                             } else {
                                 names
                             };
@@ -499,6 +578,12 @@ async fn worker_with_config(
                             }).or_else(|| descriptor_reason.clone());
                             o.insert("device_match_reason".into(), json!(device_reason));
                             o.insert("channel_names_reason".into(), if !names.is_empty() { Value::Null } else { json!(descriptor_reason.as_deref().unwrap_or("Select the connected provider's matching audio interface to use its verified capture names")) });
+                            o.insert(
+                                "selected_device_id".into(),
+                                json!(selected.as_ref().map(|d| &d.id)),
+                            );
+                            o.insert("device_restore_reason".into(), json!(restore_reason));
+                            o.insert("capture_channel_names".into(), json!(capture_channel_names));
                             o.insert(
                                 "channels".into(),
                                 selected
@@ -576,6 +661,48 @@ async fn worker_with_config(
                                 Ok(Ok(found)) => {
                                     devices = found;
                                     descriptor_dirty = true;
+                                    if let Some((saved, names)) = &saved_device {
+                                        if let Some(device) =
+                                            devices.iter().find(|d| same_device(d, saved)).cloned()
+                                        {
+                                            if selected.is_none() {
+                                                match s.select_discovered_device(device.clone()) {
+                                                    Ok(()) => {
+                                                        selected = Some(device);
+                                                        capture_channel_names = names.clone();
+                                                        restore_reason = None;
+                                                        if let Some(backend) = &mut backend {
+                                                            backend.configure(
+                                                                helper.clone(),
+                                                                selected.clone(),
+                                                            );
+                                                            cached_backend = Some((
+                                                                backend.state(),
+                                                                backend.available(),
+                                                            ));
+                                                            soundcheck_reason =
+                                                                backend.unavailable_reason();
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        restore_reason = Some(format!(
+                                                        "Cannot restore saved audio interface: {e}"
+                                                    ))
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            selected = None;
+                                            capture_channel_names.clear();
+                                            restore_reason = Some(if devices.iter().any(|d| d.id == saved.id) { "Saved audio interface configuration changed; select it again" } else { "Saved audio interface is unavailable; connect it or select another" }.into());
+                                            if let Some(backend) = &mut backend {
+                                                backend.configure(helper.clone(), None);
+                                                cached_backend =
+                                                    Some((backend.state(), backend.available()));
+                                                soundcheck_reason = backend.unavailable_reason();
+                                            }
+                                        }
+                                    }
                                     scan = None;
                                     scan_error = (cfg!(windows) && devices.is_empty()).then(||
                                         "No usable ASIO interfaces found. Install the interface manufacturer's 64-bit ASIO driver, connect its USB audio cable, and close other audio applications before refreshing.".into());
@@ -831,9 +958,18 @@ async fn worker_with_config(
                                         if pending.is_some() || client.is_some() {
                                             return Err("capture active".into());
                                         }
+                                        let names = saved_device
+                                            .as_ref()
+                                            .filter(|(saved, _)| same_device(saved, &device))
+                                            .map(|(_, names)| names.clone())
+                                            .unwrap_or_default();
+                                        write_device_preference(&root, &device, &names)?;
                                         s.select_discovered_device(device.clone())
                                             .map_err(|e| e.to_string())?;
-                                        selected = Some(device);
+                                        selected = Some(device.clone());
+                                        capture_channel_names = names.clone();
+                                        saved_device = Some((device, names));
+                                        restore_reason = None;
                                         descriptor_dirty = true;
                                         if let Some(backend) = &mut backend {
                                             backend.configure(helper.clone(), selected.clone());
@@ -843,6 +979,43 @@ async fn worker_with_config(
                                         }
                                         Ok(())
                                     }),
+                                "set_capture_channel_names" => {
+                                    if capture_active
+                                        || root.join("routing-journal.json").exists()
+                                        || root.join("manual-routing-pending").exists()
+                                        || cached_backend.as_ref().is_some_and(|(state, _)| {
+                                            state.input_mode != "live"
+                                                || state.transport != "stopped"
+                                        })
+                                    {
+                                        Err("stop transport and return to live before changing input labels".into())
+                                    } else if let Some(device) = selected.as_ref().filter(|d| {
+                                        args["device_id"].as_str() == Some(d.id.as_str())
+                                    }) {
+                                        let names: Result<Vec<String>, _> =
+                                            serde_json::from_value(args["channel_names"].clone());
+                                        names
+                                            .map_err(|_| {
+                                                "channel_names must be an array of strings"
+                                                    .to_string()
+                                            })
+                                            .and_then(|names| {
+                                                let names =
+                                                    openfader_audio::validate_channel_names(
+                                                        Some(&names),
+                                                        device.input_channels,
+                                                    )
+                                                    .map_err(|e| e.to_string())?;
+                                                write_device_preference(&root, device, &names)?;
+                                                capture_channel_names = names.clone();
+                                                saved_device = Some((device.clone(), names));
+                                                Ok(())
+                                            })
+                                    } else {
+                                        Err("device_id must match the selected audio interface"
+                                            .into())
+                                    }
+                                }
                                 "start_recording" => {
                                     if cached_backend
                                         .as_ref()
@@ -853,11 +1026,51 @@ async fn worker_with_config(
                                         Err("routing recovery required before recording".into())
                                     } else if pending.is_some() || client.is_some() {
                                         Err("capture active".into())
+                                    } else if args.get("name").is_some_and(|name| {
+                                        !name.is_null()
+                                            && name
+                                                .as_str()
+                                                .and_then(|name| {
+                                                    openfader_audio::validate_take_name(name).ok()
+                                                })
+                                                .is_none()
+                                    }) {
+                                        Err("invalid take name".into())
                                     } else if let (Some(device), Some(path), Some(take)) = (
                                         selected.clone(),
                                         helper.clone().filter(|p| p.is_file()),
                                         args["take_id"].as_str(),
                                     ) {
+                                        let names = match args.get("channel_names") {
+                                            None | Some(Value::Null) => Ok(None),
+                                            Some(value) => {
+                                                serde_json::from_value::<Vec<String>>(value.clone())
+                                                    .map_err(|_| {
+                                                        "channel_names must be an array of strings"
+                                                            .to_string()
+                                                    })
+                                                    .and_then(|names| {
+                                                        openfader_audio::validate_channel_names(
+                                                            Some(&names),
+                                                            device.input_channels,
+                                                        )
+                                                        .map(Some)
+                                                        .map_err(|e| e.to_string())
+                                                    })
+                                            }
+                                        };
+                                        let names = match names {
+                                            Ok(names) => names,
+                                            Err(error) => {
+                                                let response = json!({"ok":false,"request_id":id,"error":error});
+                                                requests.insert(
+                                                    id.to_owned(),
+                                                    (cmd.clone(), response.clone()),
+                                                );
+                                                let _ = reply.send(response);
+                                                continue;
+                                            }
+                                        };
                                         generation = generation.wrapping_add(1);
                                         let gen = generation;
                                         let prep = crate::capture_client::CaptureClient::prepare(
@@ -903,11 +1116,28 @@ async fn worker_with_config(
                                         if active_capture_names.is_empty() {
                                             descriptor_reason = Some("Fresh capture mapping could not be verified for the selected interface at record start".into());
                                         }
-                                        let names = active_capture_names.clone();
+                                        let names = names.or_else(|| {
+                                            if !active_capture_names.is_empty() {
+                                                Some(active_capture_names.clone())
+                                            } else if !capture_channel_names.is_empty() {
+                                                Some(capture_channel_names.clone())
+                                            } else {
+                                                None
+                                            }
+                                        });
+                                        active_capture_names = names.clone().unwrap_or_default();
                                         let take = take.to_owned();
+                                        let name = args["name"].as_str().map(str::to_owned);
                                         let task = tokio::spawn(async move {
                                             let c = prep.ready().await?;
-                                            let v = c.commit_named(gen, &take, names).await?;
+                                            let v = c
+                                                .commit_with_channels(
+                                                    gen,
+                                                    &take,
+                                                    name.as_deref(),
+                                                    names.as_deref(),
+                                                )
+                                                .await?;
                                             Ok((c, v["status"].clone()))
                                         });
                                         pending =

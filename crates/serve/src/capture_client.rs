@@ -11,7 +11,8 @@ use std::{
 };
 use tokio::sync::oneshot;
 
-const MAX_MESSAGE: usize = 16 * 1024;
+// A full set of bounded input labels may exceed a telemetry-sized message.
+const MAX_MESSAGE: usize = 512 * 1024;
 const OP_TIMEOUT: Duration = Duration::from_secs(2);
 type Reply = oneshot::Sender<Result<Value, String>>;
 struct Request {
@@ -119,19 +120,29 @@ impl CaptureClient {
             .map_err(|_| "capture helper terminated".to_string())?
     }
     pub async fn commit(&self, generation: u64, take_id: &str) -> Result<Value, String> {
-        self.commit_named(generation, take_id, Vec::new()).await
+        self.commit_named(generation, take_id, None).await
     }
     pub async fn commit_named(
         &self,
         generation: u64,
         take_id: &str,
-        names: Vec<String>,
+        name: Option<&str>,
+    ) -> Result<Value, String> {
+        self.commit_with_channels(generation, take_id, name, None)
+            .await
+    }
+    pub async fn commit_with_channels(
+        &self,
+        generation: u64,
+        take_id: &str,
+        name: Option<&str>,
+        channel_names: Option<&[String]>,
     ) -> Result<Value, String> {
         if generation != self.generation {
             return Err("stale generation".into());
         }
         self.request(
-            json!({"op":"commit", "generation":generation, "take_id":take_id,"channel_names":names}),
+            json!({"op":"commit", "generation":generation, "take_id":take_id, "name":name, "channel_names":channel_names}),
             "RECORDING",
             Instant::now() + Duration::from_secs(10),
         )

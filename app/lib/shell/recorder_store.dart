@@ -247,6 +247,7 @@ class ShellRecorderStore extends RecorderStore {
           return manifest is Map
               ? {
                   ...take,
+                  'name': manifest['name'] ?? take['name'],
                   'duration_frames': manifest['frames'],
                   'sample_rate': manifest['sample_rate'],
                   'complete': manifest['complete']

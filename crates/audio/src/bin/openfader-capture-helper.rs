@@ -84,13 +84,27 @@ fn main() {
                     let id = request["take_id"]
                         .as_str()
                         .ok_or_else(|| io::Error::other("missing take_id"))?;
-                    let names: Vec<String> =
-                        serde_json::from_value(request["channel_names"].clone())
-                            .unwrap_or_default();
-                    service.commit_capture_named_with(id, names, |stage| {
-                        let _ =
-                            send(json!({"state":"PROGRESS","generation":generation,"stage":stage}));
-                    })?;
+                    let name = match request.get("name") {
+                        None | Some(Value::Null) => None,
+                        Some(Value::String(name)) => Some(name.as_str()),
+                        Some(_) => return Err(io::Error::other("name must be a string")),
+                    };
+                    let channel_names: Option<Vec<String>> = match request.get("channel_names") {
+                        None | Some(Value::Null) => None,
+                        Some(value) => {
+                            Some(serde_json::from_value(value.clone()).map_err(io::Error::other)?)
+                        }
+                    };
+                    service.commit_capture_with_channels_progress(
+                        id,
+                        name,
+                        channel_names.as_deref(),
+                        |stage| {
+                            let _ = send(
+                                json!({"state":"PROGRESS","generation":generation,"stage":stage}),
+                            );
+                        },
+                    )?;
                     send(
                         json!({"state":"RECORDING","generation":generation,"status":service.status()}),
                     )?;
