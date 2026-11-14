@@ -43,6 +43,13 @@ class X32Probe {
         values.clear();
         valueSequence.clear();
       }
+      if (e['type'] == 'param_invalidated') {
+        for (final field in (e['fields'] as List).whereType<String>()) {
+          final key = '${e['ch']}/$field';
+          values.remove(key);
+          valueSequence.remove(key);
+        }
+      }
       if (e['type'] == 'params')
         for (final entry in (e['values'] as Map).entries) {
           final key = '${e['ch']}/${entry.key}';

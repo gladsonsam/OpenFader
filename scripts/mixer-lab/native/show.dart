@@ -70,6 +70,9 @@ extension NativeShowChecks on NativeProbe {
             '${result['message']}'.contains('accepted'),
             'No independent native recall acceptance: $result',
           );
+          throw Blocked(
+            'Recall acceptance observed, but restored scene contents were not independently verified',
+          );
         },
       );
       await check(

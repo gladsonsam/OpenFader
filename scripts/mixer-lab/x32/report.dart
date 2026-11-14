@@ -63,10 +63,12 @@ extension X32Report on X32Probe {
       ],
       'limits': [
         if (scenario == 'reconnect') 'Focused disconnect/reconnect scenario only; no channel/processing/FX inventory sweep in this invocation',
+        if (scenario == 'processing') 'Focused processing scenario only; no routing, FX, stereo, scene, meter or reconnect sweep in this invocation',
+        if (scenario == 'fx') 'Focused FX scenario only; no processing, routing, stereo, scene, meter or reconnect sweep in this invocation',
         if (scenario == 'routing') 'Focused routing scenario: twenty cycles of guarded FX source left/right routing and every observed output control, with typed receipts and independent readback',
         if (scenario == null) ...[
           'One representative per advertised family plus all final strip boundaries; not every strip/parameter permutation',
-          'All slot-1 algorithm parameters and slot-5 first/last parameter schema checks; repeated interior slot-5 parameters inventoried',
+          'All slot-1 algorithm parameters and slots 2–8 first/last parameter checks; repeated interior parameters inventoried',
         ],
         'Emulator evidence only; no UI, physical DSP/audio/USB/preamp/iOS proof',
         'Physical preamp behavior, native hardware archives, LAN reconfiguration, audio recording and virtual soundcheck require dedicated verification',

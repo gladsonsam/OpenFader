@@ -79,6 +79,20 @@ extension X32Routing on X32Probe {
     final controlRows =
         (latest['destination_controls']?['controls'] as List? ?? [])
             .cast<Map>();
+    await check('Output control descriptor inventory is present', () async {
+      require(
+        controlRows.any((r) => '${r['target']}'.startsWith('outputs/')),
+        'No output controls observed; an empty sweep cannot establish coverage',
+      );
+      for (final id in ['tap', 'invert', 'delay_on', 'delay_time']) {
+        require(
+          controlRows.any(
+            (r) => '${r['target']}'.startsWith('outputs/') && r['id'] == id,
+          ),
+          'No advertised output $id control was observed',
+        );
+      }
+    });
     for (final descriptor in controlRows) {
       final target = descriptor['target'] as String;
       final id = descriptor['id'] as String;

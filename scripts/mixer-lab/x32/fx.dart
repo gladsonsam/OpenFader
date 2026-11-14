@@ -7,10 +7,10 @@ extension X32Fx on X32Probe {
   Future<void> fxPass() async {
     final fxTypes = (caps!['fx']['types'] as List).cast<Map>();
     // Snapshot original parameter leaves before selecting another algorithm.
-    for (final slot in [1, 5]) {
+    for (var slot = 1; slot <= 8; slot++) {
       await remember('/fx/$slot/type');
       final old = (await native.read('/fx/$slot/type') as num).toInt();
-      final code = slot == 1 ? fxTypes[old]['id'] as String : fx58[old];
+      final code = slot <= 4 ? fxTypes[old]['id'] as String : fx58[old];
       final oldDescriptor = fxTypes.singleWhere((r) => r['id'] == code);
       for (final p in oldDescriptor['params'] as List) {
         try {
@@ -20,8 +20,8 @@ extension X32Fx on X32Probe {
         }
       }
     }
-    for (final slot in [1, 5]) {
-      final domain = slot == 1
+    for (var slot = 1; slot <= 8; slot++) {
+      final domain = slot <= 4
           ? fxTypes.map((r) => r['id'] as String).toList()
           : fx58;
       for (var nativeType = 0; nativeType < domain.length; nativeType++) {
@@ -107,7 +107,7 @@ extension X32Fx on X32Probe {
             );
           });
         }
-        if (slot == 5 && parameters.length > 2)
+        if (slot != 1 && parameters.length > 2)
           results.add({
             'check': 'FX $slot/$code middle parameters',
             'status': 'not_exercised_here',
@@ -119,17 +119,6 @@ extension X32Fx on X32Probe {
           });
       }
     }
-    for (final slot in [2, 3, 4, 6, 7, 8])
-      await check('FX slot $slot address boundary and type domain', () async {
-        final path = '/fx/$slot/type';
-        final old = await remember(path);
-        final desired = old == 0 ? 1 : 0;
-        final code = slot <= 4
-            ? fxTypes[desired]['id'] as String
-            : fx58[desired];
-        await command(Cmds.fxSetType(slot, code));
-        await native.agrees(path, desired);
-      });
     await check(
       'Unavailable per-slot FX on/bypass writes reject explicitly',
       () async {

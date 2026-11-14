@@ -46,6 +46,58 @@ extension X32Processing on X32Probe {
         await native.write(path, original);
       },
     );
+    // Fixed interior reference points from the X32 OSC protocol laws (Maillot,
+    // protocol 4.09-02); values below are fixture facts, not production codecs.
+    // Frequencies/Q and times are selected on native step boundaries so the
+    // emulator's quantised readback can be checked without broad tolerances.
+    final interior = [
+      (id: 'eq1_freq', path: '/ch/01/eq/1/f', value: 632.455532, wire: 0.5),
+      (id: 'eq1_q', path: '/ch/01/eq/1/q', value: 1.77535466, wire: 35.0 / 71),
+      (id: 'eq1_gain', path: '/ch/01/eq/1/g', value: 7.5, wire: 0.75),
+      (id: 'gate_thr', path: '/ch/01/gate/thr', value: -20.0, wire: 0.75),
+      (id: 'gate_hold', path: '/ch/01/gate/hold', value: 20.0, wire: 0.6),
+      (id: 'comp_thr', path: '/ch/01/dyn/thr', value: -15.0, wire: 0.75),
+      (id: 'comp_att', path: '/ch/01/dyn/attack', value: 30.0, wire: 0.25),
+      (
+        id: 'comp_rel',
+        path: '/ch/01/dyn/release',
+        value: 141.421356,
+        wire: 0.5,
+      ),
+      (
+        id: 'send1_level',
+        path: '/ch/01/mix/01/level',
+        value: -30.0,
+        wire: 0.25,
+      ),
+      (id: 'send1_level', path: '/ch/01/mix/01/level', value: -10.0, wire: 0.5),
+      (
+        id: 'fader',
+        path: '/ch/01/mix/fader',
+        value: 255.0 / 1023,
+        wire: 255.0 / 1023,
+      ),
+      (
+        id: 'fader',
+        path: '/ch/01/mix/fader',
+        value: 767.0 / 1023,
+        wire: 767.0 / 1023,
+      ),
+    ];
+    for (final point in interior) {
+      await check(
+        'Interior ${point.id} ${point.value} independent wire',
+        () async {
+          await remember(point.path);
+          // Stage a distinct wire value so a dropped command cannot pass.
+          final baseline = point.wire < 0.5 ? 1.0 : 0.0;
+          await native.write(point.path, baseline);
+          await native.agrees(point.path, baseline);
+          await command(Cmds.param(0, point.id, point.value));
+          await native.agrees(point.path, point.wire);
+        },
+      );
+    }
     const readOnly = {
       'source',
       'x32:preamp_state',
@@ -167,6 +219,25 @@ extension X32Processing on X32Probe {
       await check('Source-aware guarded preamp on $key', () async {
         final sourcePath = '${rootFor(key)}/config/source';
         await remember(sourcePath);
+        // Focus is only a polling hint: unchanged values are deduplicated, so
+        // force and observe a different source before requesting In01.
+        socket.add(Cmds.focus([ch]));
+        final alternateSequence = sequence;
+        await native.write(sourcePath, 2);
+        await native.agrees(sourcePath, 2);
+        await until(
+          () =>
+              (valueSequence['$ch/source'] ?? 0) > alternateSequence &&
+              values['$ch/source'] == 'In02' &&
+              (valueSequence['$ch/x32:preamp_state'] ?? 0) >
+                  alternateSequence &&
+              values['$ch/x32:preamp_state'] is String &&
+              (jsonDecode(values['$ch/x32:preamp_state'] as String)
+                      as Map)['source'] ==
+                  'In02',
+          'External alternate source observation',
+        );
+        final focusSequence = sequence;
         await command(Cmds.patchSet(ch, 'In', 1));
         await native.agrees(sourcePath, 1);
         Object headamp;
@@ -181,13 +252,17 @@ extension X32Processing on X32Probe {
         }
         if (headamp is! int || headamp < 0)
           throw Blocked('Source has no physical headamp');
-        socket.add(Cmds.focus([ch]));
         await until(
           () =>
+              (valueSequence['$ch/x32:preamp_state'] ?? 0) > focusSequence &&
+              (valueSequence['$ch/source'] ?? 0) > focusSequence &&
               values['$ch/x32:preamp_state'] is String &&
               (jsonDecode(values['$ch/x32:preamp_state'] as String)
                       as Map)['headamp'] ==
                   headamp &&
+              (jsonDecode(values['$ch/x32:preamp_state'] as String)
+                      as Map)['source'] ==
+                  'In01' &&
               values['$ch/source'] == 'In01',
           'Fresh source-aware preamp descriptor',
         );

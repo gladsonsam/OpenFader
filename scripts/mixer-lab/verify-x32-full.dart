@@ -28,8 +28,9 @@ Future<void> main(List<String> args) async {
   try {
     await probe.attach();
     require(
-      scenario == null || ['reconnect', 'routing'].contains(scenario),
-      'Unknown --scenario; supported focused scenarios: reconnect, routing',
+      scenario == null ||
+          ['processing', 'fx', 'reconnect', 'routing'].contains(scenario),
+      'Unknown --scenario; supported focused scenarios: processing, fx, reconnect, routing',
     );
     if (scenario == null) {
       await probe.processingPass();
@@ -37,10 +38,15 @@ Future<void> main(List<String> args) async {
       await probe.fxPass();
       await probe.groupsPass();
       await probe.scenesAndMeters();
+    } else if (scenario == 'processing') {
+      await probe.processingPass();
+    } else if (scenario == 'fx') {
+      await probe.fxPass();
     } else if (scenario == 'routing') {
       await probe.routingStress();
     }
-    if (scenario != 'routing') await probe.reconnectPass();
+    if (scenario == null || scenario == 'reconnect')
+      await probe.reconnectPass();
   } catch (e) {
     probe.results.add({
       'check': 'Full-probe environment',

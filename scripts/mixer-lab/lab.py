@@ -183,13 +183,18 @@ def revision():
     }
 
 
+def tooling_fingerprints():
+    return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(HERE.rglob('*'))
+            if p.is_file() and p.suffix in {'.dart', '.rs', '.py', '.json', '.md'}}
+
+
 def run(models, output, quick=False, scenario=None):
     output.mkdir(parents=True, exist_ok=False)
     report = {'time_utc': dt.datetime.now(dt.timezone.utc).isoformat(),
               'sidecar_commit': MATRIX['sidecar_commit'], 'openfader': revision(),
               'scope': 'Emulator protocol evidence only; no UI, hardware, audio, USB or simulator proof',
-              'tooling_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in sorted(HERE.rglob('*')) if p.is_file() and p.suffix in {'.dart', '.rs', '.py', '.json', '.md'}},
+              'tooling_sha256': tooling_fingerprints(),
               'mode': scenario or ('quick' if quick else 'full'),
               'fixtures': []}
     try:
@@ -229,11 +234,16 @@ def run(models, output, quick=False, scenario=None):
                                 stages.extend([('full', HERE / 'verify-x32-full.dart', [], 900),
                                                ('native', HERE / 'verify-x32-native.dart', [], 600)])
                     result['status'] = 'pass'
+                    result['stages'] = []
                     with (directory / 'verification.log').open('w') as log:
                         for name, script, extra, timeout in stages:
+                            stage = {'name': name, 'status': 'fail'}
+                            result['stages'].append(stage)
                             probe = call([dart(), script, '--ws', f'ws://127.0.0.1:{port}/ws',
                                           '--report', directory / f'{name}.json', *extra],
                                          stdout=log, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+                            stage.update(exit_code=probe.returncode,
+                                         status={0: 'pass', 2: 'blocked'}.get(probe.returncode, 'fail'))
                             if probe.returncode == 2:
                                 result.update(status='blocked', reason='Explicit coverage gaps; see probe reports')
                             elif probe.returncode != 0:
@@ -245,6 +255,8 @@ def run(models, output, quick=False, scenario=None):
     except Exception as error:
         report['environment_error'] = str(error)
     finally:
+        if revision() != report['openfader'] or tooling_fingerprints() != report['tooling_sha256']:
+            report['environment_error'] = 'Source or verification tooling changed during the run; rerun with stable files'
         (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         print(f'Evidence: {output / "report.json"}')
     if 'environment_error' in report or any(r['status'] == 'fail' for r in report['fixtures']):
@@ -261,7 +273,7 @@ def main():
     p.add_argument('models', nargs='*', choices=list(MATRIX['fixtures']) + ['all'])
     p.add_argument('--output', type=Path)
     p.add_argument('--quick', action='store_true', help='Run basic and extended checks without the full X32 feature sweep')
-    p.add_argument('--scenario', choices=['routing', 'reconnect', 'native'], help='Focused X32 verification with fresh isolated processes')
+    p.add_argument('--scenario', choices=['processing', 'fx', 'routing', 'reconnect', 'native'], help='Focused X32 verification with fresh isolated processes')
     p = sub.add_parser('emulator', help='Foreground emulator for manual app work; Ctrl-C stops it')
     p.add_argument('model', choices=['wing', 'wing-compact', 'wing-rack', 'x32', 'sq5', 'dlive'])
     args = parser.parse_args()

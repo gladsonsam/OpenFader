@@ -16,6 +16,8 @@ python3 scripts/mixer-lab/lab.py setup
 python3 scripts/mixer-lab/lab.py matrix
 python3 scripts/mixer-lab/lab.py run x32
 python3 scripts/mixer-lab/lab.py run x32 --quick
+python3 scripts/mixer-lab/lab.py run x32 --scenario processing
+python3 scripts/mixer-lab/lab.py run x32 --scenario fx
 python3 scripts/mixer-lab/lab.py run x32 --scenario routing
 python3 scripts/mixer-lab/lab.py run x32 --scenario reconnect
 python3 scripts/mixer-lab/lab.py run x32 --scenario native
@@ -37,6 +39,8 @@ executable, tooling and adapter-lock SHA-256 fingerprints. Logs, locks and build
 outputs stay outside the repository. Use a new `--output /absolute/path` for a
 chosen evidence directory. Rerun `setup` after adapter changes. Never patch the
 emulator to make a compatibility check pass.
+Source and probe files must stay unchanged throughout a run; the runner rejects
+results if their fingerprints change. Each stage records its own exit status.
 
 Each fixture gets fresh emulator and host processes, bounded probes and cleanup
 on failure. Listeners use 127.0.0.1; occupied ports fail without killing existing
@@ -61,6 +65,20 @@ OpenFader driver; do not substitute another provider. The lab has no LAN binding
 The automated loop does not launch Flutter. On a Mac, run the lab locally and
 follow AGENTS.md for both iOS simulator boot, connection and screenshot checks.
 Physical phones cannot reach this host through their own loopback address.
+
+For a Linux desktop check, build the native host first and pass Cargo's actual
+target directory to Flutter's bundle step. Otherwise a global Cargo config can
+leave the bundle using an older engine from the repository's `target` directory:
+
+```sh
+cargo build --locked -p openfader-serve -p openfader-audio
+export CARGO_TARGET_DIR="$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
+cd app
+flutter build linux --debug
+```
+
+Verify the bundled `openfader-serve` SHA-256 matches the lab executable and
+restart the isolated UI and desktop host before checking controls.
 
 ## Development loop
 
@@ -90,6 +108,9 @@ types and differs from native FAC1M, PIT2 and PIT parameter schemas. These cases
 remain blocked, including echoes with mismatched parameter meanings. Native
 ranges follow the protocol author's [reference](https://drive.google.com/file/d/1Yt_S1mpPt3CAzeq3Dnpe_IqctQ-1GlTz/view)
 and [tables](https://github.com/pmaillot/X32-Behringer).
+Processing includes fixed interior conversion points. FX checks cover every
+algorithm in all eight slots, with complete slot-1 parameters and first/last
+parameters elsewhere; repeated interior parameters remain explicitly inventoried.
 
 `native.json` records missing-endpoint evidence and requires incomplete inventory
 receipts rather than invented empty slots. Scene-kind archive export represents

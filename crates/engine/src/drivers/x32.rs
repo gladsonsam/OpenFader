@@ -447,7 +447,7 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
                             label: if dest.source_group() == "Mode" { "Routing mode" } else { "Bank source" }.into(),
                             count: dest.options.len(),
                             options: dest.options.iter().map(|s| s.trim().to_string()).collect(),
-                            mode: false,
+                            mode: dest.source_group() == "Mode",
                         }],
                     })
                     .collect(),
