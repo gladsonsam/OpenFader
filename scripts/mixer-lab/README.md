@@ -172,6 +172,16 @@ used only when exactly one independently answers. User assignment editing accept
 validated documented codes; ambiguous page-jump syntax is not available. The
 emulator does not establish these controls' behavior on a physical desk.
 
+Talkback A/B destination bitmaps, the lamp's raw native dimmer value, preference
+profile name and device name are also observed read-only. Their descriptors show
+why editing is unavailable: destination bit ordering, lamp wire scaling, or text
+write limits and identification effects still lack independent confirmation.
+These observations carry no write revision and are absent from the writable
+registry. A raw lamp value is not presented as a percentage. Factual paths and
+wire types follow the protocol author's
+[configuration table](https://github.com/pmaillot/X32-Behringer/blob/master/X32CfgMain.h)
+and [preferences table](https://github.com/pmaillot/X32-Behringer/blob/master/X32PrefStat.h).
+
 `native.json` records missing-endpoint evidence and requires incomplete inventory
 receipts rather than invented empty slots. Scene-kind archive export represents
 the current live mix, with that provenance; it does not export a selected saved
@@ -210,13 +220,22 @@ record the selection and do not treat it as a full sweep. Historical reference
 boundary differences remain recorded; valid endpoints are selected from
 independently queried current DD, without changing the emulator.
 
-X32 now advertises guarded input presets and complete channel processing;
-`input-processors` checks independent capture/write/readback, sibling and stale
-context rejection, partner locks and restoration. Restricted-role provisioning,
+X32 advertises guarded processor presets and complete strip processing for exact
+provider-declared strip keys, including bus, main and matrix EQ/compressor blocks.
+Output strips use their existing strip-processing page and actual six-band EQ
+domains; this does not advertise an output GEQ or invent destination DSP rows.
+The engine enforces the same target list carried by the UI and binds it into the
+guard context. Singleton mains have an explicit non-linkable witness; other
+paired strips require verified unlinked state. Individual presets preserve enable
+flags, while complete processing copy includes supported enable flags.
+`input-processors` checks independent capture/write/readback, differing output
+domains, sibling and stale context rejection, partner locks and restoration.
+Current output preset/clipboard UI verification on both iOS simulators remains
+pending. Restricted-role provisioning,
 unreceived ABA transitions and a safe link-transition fixture remain separate
 limits. Linked X32 input blocks remain unavailable until member-aware guards
-can prove the complete partner state. X32 output DSP presets and clipboard,
-talkback destination bitmaps, some native preferences and selected stored-scene
+can prove the complete partner state. Writable X32 talkback destination bitmaps,
+some native preferences and selected stored-scene
 export still need provider integration or a verified native protocol. These are
 software gaps in addition to the emulator and hardware evidence limits.
 WING clipboard, input presets and output presets still fail closed;

@@ -374,6 +374,44 @@ Future<void> main(List<String> args) async {
         );
       }
     });
+    if (driver == 'x32') {
+      for (final observation in const [
+        ('/talk', '/talk.a_destinations', '/config/talk/A/destmap'),
+        ('/talk', '/talk.b_destinations', '/config/talk/B/destmap'),
+        ('/settings', '/settings.lamp_native', '/-prefs/lamp'),
+        ('/settings', '/settings.profile_name', '/-prefs/style'),
+        ('/settings', '/settings.device_name', '/-prefs/name'),
+      ]) {
+        await probe.check(
+          'Read-only native observation ${observation.$2}',
+          () async {
+            final event = await probe.node(observation.$1);
+            final item = probe.item(event, observation.$2);
+            require(
+              item['read_only'] == true &&
+                  item['unavailable_reason'] is String &&
+                  item['revision'] == null,
+              'Unverified write contract advertised as editable: $item',
+            );
+            final attempt = await probe.write(event, item, item['value'] ?? 0);
+            require(
+              attempt['status'] == 'rejected',
+              'Observation accepted a write: $attempt',
+            );
+            if (!item.containsKey('value') || item['value'] == null) {
+              throw Blocked(
+                'Native observation absent: ${item['unavailable_reason']}',
+              );
+            }
+            final observed = await probe.native.read(observation.$3);
+            require(
+              observed == item['value'],
+              'Native observation differs: $observed / $item',
+            );
+          },
+        );
+      }
+    }
     if (driver == 'wing') {
       await probe.check('Indexed native channel navigation', () async {
         final channels = (await probe.node('/ch'))['node'] as Map;

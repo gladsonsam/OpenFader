@@ -1041,6 +1041,9 @@ pub enum Event {
         db: Option<f32>,
     },
     Caps {
+        /// Exact provider-supported guarded processor targets; absent for legacy providers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guarded_processor_targets: Option<Vec<openfader_core::input_processors::GuardedProcessorTargets>>,
         #[serde(default, skip_serializing_if = "is_false")]
         input_processor_guard: bool,
         #[serde(default, skip_serializing_if = "is_false")]

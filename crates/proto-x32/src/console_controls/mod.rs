@@ -5,6 +5,7 @@ mod card;
 mod codecs;
 mod dp48;
 mod iq;
+mod observations;
 mod presentation;
 mod recorder;
 mod specs;

@@ -137,7 +137,20 @@ mixin _AppStorePresets on _AppStoreContext {
     return null;
   }
 
+  bool _guardedProcessorApplies(int channel, String processor) {
+    final targets = engine.guardedProcessorTargets;
+    if (targets != null) {
+      final key = engine.strips.where((strip) => strip.ch == channel).firstOrNull?.key;
+      return key != null && targets.any(
+        (target) => target.processor == processor && target.stripKeys.contains(key),
+      );
+    }
+    // Legacy providers only advertised the input-family guarded contract.
+    return const {'in', 'ret', 'fxret', 'return'}.contains(_presetFamily(channel)?['kind']);
+  }
+
   bool _presetFieldApplies(ProcessorPresetTarget target, String field) {
+    if (!_stripParamApplies(target.channel, field)) return false;
     final scopes = engine.parameterMetadata[field]?['scopes'];
     final family = _presetFamily(target.channel);
     final familyScopes = family?['params_scope'];
@@ -179,6 +192,7 @@ mixin _AppStorePresets on _AppStoreContext {
     final catalogue = jsonEncode([
       engine.topology,
       engine.stereoPairs,
+      engine.guardedProcessorTargets?.map((target) => target.toJson()).toList(),
       engine.supportedParams.toList()..sort(),
       engine.parameterMetadata
     ]);
@@ -259,8 +273,8 @@ mixin _AppStorePresets on _AppStoreContext {
     if (_presetDomains[target] != _inputCatalogueRevision) {
       return 'Processor capabilities changed. Reopen presets.';
     }
-    if (!engine.inputProcessorGuard) {
-      return 'Guarded input processor recall and paste are unavailable for this provider.';
+    if (!engine.inputProcessorGuard || !_guardedProcessorApplies(target.channel, target.kind.name)) {
+      return 'Guarded processor recall and paste are unavailable for this target.';
     }
     if (engine.syncEpoch == null) {
       return 'Waiting for mixer connection state. Reopen presets after the connection finishes.';
@@ -326,6 +340,16 @@ mixin _AppStorePresets on _AppStoreContext {
             (field == 'link' || recall.contains(field)),
       );
 
+  Map<String, dynamic>? _presetPresentation(ProcessorPresetTarget target, String field) =>
+      parameterPresentation(engine.parameterMetadata[field], (id) {
+        final value = _maps.confirmed[target.channel]?[id];
+        if (!engine.valueKnown(target.channel, id) ||
+            _presetVerifiedFields[target.channel]?.contains(id) != true) {
+          return null;
+        }
+        return value is num && value.isFinite ? value.toDouble() : null;
+      }, stripKind: _presetFamily(target.channel)?['kind'] as String?);
+
   String? _presetValueError(
       ProcessorPresetTarget target, String field, Object? value,
       {bool requireVerified = false}) {
@@ -341,7 +365,10 @@ mixin _AppStorePresets on _AppStoreContext {
                 false))) {
       return 'Waiting for the mixer to provide ${_presetSettingLabel(field)}. Try again when it is ready.';
     }
-    final metadata = engine.parameterMetadata[field];
+    final metadata = _presetPresentation(target, field);
+    if (metadata?['available'] == false || metadata?['hidden'] == true) {
+      return 'Waiting for the mixer’s supported ${_presetSettingLabel(field)} options.';
+    }
     final kind = metadata?['kind'];
     if (kind == 'bool') {
       return value is bool
@@ -367,6 +394,10 @@ mixin _AppStorePresets on _AppStoreContext {
                 field.endsWith('_mode')) &&
             value != value.roundToDouble())) {
       return 'The saved setting ${_presetSettingLabel(field)} is outside the mixer’s supported range.';
+    }
+    final choices = parameterChoices(metadata);
+    if (choices.isNotEmpty && !choices.any((choice) => choice.value == value)) {
+      return 'The saved setting ${_presetSettingLabel(field)} is not an option on this target.';
     }
     if (!mixerProviderPolicy(target.driver)
         .validRawPreset(field, value.toDouble())) {

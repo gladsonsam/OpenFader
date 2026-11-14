@@ -237,6 +237,8 @@ impl X32Driver {
                 item
             });
         }
+        self.append_console_observations(&session, branch, &mut items)
+            .await?;
         if branch == "dp48" {
             for page in 1..=6 {
                 items.push(Item {

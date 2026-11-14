@@ -347,6 +347,10 @@ pub trait DynDriver: Send + Sync {
     fn param_kind_ranges(&self) -> &'static [openfader_core::params::ParamKindRange] {
         &[]
     }
+    /// Optional exact guarded processor targets keyed by processor id.
+    fn guarded_processor_targets(&self) -> Option<Vec<openfader_core::input_processors::GuardedProcessorTargets>> { None }
+    /// Optional exact static strip applicability for catalogue parameters.
+    fn param_applicable_strips(&self, _param: &str) -> Option<Vec<u16>> { None }
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
         &[]
     }

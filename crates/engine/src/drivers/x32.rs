@@ -97,6 +97,26 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
     fn guarded_send_writes(&self) -> bool { true }
     fn guarded_link_writes(&self) -> bool { true }
     fn initial_read_timeout(&self) -> std::time::Duration { openfader_transport::session::CONNECT_BURST_TIMEOUT }
+    fn guarded_processor_targets(&self) -> Option<Vec<openfader_core::input_processors::GuardedProcessorTargets>> {
+        Some(["eq", "gate", "compressor", "channel_processing"].into_iter().map(|processor| {
+            let topology = MixerDriver::topology(self);
+            let strip_keys = (0..MixerDriver::strip_count(self)).filter_map(|index| {
+                let strip = StripId(index as u16);
+                self.guarded_processor_applicable(strip, processor)
+                    .then(|| openfader_core::strip_key_for_index(&topology, index)).flatten()
+            }).collect();
+            openfader_core::input_processors::GuardedProcessorTargets { processor: processor.into(), strip_keys }
+        }).collect())
+    }
+    fn param_applicable_strips(&self, param: &str) -> Option<Vec<u16>> {
+        if !(param.starts_with("eq") || param.starts_with("hpf_") || param.starts_with("gate_") || param.starts_with("comp_")) {
+            return None;
+        }
+        Some((0..MixerDriver::strip_count(self)).filter_map(|index| {
+            let strip = StripId(index as u16);
+            self.param_applicable(strip, param).ok().filter(|v| *v).map(|_| strip.0)
+        }).collect())
+    }
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { Self::param_scopes() }
     fn param_plane_snapshot(&self) -> bool { true }
     fn mutation_state_from_observations(&self) -> bool { true }
