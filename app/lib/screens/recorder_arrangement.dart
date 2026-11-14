@@ -527,293 +527,355 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                         recording ? null : take?['id'] as String?,
                         (take?['duration_frames'] as num?)?.toInt() ?? 0,
                       );
-                      return SingleChildScrollView(
-                        controller: _vertical,
-                        physics: _touchNavigation && _touches.isNotEmpty
-                            ? const NeverScrollableScrollPhysics()
-                            : null,
-                        scrollDirection: Axis.vertical,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(
-                              width: labelWidth,
-                              child: Column(
-                                children: [
-                                  SizedBox(
-                                    height: 56,
-                                    child: Center(
-                                      child: Text(
-                                        'Tracks',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: p.mutedText,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  for (var i = 0; i < laneCount; i++)
-                                    Container(
-                                      height: laneHeight,
-                                      padding: const EdgeInsets.only(right: 8),
-                                      decoration: BoxDecoration(
-                                        color: p.arrangementTrack,
-                                        border: Border(
-                                          top: BorderSide(color: p.line),
-                                        ),
-                                      ),
-                                      child: Stack(
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Container(
-                                                width: 7,
-                                                color: _channelColor(p, i),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                (i + 1).toString(),
-                                                style: TextStyle(
-                                                  color: p.mutedText,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  names[i] ??
-                                                      'Channel ${i + 1}',
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: p.text1,
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
+                      return Stack(
+                        children: [
+                          SingleChildScrollView(
+                            controller: _vertical,
+                            physics: _touchNavigation && _touches.isNotEmpty
+                                ? const NeverScrollableScrollPhysics()
+                                : null,
+                            scrollDirection: Axis.vertical,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: labelWidth,
+                                  child: Column(
+                                    children: [
+                                      SizedBox(
+                                        height: 56,
+                                        child: Center(
+                                          child: Text(
+                                            'Tracks',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: p.mutedText,
+                                              fontSize: 14,
+                                            ),
                                           ),
-                                          Positioned(
-                                            left: 7,
-                                            right: 0,
-                                            bottom: 0,
-                                            height: 4,
-                                            child: LayoutBuilder(
-                                              builder: (context, box) => Stack(
+                                        ),
+                                      ),
+                                      for (var i = 0; i < laneCount; i++)
+                                        Container(
+                                          height: laneHeight,
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: p.arrangementTrack,
+                                            border: Border(
+                                              top: BorderSide(color: p.line),
+                                            ),
+                                          ),
+                                          child: Stack(
+                                            children: [
+                                              Row(
                                                 children: [
-                                                  ColoredBox(
-                                                    color: p.slot,
-                                                    child: SizedBox(
-                                                      width: box.maxWidth,
-                                                      height: 4,
+                                                  Container(
+                                                    width: 7,
+                                                    color: _channelColor(p, i),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Text(
+                                                    (i + 1).toString(),
+                                                    style: TextStyle(
+                                                      color: p.mutedText,
                                                     ),
                                                   ),
-                                                  SizedBox(
-                                                    width:
-                                                        box.maxWidth *
-                                                        (i < meters.length &&
-                                                                meters[i] is num
-                                                            ? (meters[i] as num)
-                                                                  .toDouble()
-                                                                  .clamp(0, 1)
-                                                            : 0),
-                                                    height: 4,
-                                                    child: ColoredBox(
-                                                      color: _channelColor(
-                                                        p,
-                                                        i,
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      names[i] ??
+                                                          'Channel ${i + 1}',
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        color: p.text1,
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w600,
                                                       ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
+                                              Positioned(
+                                                left: 7,
+                                                right: 0,
+                                                bottom: 0,
+                                                height: 4,
+                                                child: LayoutBuilder(
+                                                  builder: (context, box) => Stack(
+                                                    children: [
+                                                      ColoredBox(
+                                                        color: p.slot,
+                                                        child: SizedBox(
+                                                          width: box.maxWidth,
+                                                          height: 4,
+                                                        ),
+                                                      ),
+                                                      SizedBox(
+                                                        width:
+                                                            box.maxWidth *
+                                                            (i < meters.length &&
+                                                                    meters[i] is num
+                                                                ? (meters[i]
+                                                                          as num)
+                                                                      .toDouble()
+                                                                      .clamp(
+                                                                        0,
+                                                                        1,
+                                                                      )
+                                                                : 0),
+                                                        height: 4,
+                                                        child: ColoredBox(
+                                                          color: _channelColor(
+                                                            p,
+                                                            i,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            Expanded(
-                              child: NotificationListener<ScrollStartNotification>(
-                                onNotification: (notification) {
-                                  if (notification.dragDetails != null &&
-                                      _followRecording) {
-                                    setState(() => _followRecording = false);
-                                  }
-                                  return false;
-                                },
-                                child: Listener(
-                                  onPointerDown: (event) {
-                                    if (_touches.isEmpty) {
-                                      _touchNavigation = false;
-                                    }
-                                    _touches[event.pointer] =
-                                        event.localPosition;
-                                    _startPinch();
-                                  },
-                                  onPointerMove: (event) {
-                                    if (!_touches.containsKey(event.pointer)) {
-                                      return;
-                                    }
-                                    _touches[event.pointer] =
-                                        event.localPosition;
-                                    _movePinch();
-                                  },
-                                  onPointerUp: (event) =>
-                                      _releaseTouch(event.pointer),
-                                  onPointerCancel: (event) =>
-                                      _releaseTouch(event.pointer),
-                                  child: SingleChildScrollView(
-                                    physics:
-                                        _touchNavigation && _touches.isNotEmpty
-                                        ? const NeverScrollableScrollPhysics()
-                                        : null,
-                                    controller: _horizontal,
-                                    scrollDirection: Axis.horizontal,
-                                    child: SizedBox(
-                                      width: width,
-                                      height: 56 + laneHeight * laneCount,
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onDoubleTap: () {
-                                          if (!_touchNavigation) {
-                                            _setZoom(1);
-                                          }
-                                        },
-                                        onTapUp: canSeek
-                                            ? (d) {
-                                                if (_touchNavigation) {
-                                                  return;
-                                                }
-                                                widget.store.command('seek', {
-                                                  'position_frames':
-                                                      (d.localPosition.dx /
-                                                              width *
-                                                              frames)
-                                                          .round(),
-                                                });
-                                              }
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: NotificationListener<ScrollStartNotification>(
+                                    onNotification: (notification) {
+                                      if (notification.dragDetails != null &&
+                                          _followRecording) {
+                                        setState(
+                                          () => _followRecording = false,
+                                        );
+                                      }
+                                      return false;
+                                    },
+                                    child: Listener(
+                                      onPointerDown: (event) {
+                                        if (_touches.isEmpty) {
+                                          _touchNavigation = false;
+                                        }
+                                        _touches[event.pointer] =
+                                            event.localPosition;
+                                        _startPinch();
+                                      },
+                                      onPointerMove: (event) {
+                                        if (!_touches.containsKey(
+                                          event.pointer,
+                                        )) {
+                                          return;
+                                        }
+                                        _touches[event.pointer] =
+                                            event.localPosition;
+                                        _movePinch();
+                                      },
+                                      onPointerUp: (event) =>
+                                          _releaseTouch(event.pointer),
+                                      onPointerCancel: (event) =>
+                                          _releaseTouch(event.pointer),
+                                      child: SingleChildScrollView(
+                                        physics:
+                                            _touchNavigation &&
+                                                _touches.isNotEmpty
+                                            ? const NeverScrollableScrollPhysics()
                                             : null,
-                                        onLongPressStart: canLoop
-                                            ? (d) {
-                                                if (_touchNavigation) {
-                                                  return;
-                                                }
-                                                setState(() {
-                                                  _loopStart =
-                                                      (d.localPosition.dx /
-                                                              width)
-                                                          .clamp(0, 1);
-                                                  _loopEnd = _loopStart;
-                                                });
+                                        controller: _horizontal,
+                                        scrollDirection: Axis.horizontal,
+                                        child: SizedBox(
+                                          width: width,
+                                          height: 56 + laneHeight * laneCount,
+                                          child: GestureDetector(
+                                            behavior: HitTestBehavior.opaque,
+                                            onDoubleTap: () {
+                                              if (!_touchNavigation) {
+                                                _setZoom(1);
                                               }
-                                            : null,
-                                        onLongPressMoveUpdate: canLoop
-                                            ? (d) {
-                                                if (_touchNavigation) {
-                                                  return;
-                                                }
-                                                setState(
-                                                  () => _loopEnd =
-                                                      (d.localPosition.dx /
-                                                              width)
-                                                          .clamp(0, 1),
-                                                );
-                                              }
-                                            : null,
-                                        onLongPressEnd: canLoop
-                                            ? (_) {
-                                                if (_touchNavigation) {
-                                                  return;
-                                                }
-                                                if (_loopStart != null &&
-                                                    _loopEnd != null) {
-                                                  widget.onLoopSelection(
-                                                    (math.min(
-                                                              _loopStart!,
-                                                              _loopEnd!,
-                                                            ) *
-                                                            frames)
-                                                        .round(),
-                                                    (math.max(
-                                                              _loopStart!,
-                                                              _loopEnd!,
-                                                            ) *
-                                                            frames)
-                                                        .round(),
-                                                    frames.round(),
-                                                  );
-                                                }
-                                              }
-                                            : null,
-                                        child: CustomPaint(
-                                          painter: _TimelinePainter(
-                                            palette: p,
-                                            frames: frames,
-                                            rate: rate,
-                                            position: current,
-                                            visibleStart:
-                                                (_horizontal.hasClients
-                                                    ? _horizontal.offset
-                                                    : 0) /
-                                                width,
-                                            visibleEnd:
-                                                ((_horizontal.hasClients
+                                            },
+                                            onTapUp: canSeek
+                                                ? (d) {
+                                                    if (_touchNavigation) {
+                                                      return;
+                                                    }
+                                                    widget.store.command(
+                                                      'seek',
+                                                      {
+                                                        'position_frames':
+                                                            (d.localPosition.dx /
+                                                                    width *
+                                                                    frames)
+                                                                .round(),
+                                                      },
+                                                    );
+                                                  }
+                                                : null,
+                                            onLongPressStart: canLoop
+                                                ? (d) {
+                                                    if (_touchNavigation) {
+                                                      return;
+                                                    }
+                                                    setState(() {
+                                                      _loopStart =
+                                                          (d.localPosition.dx /
+                                                                  width)
+                                                              .clamp(0, 1);
+                                                      _loopEnd = _loopStart;
+                                                    });
+                                                  }
+                                                : null,
+                                            onLongPressMoveUpdate: canLoop
+                                                ? (d) {
+                                                    if (_touchNavigation) {
+                                                      return;
+                                                    }
+                                                    setState(
+                                                      () => _loopEnd =
+                                                          (d.localPosition.dx /
+                                                                  width)
+                                                              .clamp(0, 1),
+                                                    );
+                                                  }
+                                                : null,
+                                            onLongPressEnd: canLoop
+                                                ? (_) {
+                                                    if (_touchNavigation) {
+                                                      return;
+                                                    }
+                                                    if (_loopStart != null &&
+                                                        _loopEnd != null) {
+                                                      widget.onLoopSelection(
+                                                        (math.min(
+                                                                  _loopStart!,
+                                                                  _loopEnd!,
+                                                                ) *
+                                                                frames)
+                                                            .round(),
+                                                        (math.max(
+                                                                  _loopStart!,
+                                                                  _loopEnd!,
+                                                                ) *
+                                                                frames)
+                                                            .round(),
+                                                        frames.round(),
+                                                      );
+                                                    }
+                                                  }
+                                                : null,
+                                            child: CustomPaint(
+                                              painter: _TimelinePainter(
+                                                palette: p,
+                                                frames: frames,
+                                                rate: rate,
+                                                position: current,
+                                                visibleStart:
+                                                    (_horizontal.hasClients
                                                         ? _horizontal.offset
-                                                        : 0) +
-                                                    viewport) /
-                                                width,
-                                            clipFrames: recording
-                                                ? recordedFrames.toDouble()
-                                                : take == null
-                                                ? 0
-                                                : frames,
-                                            peaks: _peaks,
-                                            names: names,
-                                            takeName:
-                                                widget.takeName ??
-                                                (recording
-                                                    ? 'Recording'
+                                                        : 0) /
+                                                    width,
+                                                visibleEnd:
+                                                    ((_horizontal.hasClients
+                                                            ? _horizontal.offset
+                                                            : 0) +
+                                                        viewport) /
+                                                    width,
+                                                clipFrames: recording
+                                                    ? recordedFrames.toDouble()
                                                     : take == null
-                                                    ? null
-                                                    : ((take['name']
-                                                                      is String &&
-                                                                  (take['name']
-                                                                          as String)
-                                                                      .trim()
-                                                                      .isNotEmpty)
-                                                              ? take['name']
-                                                              : 'Take ${widget.store.takes.indexOf(take) + 1}')
-                                                          .toString()),
-                                            colors: List.generate(
-                                              laneCount,
-                                              (i) => _channelColor(p, i),
+                                                    ? 0
+                                                    : frames,
+                                                peaks: _peaks,
+                                                names: names,
+                                                takeName:
+                                                    widget.takeName ??
+                                                    (recording
+                                                        ? 'Recording'
+                                                        : take == null
+                                                        ? null
+                                                        : ((take['name']
+                                                                          is String &&
+                                                                      (take['name']
+                                                                              as String)
+                                                                          .trim()
+                                                                          .isNotEmpty)
+                                                                  ? take['name']
+                                                                  : 'Take ${widget.store.takes.indexOf(take) + 1}')
+                                                              .toString()),
+                                                colors: List.generate(
+                                                  laneCount,
+                                                  (i) => _channelColor(p, i),
+                                                ),
+                                                loopStart:
+                                                    _loopStart ??
+                                                    (widget.loopStartFrame ==
+                                                            null
+                                                        ? null
+                                                        : widget.loopStartFrame! /
+                                                              frames),
+                                                loopEnd:
+                                                    _loopEnd ??
+                                                    (widget.loopEndFrame == null
+                                                        ? null
+                                                        : widget.loopEndFrame! /
+                                                              frames),
+                                              ),
                                             ),
-                                            loopStart:
-                                                _loopStart ??
-                                                (widget.loopStartFrame == null
-                                                    ? null
-                                                    : widget.loopStartFrame! /
-                                                          frames),
-                                            loopEnd:
-                                                _loopEnd ??
-                                                (widget.loopEndFrame == null
-                                                    ? null
-                                                    : widget.loopEndFrame! /
-                                                          frames),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
                                 ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            width: labelWidth,
+                            height: 56,
+                            child: IgnorePointer(
+                              child: ColoredBox(
+                                color: p.panel,
+                                child: Center(
+                                  child: Text(
+                                    'Tracks',
+                                    style: TextStyle(
+                                      color: p.mutedText,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Positioned(
+                            left: labelWidth,
+                            top: 0,
+                            right: 0,
+                            height: 56,
+                            child: IgnorePointer(
+                              child: ClipRect(
+                                child: CustomPaint(
+                                  painter: _StickyRulerPainter(
+                                    p,
+                                    frames,
+                                    rate,
+                                    current,
+                                    width,
+                                    _horizontal.hasClients
+                                        ? _horizontal.offset
+                                        : 0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -894,6 +956,47 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
       },
     );
   }
+}
+
+class _StickyRulerPainter extends CustomPainter {
+  final ConsolePalette palette;
+  final double frames, rate, position, timelineWidth, offset;
+  const _StickyRulerPainter(
+    this.palette,
+    this.frames,
+    this.rate,
+    this.position,
+    this.timelineWidth,
+    this.offset,
+  );
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.translate(-offset, 0);
+    _TimelinePainter(
+      palette: palette,
+      frames: frames,
+      rate: rate,
+      position: position,
+      clipFrames: frames,
+      visibleStart: offset / timelineWidth,
+      visibleEnd: (offset + size.width) / timelineWidth,
+      peaks: const [],
+      names: const {},
+      takeName: null,
+      colors: const [],
+    ).paint(canvas, Size(timelineWidth, 56));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StickyRulerPainter oldDelegate) =>
+      palette != oldDelegate.palette ||
+      frames != oldDelegate.frames ||
+      rate != oldDelegate.rate ||
+      position != oldDelegate.position ||
+      timelineWidth != oldDelegate.timelineWidth ||
+      offset != oldDelegate.offset;
 }
 
 class _TimelinePainter extends CustomPainter {
