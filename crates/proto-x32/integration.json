@@ -16,107 +16,233 @@
       "id": "x32",
       "name": "X32",
       "fixture": "x32",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "X32"
     },
     {
       "id": "x32rack",
       "name": "X32 Rack",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "X32"
     },
     {
       "id": "x32c",
       "name": "X32C",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "X32"
     },
     {
       "id": "x32p",
       "name": "X32P",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "X32"
     },
     {
       "id": "x32core",
       "name": "X32 Core",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "X32"
     },
     {
       "id": "m32",
       "name": "M32",
       "brand": "Midas",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "M32"
     },
     {
       "id": "m32c",
       "name": "M32C",
       "brand": "Midas",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "M32"
     },
     {
       "id": "m32r",
       "name": "M32R",
       "brand": "Midas",
-      "model_state": "recognized"
+      "model_state": "recognized",
+      "public_status": "Testing needed",
+      "family": "M32"
     }
   ],
   "features": {
     "identity": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Mixer discovery and connection are implemented.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "catalogue": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "The app uses the provider\u2019s channel topology and control ranges.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "channel_names": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Channel names can be read and edited.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "levels": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Input, destination and main fader/mute controls are implemented where the provider exposes them.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "fader_law": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "The mixer\u2019s registered fader law is used for level readouts.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart",
+        "app/lib/core/fader_law.dart"
+      ]
     },
     "processing": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Input EQ, gate and compressor controls are implemented for supported processor models.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart",
+        "crates/proto-x32/src/mapping.rs"
+      ]
     },
     "preamps": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Gain and phantom controls follow the selected physical input source.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart",
+        "crates/proto-x32/src/preamp.rs"
+      ]
     },
     "stereo_links": {
       "state": "unreviewed",
       "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
     },
     "input_routing": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Provider-owned input routing is connected to the shared routing screen; native option sets and source guards remain provider-specific.",
+      "public_note": "Input source routing is integrated; available patch points depend on the model.",
+      "references": [
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "app/lib/screens/routing.dart"
+      ]
     },
     "output_routing": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Output routing read/write is integrated with provider-owned route descriptors and guarded writes.",
+      "public_note": "Output routing control is integrated.",
+      "references": [
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs"
+      ]
     },
     "sends": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Send controls use the mixer\u2019s destination list.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "groups": {
       "state": "unreviewed",
       "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
     },
     "solo": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Solo control is implemented for supported strips.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "meters": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Live channel meters are implemented.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "fx": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "partial",
+      "reason": "Effect selection and parameter controls are implemented; a whole-slot on/bypass control is not integrated.",
+      "public_note": "Effect selection and parameters are available. Whole-slot on/bypass is unavailable.",
+      "references": [
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "app/lib/screens/fx.dart"
+      ]
     },
     "local_scenes": {
       "state": "unreviewed",
@@ -149,8 +275,17 @@
       ]
     },
     "pan_balance": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "public_note": "Pan and balance controls use the provider\u2019s supported strips and ranges.",
+      "references": [
+        "crates/proto-x32/src/driver.rs",
+        "crates/proto-x32/src/lib.rs",
+        "crates/engine/src/drivers/x32.rs",
+        "landing/src/content/docs/mixers.md",
+        "app/lib/mixer/controller.dart",
+        "app/lib/state/app_store_strips.dart"
+      ]
     },
     "output_processing": {
       "state": "unreviewed",

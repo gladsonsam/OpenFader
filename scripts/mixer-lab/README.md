@@ -309,3 +309,17 @@ projection at build time (`report --format public-json`). It exposes feature sta
 internal paths, artifacts or agent briefs.
 Building or serving `landing` requires Python 3 and the full repository checkout.
 No independently maintained website matrix or generated catalogue is checked in.
+
+
+The public comparison groups models by manufacturer and product family, with
+features down the rows. Model `family` overrides split Midas M32/M Air products
+from the corresponding Behringer families. `public: false` retains an internal
+identity or simulation row in the developer inventory without publishing a
+separate consumer product. It does not merge or transfer model evidence.
+
+Public `Implemented` means source-reviewed software integration; it does not
+satisfy the completion gate. Model `public_status` describes the existing setup
+guide's support/testing status. Pending device work is labelled `Testing needed`.
+A declared `public_note` supplies a brief user-facing limitation when a cell is
+opened. Unreviewed internal tasks are omitted from the default public feature
+comparison, while reviewed partial and missing integrations remain visible.

@@ -128,6 +128,10 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
   needed to use a feature; reveal extra explanation on request. Keep engineering
   evidence, internal gates and audit methodology in developer reports. Ship only
   referenced website assets; keep design experiments outside public assets.
+- Actions in the app and website must use clearly styled buttons or controls,
+  never a plain underlined label. Ordinary links within prose may remain links.
+  Use "Testing needed" for integrations awaiting device tests; do not imply that
+  testing is actively underway by calling them "In testing".
 
 - The feature catalogue is `scripts/mixer-lab/integration_features.json`.
   Each registered provider owns `crates/<provider>/integration.json`, including

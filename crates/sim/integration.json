@@ -16,13 +16,15 @@
       "id": "sim-generic",
       "name": "Generic fixture",
       "physical": false,
-      "model_state": "simulation"
+      "model_state": "simulation",
+      "public": false
     },
     {
       "id": "sim-studio",
       "name": "Studio fixture",
       "physical": false,
-      "model_state": "simulation"
+      "model_state": "simulation",
+      "public": false
     }
   ],
   "features": {

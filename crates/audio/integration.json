@@ -18,51 +18,110 @@
     {
       "id": "host-macos",
       "name": "macOS / Core Audio",
-      "model_state": "host platform"
+      "model_state": "host platform",
+      "public_status": "Device dependent"
     },
     {
       "id": "host-windows",
       "name": "Windows / ASIO",
-      "model_state": "host platform"
+      "model_state": "host platform",
+      "public_status": "Device dependent"
     },
     {
       "id": "host-linux",
       "name": "Linux / ALSA",
-      "model_state": "host platform"
+      "model_state": "host platform",
+      "public_status": "Device dependent"
     }
   ],
   "features": {
     "recording": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "take_browser": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "export_tracks": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "export_mix": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "import_takes": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "manual_soundcheck": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "recovery": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     },
     "remote_recorder": {
-      "state": "unreviewed",
-      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+      "state": "implemented",
+      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "references": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "crates/serve/src/soundcheck.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ]
     }
   },
   "evidence": []

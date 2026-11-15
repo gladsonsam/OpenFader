@@ -10,11 +10,11 @@ description: Which mixers work and what each one supports.
 | Behringer X Air (XR18, XR16) | Supported. Tested on an XR18 with firmware 1.20. |
 | Behringer XR12, Midas MR18 | Accepted, not tested. |
 | Mackie DL32S | Supported. |
-| Behringer X32, Midas M32 | In testing. Built from the published protocol and an emulator, not yet tried on a real desk. |
-| Behringer WING | In testing. Built from Behringer's protocol document, not yet tried on a real desk. |
+| Behringer X32, Midas M32 | Testing needed. Built from the published protocol and an emulator, not yet tried on a real desk. |
+| Behringer WING | Testing needed. Built from Behringer's protocol document, not yet tried on a real desk. |
 | Mackie DL16S, DL32R | Not supported. The app refuses to connect. |
 
-If you try OpenFader with a mixer marked "in testing", try it with [Work offline](/docs/getting-started#try-it-without-a-mixer) first, then on the real desk before a service or show, not during one. Reports from real desks help: use **Report a bug** in [Settings](/docs/settings#about--support).
+If you try OpenFader with a mixer marked "testing needed", try it with [Work offline](/docs/getting-started#try-it-without-a-mixer) first, then on the real desk before a service or show, not during one. Reports from real desks help: use **Report a bug** in [Settings](/docs/settings#about--support).
 
 ## What works on every supported mixer
 

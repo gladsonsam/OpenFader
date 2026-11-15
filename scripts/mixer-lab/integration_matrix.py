@@ -210,10 +210,12 @@ def build(root=ROOT, evidence=()):
             owned.update(matched)
         hooks = implementations.get(provider.get('adapter'), {})
         for model in provider['models']:
+            if 'public' in model and not isinstance(model['public'], bool):
+                raise ValueError(f'{model["id"]}: public visibility must be boolean')
             if set(model.get('overrides', {})) - set(provider['features']):
                 raise ValueError(f'{model["id"]}: unknown feature override')
             models.append({**model, 'provider': provider['id'], 'brand': model.get('brand', provider['brand']),
-                           'family': provider['family'], 'scope': provider['scope']})
+                           'family': model.get('family', provider['family']), 'scope': provider['scope']})
             fixture = model.get('fixture')
             if fixture and fixture not in lab['fixtures']:
                 raise ValueError(f'Unknown lab fixture: {fixture}')
@@ -243,6 +245,7 @@ def build(root=ROOT, evidence=()):
                 cell = {'id': f'{model["id"]}:{feature["id"]}', 'model': model['id'],
                         'feature': feature['id'], 'provider': provider['id'], 'implementation': state,
                         'reason': declaration['reason'], 'wiring': wiring, 'missing_hooks': missing,
+                        'public_note': declaration.get('public_note'),
                         'hook_sources': {name: hooks[name] for name in required if name in hooks},
                         'evidence': proof, 'required_evidence': required_proof, 'complete': complete,
                         'source_paths': paths, 'acceptance': feature['acceptance'],
@@ -335,18 +338,23 @@ def markdown(report):
 
 def public_report(report):
     """Public projection: no filesystem paths, artifacts or internal task briefs."""
-    labels = {'unreviewed': 'Not yet audited', 'missing': 'Not integrated',
-              'partial': 'Partial integration', 'implemented': 'Awaiting verification',
-              'blocked': 'Blocked', 'not_applicable': 'Not applicable'}
+    labels = {'unreviewed': 'Details pending', 'missing': 'Not available',
+              'partial': 'Partial', 'implemented': 'Implemented',
+              'blocked': 'Not available', 'not_applicable': 'Not applicable'}
+    models = [m for m in report['models'] if m.get('public', True)]
+    model_ids = {m['id'] for m in models}
     return {
         'schema': 1,
-        'models': [{key: m[key] for key in ('id', 'brand', 'name', 'family', 'scope')}
-                   for m in report['models']],
-        'features': [{key: f[key] for key in ('id', 'label', 'scope')} for f in report['features']],
+        'models': [{**{key: m[key] for key in ('id', 'brand', 'name', 'family', 'scope')},
+                    'status': m.get('public_status', 'Unsupported' if m.get('model_state') == 'explicitly rejected' else 'Planned')}
+                   for m in models],
+        'features': [{'id': f['id'], 'label': f.get('public_label', f['label']), 'scope': f['scope']}
+                     for f in sorted(report['features'], key=lambda f: f.get('public_order', 100))],
         'cells': [{'id': c['id'], 'model': c['model'], 'feature': c['feature'],
                    'state': 'verified' if c['complete'] else c['implementation'],
-                   'label': 'Verified' if c['complete'] else labels[c['implementation']]}
-                  for c in report['cells']],
+                   'label': 'Verified' if c['complete'] else labels[c['implementation']],
+                   'note': c.get('public_note')}
+                  for c in report['cells'] if c['model'] in model_ids],
     }
 
 

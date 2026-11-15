@@ -68,12 +68,29 @@ fn registry() { vec![RegisteredDriver { name: "fixture", driver: driver() }] }
     def test_public_projection_contains_no_internal_paths_or_briefs(self):
         report = matrix.build(self.root)
         public = matrix.public_report(report)
-        self.assertEqual(public['cells'][0]['label'], 'Not yet audited')
+        self.assertEqual(public['cells'][0]['label'], 'Details pending')
         self.assertNotIn('source_paths', json.dumps(public))
         self.assertNotIn('artifact', json.dumps(public))
         self.assertNotIn('evidence', json.dumps(public))
         self.assertNotIn('app/recorder.dart', json.dumps(public))
         self.assertNotIn('briefs', public)
+
+    def test_public_models_hide_internal_identities_without_losing_audit_rows(self):
+        self.provider['models'][0]['public'] = False
+        self.save_provider()
+        report = matrix.build(self.root)
+        self.assertEqual(len(report['models']), 1)
+        self.assertEqual(len(report['cells']), 1)
+        self.assertEqual(matrix.public_report(report)['models'], [])
+        self.assertEqual(matrix.public_report(report)['cells'], [])
+
+    def test_implemented_public_status_does_not_imply_verification(self):
+        self.provider['features']['recorder_names'].update(
+            state='implemented', references=['crates/fixture/src/lib.rs'])
+        self.save_provider()
+        report = matrix.build(self.root)
+        self.assertEqual(matrix.public_report(report)['cells'][0]['label'], 'Implemented')
+        self.assertFalse(report['cells'][0]['complete'])
 
     def test_scanner_ignores_comments_strings_nested_functions_and_lifetimes(self):
         code = '''/* outer /* fn false1() {} */ } */
