@@ -196,7 +196,6 @@ h2 { font-size: clamp(34px, 4.4vw, 52px); line-height: 1.18; }
 .download-content, .download-platforms { border-top: 1px solid var(--line); padding-top: 40px; }
 .download-content { display: grid; justify-items: start; gap: 24px; }
 .download .actions { align-items: center; gap: 20px; }
-.download-guide { color: var(--text); text-underline-offset: 5px; }
 .download .note { max-width: 52ch; line-height: 1.65; }
 .download-platforms { display: grid; align-content: start; gap: 32px; }
 .download-platforms h3 { margin: 0 0 8px; font-size: 17px; font-weight: 500; line-height: 1.4; color: var(--muted); }
