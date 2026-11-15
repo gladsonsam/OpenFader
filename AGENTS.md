@@ -137,8 +137,9 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
   Each registered provider owns `crates/<provider>/integration.json`, including
   its model inventory and an explicit disposition for every provider feature.
   Host recording features belong to `crates/audio/integration.json`; they must
-  not be repeated as mixer-dependent capabilities. Planned or rejected models
-  stay visible in `scripts/mixer-lab/integration_targets.json`.
+  not be repeated as mixer-dependent capabilities. Public compatibility compares
+  mixers only; host recording tracking stays in developer reports. Planned or
+  rejected models stay visible in `scripts/mixer-lab/integration_targets.json`.
 - Before adding or changing a capability, model, driver hook or shared flow,
   inspect the affected matrix cells and update their implementation disposition,
   source ownership and acceptance criteria. A new feature needs an explicit

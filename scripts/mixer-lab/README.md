@@ -311,7 +311,8 @@ Building or serving `landing` requires Python 3 and the full repository checkout
 No independently maintained website matrix or generated catalogue is checked in.
 
 
-The public comparison groups models by manufacturer and product family, with
+The public comparison includes mixer compatibility only; host recording remains
+in the internal engineering catalogue. It groups models by manufacturer and product family, with
 features down the rows. Model `family` overrides split Midas M32/M Air products
 from the corresponding Behringer families. `public: false` retains an internal
 identity or simulation row in the developer inventory without publishing a

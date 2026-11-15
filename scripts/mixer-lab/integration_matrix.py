@@ -341,7 +341,7 @@ def public_report(report):
     labels = {'unreviewed': 'Details pending', 'missing': 'Not available',
               'partial': 'Partial', 'implemented': 'Implemented',
               'blocked': 'Not available', 'not_applicable': 'Not applicable'}
-    models = [m for m in report['models'] if m.get('public', True)]
+    models = [m for m in report['models'] if m['scope'] == 'provider' and m.get('public', True)]
     model_ids = {m['id'] for m in models}
     return {
         'schema': 1,
@@ -349,7 +349,8 @@ def public_report(report):
                     'status': m.get('public_status', 'Unsupported' if m.get('model_state') == 'explicitly rejected' else 'Planned')}
                    for m in models],
         'features': [{'id': f['id'], 'label': f.get('public_label', f['label']), 'scope': f['scope']}
-                     for f in sorted(report['features'], key=lambda f: f.get('public_order', 100))],
+                     for f in sorted(report['features'], key=lambda f: f.get('public_order', 100))
+                     if f['scope'] == 'provider'],
         'cells': [{'id': c['id'], 'model': c['model'], 'feature': c['feature'],
                    'state': 'verified' if c['complete'] else c['implementation'],
                    'label': 'Verified' if c['complete'] else labels[c['implementation']],

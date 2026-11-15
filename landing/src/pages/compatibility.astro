@@ -15,10 +15,6 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
       <h1>Mixer compatibility</h1>
       <p>Find your mixer. Compare its features.</p>
     </header>
-    <div class="scope-tabs" role="group" aria-label="Compatibility view">
-      <button type="button" data-scope="provider" aria-pressed="true">Mixers</button>
-      <button type="button" data-scope="host" aria-pressed="false">Recording</button>
-    </div>
     <form class="compatibility-filters" onsubmit="return false">
       <label>Manufacturer<select id="manufacturer">{[...new Set(mixerModels.map(m => m.brand))].sort().map(b => <option selected={b === brand}>{b}</option>)}</select></label>
       <label>Product<select id="product">{families.map(f => <option selected={f === family}>{f}</option>)}</select></label>
@@ -48,7 +44,6 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
   const search = document.querySelector<HTMLInputElement>('#feature-search')!;
   const table = document.querySelector('.compatibility table')!;
   const dialog = document.querySelector<HTMLDialogElement>('#cell-detail')!;
-  let scope = 'provider';
   const params = new URLSearchParams(location.search);
   const descriptions: Record<string, string> = {
     unreviewed: 'Feature details are still being reviewed.',
@@ -60,18 +55,18 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
     not_applicable: 'This feature does not apply to this model.',
   };
   function text(tag: string, value: string) { const e = document.createElement(tag); e.textContent = value; return e; }
-  function modelsForProduct() { return data.models.filter(m => m.scope === scope && m.brand === manufacturer.value && m.family === product.value); }
+  function modelsForProduct() { return data.models.filter(m => m.scope === 'provider' && m.brand === manufacturer.value && m.family === product.value); }
   function choices(select: HTMLSelectElement, entries: [string, string][], preferred: string) {
     select.replaceChildren(...entries.map(([label, value]) => new Option(label, value)));
     if (entries.some(([, value]) => value === preferred)) select.value = preferred;
   }
   function models(preferred = '') { choices(model, [['All models', ''], ...modelsForProduct().map(m => [m.name, m.id] as [string, string])], preferred); draw(); }
   function products(preferred = '', preferredModel = '') {
-    const families = [...new Set(data.models.filter(m => m.scope === scope && m.brand === manufacturer.value).map(m => m.family))].sort();
+    const families = [...new Set(data.models.filter(m => m.scope === 'provider' && m.brand === manufacturer.value).map(m => m.family))].sort();
     choices(product, families.map(f => [f, f]), preferred); models(preferredModel);
   }
   function manufacturers(preferred = '', preferredProduct = '', preferredModel = '') {
-    const brands = [...new Set(data.models.filter(m => m.scope === scope).map(m => m.brand))].sort();
+    const brands = [...new Set(data.models.filter(m => m.scope === 'provider').map(m => m.brand))].sort();
     choices(manufacturer, brands.map(b => [b, b]), preferred); products(preferredProduct, preferredModel);
   }
   function draw() {
@@ -79,7 +74,7 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
     const coming = ms.every(m => m.status === 'Planned' || m.status === 'Unsupported');
     // Unfinished audit tasks remain in the developer matrix. Publish reviewed
     // implementation and known gaps, without turning missing proof into failure.
-    const fs = data.features.filter(f => f.scope === scope && ms.some(m => byId.get(`${m.id}:${f.id}`)?.state !== 'unreviewed') && f.label.toLowerCase().includes(search.value.trim().toLowerCase()));
+    const fs = data.features.filter(f => f.scope === 'provider' && ms.some(m => byId.get(`${m.id}:${f.id}`)?.state !== 'unreviewed') && f.label.toLowerCase().includes(search.value.trim().toLowerCase()));
     const head = document.createElement('thead'), hr = document.createElement('tr');
     const corner = text('th', 'Feature'); corner.setAttribute('scope', 'col'); hr.append(corner);
     for (const m of ms) { const th = text('th', m.name); th.setAttribute('scope', 'col'); th.append(text('small', m.status)); hr.append(th); } head.append(hr);
@@ -98,7 +93,6 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
     document.querySelector<HTMLElement>('.matrix-scroll')!.hidden = !empty.hidden;
     document.querySelector<HTMLElement>('#comparison-note')!.hidden = coming;
     const url = new URL(location.href); url.search = '';
-    if (scope === 'host') url.searchParams.set('view', 'recording');
     url.searchParams.set('manufacturer', manufacturer.value); url.searchParams.set('product', product.value);
     if (model.value) url.searchParams.set('model', model.value);
     history.replaceState(null, '', url);
@@ -115,11 +109,6 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
   manufacturer.addEventListener('change', () => products());
   product.addEventListener('change', () => models());
   model.addEventListener('change', draw); search.addEventListener('input', draw);
-  document.querySelectorAll<HTMLButtonElement>('[data-scope]').forEach(button => button.addEventListener('click', () => {
-    scope = button.dataset.scope!; search.value = '';
-    document.querySelectorAll<HTMLButtonElement>('[data-scope]').forEach(b => b.setAttribute('aria-pressed', String(b === button))); manufacturers();
-  }));
-  if (params.get('view') === 'recording') { scope = 'host'; document.querySelectorAll<HTMLButtonElement>('[data-scope]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.scope === scope))); }
   manufacturers(params.get('manufacturer') || 'Behringer', params.get('product') || 'X Air', params.get('model') || '');
 </script>
 <style is:global>
@@ -127,9 +116,6 @@ const features = matrix.features.filter(f => f.scope === 'provider' && models.so
   .compatibility-intro { margin-bottom: 24px; }
   .compatibility-intro h1 { font-size: clamp(44px, 6vw, 64px); }
   .compatibility-intro p { font-size: 22px; margin: 12px 0 0; }
-  .scope-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
-  .scope-tabs button { font: inherit; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 12px 0; cursor: pointer; }
-  .scope-tabs button[aria-pressed='true'] { color: var(--text); border-bottom-color: var(--accent); }
   .compatibility-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; max-width: 960px; }
   .compatibility label { display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
   .compatibility input, .compatibility select { min-width: 0; width: 100%; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); padding: 12px; border: 1px solid var(--line); border-radius: 6px; }

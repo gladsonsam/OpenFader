@@ -75,6 +75,15 @@ fn registry() { vec![RegisteredDriver { name: "fixture", driver: driver() }] }
         self.assertNotIn('app/recorder.dart', json.dumps(public))
         self.assertNotIn('briefs', public)
 
+    def test_public_compatibility_excludes_host_recording_but_keeps_internal_tracking(self):
+        report = matrix.build()
+        public = matrix.public_report(report)
+        self.assertTrue(any(m['scope'] == 'host' for m in report['models']))
+        self.assertTrue(any(f['scope'] == 'host' for f in report['features']))
+        self.assertTrue(all(m['scope'] == 'provider' for m in public['models']))
+        self.assertTrue(all(f['scope'] == 'provider' for f in public['features']))
+        self.assertFalse(any(c['feature'] == 'recording' for c in public['cells']))
+
     def test_public_models_hide_internal_identities_without_losing_audit_rows(self):
         self.provider['models'][0]['public'] = False
         self.save_provider()
