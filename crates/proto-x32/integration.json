@@ -261,18 +261,22 @@
       "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
     },
     "recorder_names": {
-      "state": "missing",
-      "reason": "The native protocol/UI may have routing data, but this provider has no recorder_descriptor adapter hook.",
+      "state": "partial",
+      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
       "references": [
+        "crates/proto-x32/src/soundcheck.rs",
         "crates/engine/src/drivers/x32.rs"
-      ]
+      ],
+      "public_note": "Testing needed."
     },
     "auto_soundcheck": {
-      "state": "missing",
-      "reason": "No provider soundcheck profile/read/write integration is registered; manual host playback is a separate feature.",
+      "state": "partial",
+      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
       "references": [
+        "crates/proto-x32/src/soundcheck.rs",
         "crates/engine/src/drivers/x32.rs"
-      ]
+      ],
+      "public_note": "Testing needed."
     },
     "pan_balance": {
       "state": "implemented",

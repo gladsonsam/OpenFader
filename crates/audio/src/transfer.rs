@@ -349,6 +349,28 @@ pub fn copy_take(source: &Path, destination: &Path) -> io::Result<TakeManifest> 
     commit_dir(&staged, destination)?;
     Ok(m)
 }
+// Keep identities on individual track entries so they follow the audio and
+// name when an exported folder is intentionally reordered and renumbered.
+fn track_sources(
+    entries: &[serde_json::Value],
+    key: &str,
+    channels: u16,
+) -> io::Result<Option<Vec<String>>> {
+    if !entries.iter().any(|entry| entry.get(key).is_some()) {
+        return Ok(None);
+    }
+    let sources = entries
+        .iter()
+        .map(|entry| match entry.get(key) {
+            None | Some(serde_json::Value::Null) => Ok(String::new()),
+            Some(serde_json::Value::String(source)) => Ok(source.clone()),
+            _ => Err(invalid("invalid track source identity")),
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    crate::validate_capture_sources(&sources, channels)?;
+    Ok(Some(sources))
+}
+
 /// Import an OpenFader numbered mono-track folder into a new take.
 pub fn import_tracks(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
     no_target(destination)?;
@@ -365,6 +387,8 @@ pub fn import_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
         .ok_or_else(|| invalid("missing tracks"))?;
     let channels = u16::try_from(entries.len()).map_err(|_| invalid("invalid track count"))?;
     let layout = ChannelLayout::new(channels)?;
+    let capture_sources = track_sources(entries, "capture_source", channels)?;
+    let playback_sources = track_sources(entries, "playback_source", channels)?;
     let rate = listing["sample_rate"]
         .as_u64()
         .and_then(|v| u32::try_from(v).ok())
@@ -432,6 +456,16 @@ pub fn import_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
     if has_names {
         manifest.channel_names = names;
     }
+    if let Some(sources) = capture_sources {
+        manifest
+            .metadata
+            .insert("capture_sources".into(), serde_json::to_value(sources)?);
+    }
+    if let Some(sources) = playback_sources {
+        manifest
+            .metadata
+            .insert("playback_sources".into(), serde_json::to_value(sources)?);
+    }
     publish(&staged, &manifest)?;
     commit_dir(&staged, destination)?;
     Ok(manifest)
@@ -441,6 +475,12 @@ pub fn import_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
 pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
     no_target(destination)?;
     let m = validate_take(source)?;
+    let capture_sources = crate::take_capture_sources(&m)?;
+    let playback_sources = if m.metadata.contains_key("playback_sources") {
+        Some(crate::take_playback_sources(&m)?)
+    } else {
+        None
+    };
     let mono = ChannelLayout::new(1)?;
     let tmp = stage(parent(destination)?)?;
     let staged = tmp.0.join("content");
@@ -457,7 +497,16 @@ pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
                 .open(staged.join(&filename))?,
         );
         export_header(&mut file, m.sample_rate, m.frames, mono, 0)?;
-        entries.push(serde_json::json!({"channel":index + 1,"name":m.channel_names.get(index as usize),"file":filename}));
+        let mut entry = serde_json::json!({"channel":index + 1,"name":m.channel_names.get(index as usize),"file":filename});
+        if !capture_sources.is_empty() {
+            entry["capture_source"] = serde_json::to_value(&capture_sources[index as usize])?;
+        }
+        if let Some(sources) = &playback_sources {
+            // A null identity explicitly retains an unknown playback override,
+            // preventing fallback to the original capture routing on import.
+            entry["playback_source"] = serde_json::to_value(sources.get(index as usize))?;
+        }
+        entries.push(entry);
         outputs.push(file);
     }
     let channels = usize::from(m.channels);
@@ -734,6 +783,85 @@ mod tests {
         assert!(import_wav(&wav_path, &root.join("truncated")).is_err());
         assert!(!root.join("bad-frames").exists());
         assert!(!root.join("truncated").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn track_folder_provenance_follows_reordered_audio_and_names() {
+        let root = fixture();
+        let source = root.join("source");
+        let mut writer =
+            TakeWriter::create_with_layout(&source, 48_000, 8, ChannelLayout::new(3).unwrap())
+                .unwrap();
+        writer
+            .set_capture_sources(&["input:a".into(), "input:b".into(), "input:c".into()])
+            .unwrap();
+        writer
+            .append_interleaved(&[100, 200, 300, 400, 500, 600])
+            .unwrap();
+        let mut manifest = writer.finish().unwrap();
+        manifest.channel_names = vec!["A".into(), "B".into(), "C".into()];
+        publish(&source, &manifest).unwrap();
+        crate::save_playback_sources(
+            &source,
+            &["return:a".into(), "return:b".into(), "return:c".into()],
+        )
+        .unwrap();
+        let tracks = root.join("tracks");
+        export_tracks(&source, &tracks).unwrap();
+        let listing_path = tracks.join("manifest.json");
+        let mut listing: serde_json::Value =
+            serde_json::from_reader(File::open(&listing_path).unwrap()).unwrap();
+        let original_entries = listing["tracks"].as_array().unwrap().clone();
+        for index in 0..3 {
+            fs::rename(
+                tracks.join(format!("track-{:02}.wav", index + 1)),
+                tracks.join(format!("original-{index}.wav")),
+            )
+            .unwrap();
+        }
+        for (index, original) in [2, 0, 1].into_iter().enumerate() {
+            fs::rename(
+                tracks.join(format!("original-{original}.wav")),
+                tracks.join(format!("track-{:02}.wav", index + 1)),
+            )
+            .unwrap();
+            listing["tracks"][index] = original_entries[original].clone();
+            listing["tracks"][index]["channel"] = (index + 1).into();
+            listing["tracks"][index]["file"] = format!("track-{:02}.wav", index + 1).into();
+        }
+        serde_json::to_writer(File::create(&listing_path).unwrap(), &listing).unwrap();
+        let imported = root.join("imported");
+        let manifest = import_tracks(&tracks, &imported).unwrap();
+        assert_eq!(manifest.channel_names, ["C", "A", "B"]);
+        assert_eq!(
+            crate::take_capture_sources(&manifest).unwrap(),
+            ["input:c", "input:a", "input:b"]
+        );
+        assert_eq!(
+            crate::take_playback_sources(&manifest).unwrap(),
+            ["return:c", "return:a", "return:b"]
+        );
+        let expected: Vec<u8> = [300i32, 100, 200, 600, 400, 500]
+            .into_iter()
+            .flat_map(|sample| sample.to_le_bytes()[..3].to_vec())
+            .collect();
+        assert_eq!(waveform_bytes(&imported, &manifest), expected);
+        // User-confirmed unknown mappings must stay unknown after export/import.
+        crate::save_playback_sources(&source, &[]).unwrap();
+        let unknown_tracks = root.join("unknown-tracks");
+        export_tracks(&source, &unknown_tracks).unwrap();
+        let unknown = import_tracks(&unknown_tracks, &root.join("unknown")).unwrap();
+        assert!(crate::take_playback_sources(&unknown)
+            .unwrap()
+            .iter()
+            .all(String::is_empty));
+        assert!(!crate::take_capture_sources(&unknown).unwrap().is_empty());
+        // Reject malformed identities before publishing an imported take.
+        listing["tracks"][0]["capture_source"] = "bad\nidentity".into();
+        serde_json::to_writer(File::create(&listing_path).unwrap(), &listing).unwrap();
+        assert!(import_tracks(&tracks, &root.join("bad-source")).is_err());
+        assert!(!root.join("bad-source").exists());
         fs::remove_dir_all(root).unwrap();
     }
 

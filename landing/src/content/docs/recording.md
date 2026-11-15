@@ -84,6 +84,8 @@ The phone can now record, stop, play and run soundchecks on the computer. To dis
 
 You can also enable browser hosting in the same section. Open the displayed browser address on another device and enter the same optional password. Recording still runs on the hosting computer; the browser controls its recorder and mixer session.
 
+When the connected provider can identify the capture sources, OpenFader saves that mapping with the recording. Native take folders and exported mono tracks preserve it. During playback, tracks are matched by their saved source identities rather than by their names or positions. Imported audio without this information asks for a track mapping before automatic mixer routing.
+
 ## Limits
 
 - Per-track arm, mute and solo buttons in the arrangement do not work yet.

@@ -24,6 +24,7 @@ mod presentation;
 pub mod routing;
 pub mod sends;
 mod solo;
+pub mod soundcheck;
 pub(crate) mod telemetry;
 
 pub use addrs::{X32_STRIPS, X32_TOPOLOGY};

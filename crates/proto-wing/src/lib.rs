@@ -21,6 +21,7 @@ mod routing;
 pub mod sends;
 mod show_library;
 pub mod source;
+pub mod soundcheck;
 pub(crate) use catalogue::capabilities;
 pub use processors::{
     validate_complete_native_processor_snapshot, validate_native_processor_snapshot,

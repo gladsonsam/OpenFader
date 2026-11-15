@@ -1,4 +1,4 @@
-//! Injectable soundcheck commands. Production has no verified backend yet.
+//! Injectable provider-neutral soundcheck commands and playback preparation.
 use serde_json::Value;
 use std::{
     future::Future,
@@ -47,6 +47,10 @@ pub trait SoundcheckBackend: Send {
     /// not merely that cancellation was requested.
     fn cancellation_handle(&self) -> CancellationHandle {
         CancellationHandle::default()
+    }
+    /// Freshly probed capture lanes usable for an explicit imported-track mapping.
+    fn mapping_options(&self) -> Option<Value> {
+        None
     }
     fn available(&self) -> bool {
         false

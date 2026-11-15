@@ -102,6 +102,10 @@ pub struct SendDestination {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SoundcheckProfile {
     pub capture_channels: u16,
+    /// Provider-owned stable physical source/tap identity for each capture lane.
+    pub capture_sources: Vec<String>,
+    /// Capture lane to interface output; None means this lane is not covered.
+    pub output_mapping: Vec<Option<usize>>,
     pub output_channels: u16,
     pub output_mask: Vec<bool>,
     pub route_changes: Vec<(String, i32)>,
@@ -112,6 +116,8 @@ pub struct SoundcheckProfile {
 /// Provider-owned USB interface hints and capture labels from routing readback.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct RecorderDescriptor {
+    /// Stable physical source/tap identities; empty when capture provenance is unknown.
+    pub capture_sources: Vec<String>,
     pub interface_names: Vec<String>,
     pub capture_channels: u16,
     pub output_channels: u16,
@@ -134,6 +140,32 @@ impl SoundcheckProfile {
             self.output_mask.len() == usize::from(self.output_channels),
             "output mask length mismatch"
         );
+        anyhow::ensure!(
+            self.capture_sources.len() == usize::from(self.capture_channels),
+            "capture source count mismatch"
+        );
+        anyhow::ensure!(
+            self.output_mapping.len() == usize::from(self.capture_channels),
+            "playback mapping length mismatch"
+        );
+        let mut used = std::collections::HashSet::new();
+        for (lane, output) in self.output_mapping.iter().enumerate() {
+            if let Some(output) = output {
+                anyhow::ensure!(
+                    *output < usize::from(self.output_channels)
+                        && self.output_mask[*output]
+                        && used.insert(*output),
+                    "invalid or duplicate playback output"
+                );
+                anyhow::ensure!(
+                    !self.capture_sources[lane].is_empty()
+                        && self.capture_sources[lane].len() <= 256
+                        && !self.capture_sources[lane].chars().any(char::is_control),
+                    "missing or invalid capture source identity"
+                );
+            }
+        }
+        anyhow::ensure!(!used.is_empty(), "no covered playback outputs");
         Ok(())
     }
 }
@@ -338,20 +370,60 @@ pub trait DynDriver: Send + Sync {
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         &[]
     }
-    fn legacy_native_processor_required(&self, _field: &str, _value: &ParamValue) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorDomain>> { Ok(None) }
-    async fn capture_native_processors(&self, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorSnapshot>> { Ok(None) }
-    fn validate_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
-    async fn revalidate_captured_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
-    async fn preflight_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
-    async fn recall_native_processors(&self, _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot, _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<()> { anyhow::bail!("native processor snapshots unavailable") }
+    fn legacy_native_processor_required(
+        &self,
+        _field: &str,
+        _value: &ParamValue,
+    ) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorDomain>> {
+        Ok(None)
+    }
+    async fn capture_native_processors(
+        &self,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<Option<openfader_core::native_processor::NativeProcessorSnapshot>> {
+        Ok(None)
+    }
+    fn validate_native_processors(
+        &self,
+        _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("native processor snapshots unavailable")
+    }
+    async fn revalidate_captured_native_processors(
+        &self,
+        _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("native processor snapshots unavailable")
+    }
+    async fn preflight_native_processors(
+        &self,
+        _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("native processor snapshots unavailable")
+    }
+    async fn recall_native_processors(
+        &self,
+        _snapshot: &openfader_core::native_processor::NativeProcessorSnapshot,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("native processor snapshots unavailable")
+    }
 
     fn param_kind_ranges(&self) -> &'static [openfader_core::params::ParamKindRange] {
         &[]
     }
     /// Optional exact guarded processor targets keyed by processor id.
-    fn guarded_processor_targets(&self) -> Option<Vec<openfader_core::input_processors::GuardedProcessorTargets>> { None }
+    fn guarded_processor_targets(
+        &self,
+    ) -> Option<Vec<openfader_core::input_processors::GuardedProcessorTargets>> {
+        None
+    }
     /// Optional exact static strip applicability for catalogue parameters.
-    fn param_applicable_strips(&self, _param: &str) -> Option<Vec<u16>> { None }
+    fn param_applicable_strips(&self, _param: &str) -> Option<Vec<u16>> {
+        None
+    }
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
         &[]
     }
@@ -1643,6 +1715,7 @@ impl_dyn_driver!(openfader_sim::SimDriver {
             interface_names: vec!["OpenFader simulation fixture".into(), "generic".into()],
             capture_channels: profile.capture_channels,
             output_channels: profile.output_channels,
+            capture_sources: profile.capture_sources.clone(),
             channel_names: names,
             capture_strip_ids: Vec::new(),
             input_channel_names: BTreeMap::new(),
@@ -1667,7 +1740,8 @@ impl_dyn_driver!(openfader_sim::SimDriver {
                 expected.insert(channel.to_string(), serde_json::json!({"analog": analog, "usb": usb, "bank": bank}));
             }
         }
-        let profile = SoundcheckProfile { capture_channels: count, output_channels: count, output_mask: mask, route_changes: changes, snapshot_keys: keys, driver_state: serde_json::json!({"expected": expected, "links": []}) };
+        let output_mapping = mask.iter().enumerate().map(|(lane, enabled)| enabled.then_some(lane)).collect();
+        let profile = SoundcheckProfile { capture_channels: count, capture_sources: (0..count).map(|lane| format!("sim:physical/{lane}:raw")).collect(), output_mapping, output_channels: count, output_mask: mask, route_changes: changes, snapshot_keys: keys, driver_state: serde_json::json!({"expected": expected, "links": []}) };
         profile.validate()?;
         Ok(Some(profile))
     }
@@ -1880,6 +1954,23 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     }
     fn selector_pair_valid(&self, left: u16) -> bool { left < 16 && left.is_multiple_of(2) }
     async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
+        if let Some(rest) = key.strip_prefix("usb_send/") {
+            let (slot, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("Invalid USB capture key"))?;
+            let slot: usize = slot.parse()?;
+            check(&[])?;
+            let value = self.soundcheck_usb_selector(slot, field).await?;
+            if !state.is_null() { anyhow::ensure!(state["sends"][slot][field].as_i64() == Some(i64::from(value)), "USB capture routing changed"); }
+            check(&[])?;
+            return Ok(value);
+        }
+        if let Some(field) = key.strip_prefix("aux/") {
+            let index = match field { "usb_pair" => 0, "bank" => 1, _ => anyhow::bail!("Unknown aux selector") };
+            check(&[StripId(35)])?;
+            let route = self.soundcheck_aux_route().await?;
+            check(&[StripId(35)])?;
+            if !state.is_null() { anyhow::ensure!(state["aux"] == serde_json::json!(route), "Aux routing changed"); }
+            return Ok(route[index]);
+        }
         if let Some(rest) = key.strip_prefix("input_pair/") {
             let (left, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("invalid pair"))?;
             let left: u16 = left.parse()?;
@@ -1907,6 +1998,19 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         Ok(route[index])
     }
     async fn soundcheck_route_write(&self, key: &str, state: &serde_json::Value, expected: i32, desired: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<serde_json::Value> {
+        check(&[])?;
+        self.guard_soundcheck_dependencies(state).await?;
+        check(&[])?;
+        if let Some(field) = key.strip_prefix("aux/") {
+            let index = match field { "usb_pair" => 0, "bank" => 1, _ => anyhow::bail!("Unknown aux selector") };
+            check(&[StripId(35)])?;
+            let route = self.soundcheck_aux_route().await?;
+            anyhow::ensure!((state.is_null() || state["aux"] == serde_json::json!(route)) && route[index] == expected, "Aux routing conflict");
+            let actual = self.soundcheck_aux_write(route, index, desired, check).await?;
+            let mut next = state.clone();
+            if !next.is_null() { next["aux"] = serde_json::json!(actual); }
+            return Ok(next);
+        }
         if let Some(rest) = key.strip_prefix("input_pair/") {
             let (left, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("invalid pair"))?;
             let left: u16 = left.parse()?;
@@ -1940,21 +2044,26 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
     async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
         let readback = openfader_proto_xair::XAirDriver::soundcheck_readback(self).await?;
-        let preflight = openfader_proto_xair::soundcheck_profile::preflight(&readback)?;
         let mut tracks: Vec<Vec<u16>> = vec![Vec::new(); 18];
-        for (&strip, route) in &preflight.expected {
-            if route.bank == 0 {
-                if let Some(ids) = tracks.get_mut(route.analog as usize) {
-                    ids.push(strip);
+        for (strip, route) in readback["inputs"].as_array().unwrap().iter().enumerate() {
+            if route["bank"] == 0 {
+                for (track, send) in readback["sends"].as_array().unwrap().iter().enumerate() {
+                    if send["source"] == route["analog"] && send["tap"] == 0 { tracks[track].push(strip as u16); }
                 }
+            }
+        }
+        if readback["aux_bank"] == 0 {
+            for (track, send) in readback["sends"].as_array().unwrap().iter().enumerate() {
+                if send["tap"] == 0 && matches!(send["source"].as_i64(), Some(16 | 17)) { tracks[track].push(35); }
             }
         }
         for ids in &mut tracks { ids.sort_unstable(); }
         Ok(Some(RecorderDescriptor {
-            // Preflight accepts only the adapter's verified model and firmware.
-            interface_names: vec!["XR18".into()],
+            // The provider checks the actual reported model before using this layout.
+            interface_names: vec![readback["model"].as_str().unwrap().into()],
             capture_channels: 18,
             output_channels: 18,
+            capture_sources: readback["sends"].as_array().unwrap().iter().map(|s| format!("xair/{}/usb-send/source/{}/tap/{}", readback["model"].as_str().unwrap(), s["source"].as_i64().unwrap(), s["tap"].as_i64().unwrap())).collect(),
             channel_names: vec![String::new(); tracks.len()],
             capture_strip_ids: tracks,
             input_channel_names: BTreeMap::new(),
@@ -1965,7 +2074,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         let readback = openfader_proto_xair::XAirDriver::soundcheck_readback(self).await?;
         let preflight = openfader_proto_xair::soundcheck_profile::preflight(&readback)?;
         let expected: serde_json::Map<String, serde_json::Value> = preflight.expected.iter().map(|(channel, route)| (channel.to_string(), serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank}))).collect();
-        let profile = SoundcheckProfile { capture_channels: 18, output_channels: 18, output_mask: preflight.output_mask.to_vec(), route_changes: preflight.plan, snapshot_keys: preflight.keys, driver_state: serde_json::json!({"expected": expected, "links": preflight.links}) };
+        let profile = SoundcheckProfile { capture_channels: 18, output_channels: 18,
+            capture_sources: readback["sends"].as_array().unwrap().iter().map(|s| format!("xair/{}/usb-send/source/{}/tap/0", readback["model"].as_str().unwrap(), s["source"].as_i64().unwrap())).collect(),
+            output_mapping: preflight.output_mapping,
+            output_mask: preflight.output_mask.to_vec(), route_changes: preflight.plan, snapshot_keys: preflight.keys, driver_state: serde_json::json!({"expected": expected, "links": preflight.links, "sends": readback["sends"], "aux": [readback["aux_usb_pair"], readback["aux_bank"]]}) };
         profile.validate()?;
         Ok(Some(profile))
     }
@@ -2481,6 +2593,7 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
             capture_channels: openfader_proto_dl32s::output_routing::USB_SEND_COUNT,
             output_channels: openfader_proto_dl32s::output_routing::USB_SEND_COUNT,
             channel_names: mapping.source_labels,
+            capture_sources: mapping.capture_sources,
             capture_strip_ids: mapping.strip_ids,
             input_channel_names: BTreeMap::new(),
         }))
@@ -2490,8 +2603,19 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     }
 
     async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
-        openfader_proto_dl32s::soundcheck::assess()?;
-        Ok(None)
+        let p = openfader_proto_dl32s::Dl32sDriver::soundcheck_profile(self).await?;
+        let profile = SoundcheckProfile { capture_channels: 32, output_channels: 32,
+            capture_sources: p.capture_sources, output_mapping: p.output_mapping,
+            output_mask: p.output_mask, route_changes: p.changes,
+            snapshot_keys: p.keys, driver_state: p.state };
+        profile.validate()?;
+        Ok(Some(profile))
+    }
+    async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
+        self.soundcheck_route_read(key, state, check).await
+    }
+    async fn soundcheck_route_write(&self, key: &str, state: &serde_json::Value, expected: i32, desired: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<serde_json::Value> {
+        self.soundcheck_route_write(key, state, expected, desired, check).await
     }
     fn routing_strip_kind(&self, kind: StripKind) -> bool { matches!(kind, StripKind::In | StripKind::Ret) }
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { openfader_proto_dl32s::strips::scopes() }
@@ -2759,6 +2883,8 @@ mod soundcheck_profile_tests {
         for count in [18, 32] {
             let mut profile = SoundcheckProfile {
                 capture_channels: count,
+                capture_sources: (0..count).map(|lane| format!("fixture:{lane}")).collect(),
+                output_mapping: (0..usize::from(count)).map(Some).collect(),
                 output_channels: count,
                 output_mask: vec![true; count as usize],
                 route_changes: vec![],
@@ -2777,13 +2903,10 @@ mod soundcheck_profile_tests {
     }
 
     #[tokio::test]
-    async fn mackie_soundcheck_reports_unverified_signal_path() {
+    async fn mackie_soundcheck_requires_live_routing_readback() {
         let driver = openfader_proto_dl32s::Dl32sDriver::new();
         let error = DynDriver::soundcheck_profile(&driver).await.unwrap_err();
-        assert_eq!(
-            error.downcast_ref::<openfader_proto_dl32s::soundcheck::UnavailableReason>(),
-            Some(&openfader_proto_dl32s::soundcheck::UnavailableReason::UnverifiedSignalPath)
-        );
+        assert!(error.to_string().contains("not connected"));
     }
 }
 

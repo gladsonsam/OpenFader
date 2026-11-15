@@ -19,14 +19,14 @@
       "overrides": {
         "recorder_names": {
           "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "reason": "This model has USB storage recording/playback, not the configured XR18/MR18 multichannel host USB interface. It must not inherit an 18-channel routing profile.",
           "references": [
             "crates/proto-xair/src/soundcheck_profile.rs"
           ]
         },
         "auto_soundcheck": {
           "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "reason": "This model has USB storage recording/playback, not the configured XR18/MR18 multichannel host USB interface. It must not inherit an 18-channel routing profile.",
           "references": [
             "crates/proto-xair/src/soundcheck_profile.rs"
           ]
@@ -42,14 +42,14 @@
       "overrides": {
         "recorder_names": {
           "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "reason": "This model has USB storage recording/playback, not the configured XR18/MR18 multichannel host USB interface. It must not inherit an 18-channel routing profile.",
           "references": [
             "crates/proto-xair/src/soundcheck_profile.rs"
           ]
         },
         "auto_soundcheck": {
           "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "reason": "This model has USB storage recording/playback, not the configured XR18/MR18 multichannel host USB interface. It must not inherit an 18-channel routing profile.",
           "references": [
             "crates/proto-xair/src/soundcheck_profile.rs"
           ]
@@ -71,22 +71,6 @@
       "name": "MR18",
       "brand": "Midas",
       "model_state": "recognized",
-      "overrides": {
-        "recorder_names": {
-          "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
-          "references": [
-            "crates/proto-xair/src/soundcheck_profile.rs"
-          ]
-        },
-        "auto_soundcheck": {
-          "state": "blocked",
-          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
-          "references": [
-            "crates/proto-xair/src/soundcheck_profile.rs"
-          ]
-        }
-      },
       "public_status": "Not tested",
       "family": "M Air"
     }
@@ -270,21 +254,29 @@
     },
     "recorder_names": {
       "state": "partial",
-      "reason": "The profile and USB readback are integrated, with preflight restricted to XR18 firmware 1.20. Other models have explicit blocked overrides.",
-      "public_note": "XR18 firmware 1.20 only. Requires the matching USB interface and successful routing checks.",
+      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and both simulator acceptance remain Testing needed.",
+      "public_note": "XR18 and MR18: Testing needed. Requires matching USB interface and successful routing checks.",
       "references": [
         "crates/proto-xair/src/soundcheck_profile.rs",
+        "crates/proto-xair/src/soundcheck_readback.rs",
         "crates/engine/src/drivers.rs"
-      ]
+      ],
+      "acceptance": {
+        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery with both required simulators."
+      }
     },
     "auto_soundcheck": {
       "state": "partial",
-      "reason": "The profile and USB readback are integrated, with preflight restricted to XR18 firmware 1.20. Other models have explicit blocked overrides.",
-      "public_note": "XR18 firmware 1.20 only. Requires the matching USB interface and successful routing checks.",
+      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and both simulator acceptance remain Testing needed.",
+      "public_note": "XR18 and MR18: Testing needed. Requires matching USB interface and successful routing checks.",
       "references": [
         "crates/proto-xair/src/soundcheck_profile.rs",
+        "crates/proto-xair/src/soundcheck_readback.rs",
         "crates/engine/src/drivers.rs"
-      ]
+      ],
+      "acceptance": {
+        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery with both required simulators."
+      }
     },
     "pan_balance": {
       "state": "implemented",

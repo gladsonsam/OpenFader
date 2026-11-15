@@ -138,11 +138,22 @@ impl CaptureClient {
         name: Option<&str>,
         channel_names: Option<&[String]>,
     ) -> Result<Value, String> {
+        self.commit_with_mapping(generation, take_id, name, channel_names, None)
+            .await
+    }
+    pub async fn commit_with_mapping(
+        &self,
+        generation: u64,
+        take_id: &str,
+        name: Option<&str>,
+        channel_names: Option<&[String]>,
+        capture_sources: Option<&[String]>,
+    ) -> Result<Value, String> {
         if generation != self.generation {
             return Err("stale generation".into());
         }
         self.request(
-            json!({"op":"commit", "generation":generation, "take_id":take_id, "name":name, "channel_names":channel_names}),
+            json!({"op":"commit", "generation":generation, "take_id":take_id, "name":name, "channel_names":channel_names, "capture_sources":capture_sources}),
             "RECORDING",
             Instant::now() + Duration::from_secs(10),
         )

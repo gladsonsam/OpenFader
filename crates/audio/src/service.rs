@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        Arc,
+        mpsc, Arc,
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -125,11 +125,24 @@ struct Playback {
     position: Arc<AtomicU64>,
     xruns: Arc<AtomicU64>,
     worker: JoinHandle<io::Result<()>>,
+    epoch: Arc<AtomicU64>,
+    ready_epoch: Arc<AtomicU64>,
+    commands: mpsc::Sender<PlaybackCommand>,
 }
 type PlaybackFrame = Option<(u64, [f32; MAX_CHANNELS])>;
+type PlaybackPacket = (u64, PlaybackFrame);
+struct PlaybackCommand {
+    epoch: u64,
+    at: u64,
+    looping: Option<(u64, u64)>,
+}
 
 struct PlaybackOutput {
-    consumer: rtrb::Consumer<PlaybackFrame>,
+    consumer: rtrb::Consumer<PlaybackPacket>,
+    epoch: Arc<AtomicU64>,
+    ready_epoch: Arc<AtomicU64>,
+    seen_epoch: u64,
+    pending: Option<PlaybackPacket>,
     done: Arc<AtomicBool>,
     fade: Arc<AtomicBool>,
     faded: Arc<AtomicBool>,
@@ -146,20 +159,46 @@ impl PlaybackOutput {
     fn render<T: cpal::SizedSample + cpal::FromSample<f32>>(&mut self, output: &mut [T]) {
         // Clear any incomplete frame as well as every frame after EOF/failure.
         output.fill(T::EQUILIBRIUM);
+        let epoch = self.epoch.load(Ordering::Acquire);
+        if self.seen_epoch != epoch {
+            self.seen_epoch = epoch;
+            self.pending = None;
+            self.ramp = 0.0;
+            self.underrun = false;
+        }
+        // Discard old epochs even while paused or prebuffering. The queue is
+        // bounded and each callback limits this work to avoid a realtime stall.
+        let mut discard_budget = 2048;
         for out in output.chunks_exact_mut(self.mask.len()) {
-            if self.done.load(Ordering::Acquire)
-                || self.ended.load(Ordering::Acquire)
-                || self.faded.load(Ordering::Acquire)
-            {
+            if self.done.load(Ordering::Acquire) {
                 self.faded.store(true, Ordering::Release);
                 continue;
             }
-            match self.consumer.pop() {
-                Ok(None) => {
+            if self.pending.is_none() {
+                while discard_budget > 0 {
+                    match self.consumer.pop() {
+                        Ok(packet) if packet.0 == epoch => {
+                            self.pending = Some(packet);
+                            break;
+                        }
+                        Ok(_) => discard_budget -= 1,
+                        Err(_) => break,
+                    }
+                }
+            }
+            if (discard_budget == 0 && self.pending.is_none())
+                || self.ready_epoch.load(Ordering::Acquire) != epoch
+                || self.ended.load(Ordering::Acquire)
+                || self.faded.load(Ordering::Acquire)
+            {
+                continue;
+            }
+            match self.pending.take().map(|(_, frame)| frame) {
+                Some(None) => {
                     self.ended.store(true, Ordering::Release);
                     self.faded.store(true, Ordering::Release);
                 }
-                Ok(Some((frame, samples))) => {
+                Some(Some((frame, samples))) => {
                     self.underrun = false;
                     if self.fade.load(Ordering::Acquire) {
                         self.ramp = (self.ramp - 1.0 / 256.0).max(0.0);
@@ -177,7 +216,7 @@ impl PlaybackOutput {
                                 None
                             }
                         });
-                        if let Some(track) = track {
+                        if let Some(track) = track.filter(|_| self.mask[i]) {
                             let value = samples[track] * self.ramp;
                             *o = T::from_sample(
                                 if matches!(
@@ -193,7 +232,7 @@ impl PlaybackOutput {
                     }
                     self.position.store(frame + 1, Ordering::Release);
                 }
-                Err(_) => {
+                None => {
                     self.ramp = 0.0;
                     if !self.underrun {
                         self.xruns.fetch_add(1, Ordering::Relaxed);
@@ -208,28 +247,62 @@ impl PlaybackOutput {
     }
 }
 
+#[cfg(test)]
 fn playback_worker(
-    mut producer: rtrb::Producer<PlaybackFrame>,
+    producer: rtrb::Producer<PlaybackPacket>,
     dir: PathBuf,
     manifest: TakeManifest,
-    mut at: u64,
+    at: u64,
     looping: Option<(u64, u64)>,
     done: Arc<AtomicBool>,
     ready: Arc<AtomicBool>,
 ) -> io::Result<()> {
+    playback_worker_inner(producer, dir, manifest, (at, looping), done, ready, None)
+}
+
+fn playback_worker_inner(
+    mut producer: rtrb::Producer<PlaybackPacket>,
+    dir: PathBuf,
+    manifest: TakeManifest,
+    initial: (u64, Option<(u64, u64)>),
+    done: Arc<AtomicBool>,
+    ready: Arc<AtomicBool>,
+    control: Option<(mpsc::Receiver<PlaybackCommand>, Arc<AtomicU64>)>,
+) -> io::Result<()> {
+    let (mut at, mut looping) = initial;
     let mut buffered = 0usize;
+    let mut epoch = 0;
+    let mut eof = false;
     let result = (|| -> io::Result<()> {
         let mut open: Option<(usize, BufReader<fs::File>, u64)> = None;
         while !done.load(Ordering::Acquire) {
+            if let Some((commands, _)) = &control {
+                while let Ok(command) = commands.try_recv() {
+                    epoch = command.epoch;
+                    at = command.at;
+                    looping = command.looping;
+                    buffered = 0;
+                    eof = false;
+                }
+            }
+            if eof {
+                thread::sleep(Duration::from_millis(2));
+                continue;
+            }
             if let Some((start, end)) = looping {
                 if at >= end {
                     at = start;
                 }
             }
             if at >= manifest.frames {
-                if producer.push(None).is_ok() {
+                if producer.push((epoch, None)).is_ok() {
                     ready.store(true, Ordering::Release);
-                    break;
+                    if let Some((_, ready_epoch)) = &control {
+                        ready_epoch.store(epoch, Ordering::Release);
+                        eof = true;
+                    } else {
+                        break;
+                    }
                 }
                 thread::sleep(Duration::from_millis(2));
                 continue;
@@ -264,10 +337,30 @@ fn playback_worker(
                     i32::from_le_bytes([b[0], b[1], b[2], if b[2] & 128 != 0 { 255 } else { 0 }]);
                 *sample = value as f32 / 8_388_608.0;
             }
-            if producer.push(Some((at, samples))).is_ok() {
+            // Fade the end of a region before wrapping, and the end of the
+            // take before EOF. This avoids discontinuous sample jumps without
+            // changing the musical loop length or dropping source frames.
+            let end = looping.map_or(manifest.frames, |(_, end)| end);
+            let fade_frames = looping.map_or(256, |(start, end)| 256.min((end - start) / 2));
+            let gain = if fade_frames == 0 {
+                1.0
+            } else {
+                let outgoing = ((end.saturating_sub(at + 1)) as f32 / fade_frames as f32).min(1.0);
+                let incoming = looping.map_or(1.0, |(start, _)| {
+                    (at.saturating_sub(start) as f32 / fade_frames as f32).min(1.0)
+                });
+                outgoing.min(incoming)
+            };
+            for sample in &mut samples[..manifest.channels as usize] {
+                *sample *= gain;
+            }
+            if producer.push((epoch, Some((at, samples)))).is_ok() {
                 buffered += 1;
                 if buffered >= 1024 {
                     ready.store(true, Ordering::Release);
+                    if let Some((_, ready_epoch)) = &control {
+                        ready_epoch.store(epoch, Ordering::Release);
+                    }
                 }
                 at += 1;
             }
@@ -297,6 +390,7 @@ pub struct RecorderService {
     playback_mask: Option<Vec<bool>>,
     playback_mapping: Option<Vec<Option<usize>>>,
     selected_info: Option<DeviceInfo>,
+    capture_sources: Vec<String>,
 }
 impl RecorderService {
     pub fn new(root: impl AsRef<Path>) -> io::Result<Self> {
@@ -318,6 +412,7 @@ impl RecorderService {
             playback_mask: None,
             playback_mapping: None,
             selected_info: None,
+            capture_sources: Vec::new(),
         })
     }
     fn host() -> io::Result<cpal::Host> {
@@ -416,6 +511,7 @@ impl RecorderService {
         self.rate = Some(d.sample_rate);
         self.selected = Some(d.id.clone());
         self.selected_info = Some(d);
+        self.capture_sources.clear();
         self.playback_mask = None;
         self.playback_mapping = None;
         Ok(())
@@ -427,6 +523,8 @@ impl RecorderService {
             selected_take_id: self.take.clone(),
             transport: if c.is_some() {
                 "recording"
+            } else if self.paused {
+                "paused"
             } else if self.playback.as_ref().is_some_and(|p| {
                 !p.ended.load(Ordering::Relaxed) && !p.done.load(Ordering::Relaxed)
             }) {
@@ -766,6 +864,7 @@ impl RecorderService {
                 None
             },
         )?;
+        writer.set_capture_sources(&self.capture_sources)?;
         let worker_done = done.clone();
         let worker_failed = failed.clone();
         let worker_frames = frames.clone();
@@ -862,6 +961,22 @@ impl RecorderService {
         Ok(())
     }
 
+    /// Set provider-native identities for each captured interface channel.
+    /// An empty list explicitly records unknown provenance.
+    pub fn set_capture_sources(&mut self, sources: Vec<String>) -> io::Result<()> {
+        if self.capture.is_some() || self.playback.is_some() {
+            return Err(error("transport active"));
+        }
+        let channels = self
+            .selected_info
+            .as_ref()
+            .ok_or_else(|| error("select a device first"))?
+            .input_channels;
+        crate::validate_capture_sources(&sources, channels)?;
+        self.capture_sources = sources;
+        Ok(())
+    }
+
     pub fn start_recording(&mut self, id: &str) -> io::Result<()> {
         valid_id(id)?;
         self.prepare_capture()?;
@@ -953,13 +1068,72 @@ impl RecorderService {
         self.paused = false;
         Ok(m)
     }
-    pub fn pause(&mut self) -> io::Result<()> {
-        if self.playback.is_none() {
-            return Err(error("playback is not active"));
+    fn fade_playback(&self) -> io::Result<()> {
+        let p = self
+            .playback
+            .as_ref()
+            .ok_or_else(|| error("playback is not active"))?;
+        p.fade.store(true, Ordering::Release);
+        for _ in 0..100 {
+            if p.faded.load(Ordering::Acquire) || p.ended.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            if p.done.load(Ordering::Acquire) {
+                return Err(error("playback device or worker failed"));
+            }
+            thread::sleep(Duration::from_millis(1));
         }
-        self.stop_playback()?;
+        // Never mutate mixer routing while output has not confirmed silence.
+        Err(error("playback output did not confirm silence"))
+    }
+    pub fn pause(&mut self) -> io::Result<()> {
+        self.fade_playback()?;
         self.paused = true;
         Ok(())
+    }
+    fn reposition_playback(&mut self, frame: u64) -> io::Result<()> {
+        let resume = !self.paused
+            && self.playback.as_ref().is_some_and(|p| {
+                !p.ended.load(Ordering::Acquire) && !p.done.load(Ordering::Acquire)
+            });
+        self.fade_playback()?;
+        // A failed command or prefetch must remain visibly paused and silent.
+        self.paused = true;
+        let result = (|| {
+            let p = self.playback.as_ref().unwrap();
+            let epoch = p.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+            p.commands
+                .send(PlaybackCommand {
+                    epoch,
+                    at: frame,
+                    looping: self.loop_range,
+                })
+                .map_err(|_| error("playback worker stopped"))?;
+            p.position.store(frame, Ordering::Release);
+            p.ended.store(false, Ordering::Release);
+            for _ in 0..1000 {
+                if p.ready_epoch.load(Ordering::Acquire) == epoch {
+                    if resume {
+                        p.fade.store(false, Ordering::Release);
+                        p.faded.store(false, Ordering::Release);
+                    }
+                    return Ok(());
+                }
+                if p.done.load(Ordering::Acquire) {
+                    return Err(error("playback device or worker failed"));
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error("playback prefetch timed out"))
+        })();
+        match &result {
+            Ok(()) => {
+                self.paused = !resume;
+                self.last_error = None;
+            }
+            Err(error) => self.last_error = Some(error.to_string()),
+        }
+        result
     }
     pub fn seek(&mut self, frame: u64) -> io::Result<()> {
         let id = self.take.as_ref().ok_or_else(|| error("no take loaded"))?;
@@ -967,15 +1141,10 @@ impl RecorderService {
         if frame > m.frames {
             return Err(error("seek beyond end of take"));
         }
-        let playing = self
-            .playback
-            .as_ref()
-            .is_some_and(|p| !p.ended.load(Ordering::Acquire) && !p.done.load(Ordering::Acquire));
-        self.stop_playback()?;
-        self.position = frame;
-        if playing {
-            self.play()?;
+        if self.playback.is_some() {
+            self.reposition_playback(frame)?;
         }
+        self.position = frame;
         Ok(())
     }
     pub fn set_loop(&mut self, start: u64, end: u64, enabled: bool) -> io::Result<()> {
@@ -984,14 +1153,9 @@ impl RecorderService {
         if enabled && (start >= end || end > m.frames) {
             return Err(error("invalid loop range"));
         }
-        let playing = self
-            .playback
-            .as_ref()
-            .is_some_and(|p| !p.ended.load(Ordering::Acquire) && !p.done.load(Ordering::Acquire));
-        self.stop_playback()?;
         self.loop_range = if enabled { Some((start, end)) } else { None };
-        if playing {
-            self.play()?;
+        if let Some(p) = &self.playback {
+            self.reposition_playback(p.position.load(Ordering::Acquire))?;
         }
         Ok(())
     }
@@ -1089,10 +1253,14 @@ impl RecorderService {
             .into_iter()
             .find(|d| d.id == device_id)
             .ok_or_else(|| error("device not found"))?;
-        let (_producer, consumer) = rtrb::RingBuffer::<PlaybackFrame>::new(1);
+        let (_producer, consumer) = rtrb::RingBuffer::<PlaybackPacket>::new(1);
         let done = Arc::new(AtomicBool::new(false));
         let output = PlaybackOutput {
             consumer,
+            epoch: Arc::new(AtomicU64::new(0)),
+            ready_epoch: Arc::new(AtomicU64::new(0)),
+            seen_epoch: 0,
+            pending: None,
             done: done.clone(),
             fade: Arc::new(AtomicBool::new(false)),
             faded: Arc::new(AtomicBool::new(false)),
@@ -1110,15 +1278,16 @@ impl RecorderService {
         drop(stream);
         Ok(())
     }
-    pub fn play(&mut self) -> io::Result<()> {
-        if self
-            .playback
-            .as_ref()
-            .is_some_and(|p| p.ended.load(Ordering::Acquire))
-        {
-            self.stop_playback()?;
+    /// Build and prebuffer the selected take with the device running silently.
+    /// Call before mixer routing changes, then `play` to fade audio in.
+    pub fn prepare_playback(&mut self) -> io::Result<()> {
+        if let Some(p) = &self.playback {
+            if p.done.load(Ordering::Acquire) {
+                return Err(error("playback device or worker failed"));
+            }
+            return Ok(());
         }
-        if self.capture.is_some() || self.prepared.is_some() || self.playback.is_some() {
+        if self.capture.is_some() || self.prepared.is_some() {
             return Err(error("transport active"));
         }
         let id = self.take.as_ref().ok_or_else(|| error("no take loaded"))?;
@@ -1161,15 +1330,22 @@ impl RecorderService {
             ));
         }
         let (producer, consumer) =
-            rtrb::RingBuffer::<PlaybackFrame>::new(manifest.sample_rate as usize * 2);
+            rtrb::RingBuffer::<PlaybackPacket>::new((manifest.sample_rate as usize / 4).max(2048));
         let done = Arc::new(AtomicBool::new(false));
         let position = Arc::new(AtomicU64::new(self.position));
         let xruns = Arc::new(AtomicU64::new(0));
-        let fade = Arc::new(AtomicBool::new(false));
-        let faded = Arc::new(AtomicBool::new(false));
+        let fade = Arc::new(AtomicBool::new(true));
+        let faded = Arc::new(AtomicBool::new(true));
+        let epoch = Arc::new(AtomicU64::new(0));
+        let ready_epoch = Arc::new(AtomicU64::new(u64::MAX));
+        let (commands, receiver) = mpsc::channel();
         let ended = Arc::new(AtomicBool::new(false));
         let output = PlaybackOutput {
             consumer,
+            epoch: epoch.clone(),
+            ready_epoch: ready_epoch.clone(),
+            seen_epoch: 0,
+            pending: None,
             done: done.clone(),
             fade: fade.clone(),
             faded: faded.clone(),
@@ -1197,15 +1373,16 @@ impl RecorderService {
         let worker_ready = ready.clone();
         let at = self.position;
         let looping = self.loop_range;
+        let worker_ready_epoch = ready_epoch.clone();
         let worker = thread::spawn(move || {
-            playback_worker(
+            playback_worker_inner(
                 producer,
                 dir,
                 manifest,
-                at,
-                looping,
+                (at, looping),
                 worker_done,
                 worker_ready,
+                Some((receiver, worker_ready_epoch)),
             )
         });
         for _ in 0..1000 {
@@ -1228,7 +1405,7 @@ impl RecorderService {
             let _ = worker.join();
             return Err(error(e));
         }
-        self.paused = false;
+        self.paused = true;
         self.last_error = None;
         self.playback = Some(Playback {
             stream,
@@ -1239,7 +1416,25 @@ impl RecorderService {
             position,
             xruns,
             worker,
+            epoch,
+            ready_epoch,
+            commands,
         });
+        Ok(())
+    }
+    pub fn play(&mut self) -> io::Result<()> {
+        self.prepare_playback()?;
+        let p = self.playback.as_ref().unwrap();
+        if !self.paused && !p.ended.load(Ordering::Acquire) {
+            return Err(error("transport active"));
+        }
+        if p.ended.load(Ordering::Acquire) {
+            self.reposition_playback(0)?;
+        }
+        let p = self.playback.as_ref().unwrap();
+        p.fade.store(false, Ordering::Release);
+        p.faded.store(false, Ordering::Release);
+        self.paused = false;
         Ok(())
     }
     pub fn stop(&mut self) -> io::Result<()> {
@@ -1354,9 +1549,13 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    fn output(consumer: rtrb::Consumer<PlaybackFrame>) -> PlaybackOutput {
+    fn output(consumer: rtrb::Consumer<PlaybackPacket>) -> PlaybackOutput {
         PlaybackOutput {
             consumer,
+            epoch: Arc::new(AtomicU64::new(0)),
+            ready_epoch: Arc::new(AtomicU64::new(0)),
+            seen_epoch: 0,
+            pending: None,
             done: Arc::new(AtomicBool::new(false)),
             fade: Arc::new(AtomicBool::new(false)),
             faded: Arc::new(AtomicBool::new(false)),
@@ -1371,13 +1570,130 @@ mod tests {
         }
     }
     #[test]
+    fn prepared_and_paused_output_keeps_queued_audio_silent_without_xruns() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(2);
+        let mut cb = output(consumer);
+        cb.faded.store(true, Ordering::Release);
+        producer.push((0, Some((7, [0.5; MAX_CHANNELS])))).unwrap();
+        let mut samples = [9.0; CHANNELS * 2];
+        cb.render(&mut samples);
+        assert!(samples.iter().all(|sample| *sample == 0.0));
+        assert_eq!(cb.position.load(Ordering::Acquire), 0);
+        assert_eq!(cb.xruns.load(Ordering::Acquire), 0);
+        cb.faded.store(false, Ordering::Release);
+        cb.render(&mut samples[..CHANNELS]);
+        assert_eq!(samples[0], 0.5);
+        assert_eq!(cb.position.load(Ordering::Acquire), 8);
+    }
+
+    #[test]
+    fn seek_discards_old_audio_and_eof_while_prefetch_is_pending() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(4);
+        let mut cb = output(consumer);
+        producer.push((0, Some((7, [0.9; MAX_CHANNELS])))).unwrap();
+        producer.push((0, None)).unwrap();
+        cb.epoch.store(1, Ordering::Release);
+        producer.push((1, Some((20, [0.5; MAX_CHANNELS])))).unwrap();
+        let mut samples = [9.0; CHANNELS];
+        cb.render(&mut samples);
+        assert!(samples.iter().all(|sample| *sample == 0.0));
+        assert!(!cb.ended.load(Ordering::Acquire));
+        assert_eq!(cb.xruns.load(Ordering::Acquire), 0);
+        cb.ready_epoch.store(1, Ordering::Release);
+        cb.render(&mut samples);
+        assert_eq!(samples[0], 0.5 / 256.0);
+        assert_eq!(cb.position.load(Ordering::Acquire), 21);
+        assert_eq!(cb.xruns.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn draining_stale_seek_queue_does_not_report_an_underrun() {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(2050);
+        let mut cb = output(consumer);
+        for frame in 0..2049 {
+            producer
+                .push((0, Some((frame, [0.9; MAX_CHANNELS]))))
+                .unwrap();
+        }
+        producer.push((1, Some((20, [0.5; MAX_CHANNELS])))).unwrap();
+        cb.epoch.store(1, Ordering::Release);
+        cb.ready_epoch.store(1, Ordering::Release);
+        let mut samples = [9.0; CHANNELS];
+        cb.render(&mut samples);
+        assert!(samples.iter().all(|sample| *sample == 0.0));
+        assert_eq!(cb.xruns.load(Ordering::Acquire), 0);
+        cb.render(&mut samples);
+        assert_eq!(cb.position.load(Ordering::Acquire), 21);
+        assert_eq!(cb.xruns.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn worker_accepts_seek_and_loop_commands_after_eof_without_restarting() {
+        let root = root();
+        let mut writer =
+            TakeWriter::create(&root, 48_000, 8, ChannelLayout::new(2).unwrap()).unwrap();
+        writer.append_interleaved(&[100; 8]).unwrap();
+        let manifest = writer.finish().unwrap();
+        let (producer, mut consumer) = rtrb::RingBuffer::new(8);
+        let done = Arc::new(AtomicBool::new(false));
+        let ready = Arc::new(AtomicBool::new(false));
+        let ready_epoch = Arc::new(AtomicU64::new(u64::MAX));
+        let (commands, receiver) = mpsc::channel();
+        let worker_done = done.clone();
+        let worker_ready_epoch = ready_epoch.clone();
+        let dir = root.clone();
+        let worker = thread::spawn(move || {
+            playback_worker_inner(
+                producer,
+                dir,
+                manifest,
+                (3, None),
+                worker_done,
+                ready,
+                Some((receiver, worker_ready_epoch)),
+            )
+        });
+        for _ in 0..1000 {
+            if ready_epoch.load(Ordering::Acquire) == 0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(consumer.pop().unwrap().1.unwrap().0, 3);
+        assert!(consumer.pop().unwrap().1.is_none());
+        assert!(!worker.is_finished());
+        commands
+            .send(PlaybackCommand {
+                epoch: 1,
+                at: 1,
+                looping: Some((1, 3)),
+            })
+            .unwrap();
+        let mut frames = Vec::new();
+        for _ in 0..1000 {
+            while let Ok((epoch, Some((frame, _)))) = consumer.pop() {
+                assert_eq!(epoch, 1);
+                frames.push(frame);
+            }
+            if frames.len() >= 6 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(&frames[..6], &[1, 2, 1, 2, 1, 2]);
+        done.store(true, Ordering::Release);
+        worker.join().unwrap().unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn mapped_output_routes_tracks_and_leaves_unassigned_silent() {
         let (mut producer, consumer) = rtrb::RingBuffer::new(2);
         let mut samples = [0.0; MAX_CHANNELS];
         samples[0] = 0.25;
         samples[1] = 0.5;
         samples[2] = -0.75;
-        producer.push(Some((0, samples))).unwrap();
+        producer.push((0, Some((0, samples)))).unwrap();
         let mut cb = output(consumer);
         cb.mask = vec![true; 3];
         cb.mapping = Some(vec![Some(2), None, Some(0)]);
@@ -1393,7 +1709,7 @@ mod tests {
         samples[0] = 0.5;
         samples[1] = -0.5;
         samples[2] = 0.75;
-        producer.push(Some((0, samples))).unwrap();
+        producer.push((0, Some((0, samples)))).unwrap();
         let mut output = output(consumer);
         output.mask[2] = false;
         let mut data = [123i32; CHANNELS];
@@ -1409,15 +1725,15 @@ mod tests {
 
     #[test]
     fn variable_output_strides_and_masks_preserve_alignment() {
-        for channels in [16, 18, 32] {
+        for channels in [1, 2, 16, 18, 32, 64] {
             let (mut producer, consumer) = rtrb::RingBuffer::new(2);
             let mut cb = output(consumer);
             cb.mask = vec![true; channels];
             cb.take_channels = channels;
             cb.mask[channels - 1] = false;
             let frame = std::array::from_fn(|i| i as f32 + 1.0);
-            producer.push(Some((0, frame))).unwrap();
-            producer.push(Some((1, frame))).unwrap();
+            producer.push((0, Some((0, frame)))).unwrap();
+            producer.push((0, Some((1, frame)))).unwrap();
             let mut samples = vec![9.0; channels * 2 + 1];
             cb.render(&mut samples);
             for chunk in samples[..channels * 2].chunks_exact(channels) {
@@ -1452,8 +1768,8 @@ mod tests {
         cb.mask[14..].fill(false);
         let first = std::array::from_fn(|i| i as f32 + 1.0);
         let second = std::array::from_fn(|i| i as f32 + 21.0);
-        producer.push(Some((4, first))).unwrap();
-        producer.push(Some((5, second))).unwrap();
+        producer.push((0, Some((4, first)))).unwrap();
+        producer.push((0, Some((5, second)))).unwrap();
         let mut samples = [0.0; CHANNELS * 2];
         cb.render(&mut samples);
         assert_eq!(&samples[..14], &first[..14]);
@@ -1468,7 +1784,7 @@ mod tests {
     fn eof_underrun_and_failure_silence_output_without_losing_position() {
         let (mut producer, consumer) = rtrb::RingBuffer::new(2);
         let mut cb = output(consumer);
-        producer.push(Some((4, [0.5; MAX_CHANNELS]))).unwrap();
+        producer.push((0, Some((4, [0.5; MAX_CHANNELS])))).unwrap();
         let mut samples = [9.0; CHANNELS * 3];
         cb.render(&mut samples);
         assert_eq!(samples[0], 0.5);
@@ -1477,8 +1793,8 @@ mod tests {
         assert_eq!(cb.xruns.load(Ordering::Relaxed), 1);
         cb.render(&mut samples);
         assert_eq!(cb.xruns.load(Ordering::Relaxed), 1);
-        producer.push(Some((5, [0.5; MAX_CHANNELS]))).unwrap();
-        producer.push(None).unwrap();
+        producer.push((0, Some((5, [0.5; MAX_CHANNELS])))).unwrap();
+        producer.push((0, None)).unwrap();
         cb.render(&mut samples);
         assert!(cb.ended.load(Ordering::Relaxed));
         assert_eq!(cb.position.load(Ordering::Relaxed), 6);
@@ -1486,7 +1802,7 @@ mod tests {
         assert_eq!(cb.xruns.load(Ordering::Relaxed), 1);
         let (mut producer, consumer) = rtrb::RingBuffer::new(1);
         let mut cb = output(consumer);
-        producer.push(Some((8, [1.0; MAX_CHANNELS]))).unwrap();
+        producer.push((0, Some((8, [1.0; MAX_CHANNELS])))).unwrap();
         cb.done.store(true, Ordering::Release);
         cb.render(&mut samples);
         assert!(samples.iter().all(|v| *v == 0.0));
@@ -1517,8 +1833,8 @@ mod tests {
             ready.clone(),
         )
         .unwrap();
-        assert_eq!(consumer.pop().unwrap().unwrap().0, 1);
-        assert!(consumer.pop().unwrap().is_none());
+        assert_eq!(consumer.pop().unwrap().1.unwrap().0, 1);
+        assert!(consumer.pop().unwrap().1.is_none());
         assert!(ready.load(Ordering::Acquire));
         fs::remove_file(root.join(&manifest.segments[0].file)).unwrap();
         let (producer, _consumer) = rtrb::RingBuffer::new(4);
@@ -1561,10 +1877,17 @@ mod tests {
         });
         let mut frames = Vec::new();
         for _ in 0..2000 {
-            if let Ok(Some((frame, samples))) = consumer.pop() {
+            if let Ok((_, Some((frame, samples)))) = consumer.pop() {
                 frames.push(frame);
                 assert!(
-                    (samples[0] - (frame + 1) as f32 * 100_000.0 / 8_388_608.0).abs() < 0.000001
+                    (samples[0]
+                        - if frame == 3 || frame == 1 {
+                            0.0
+                        } else {
+                            (frame + 1) as f32 * 100_000.0 / 8_388_608.0
+                        })
+                    .abs()
+                        < 0.000001
                 );
                 if frames.len() == 6 {
                     break;

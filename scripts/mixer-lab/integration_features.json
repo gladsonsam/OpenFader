@@ -758,7 +758,10 @@
       "scope": "provider",
       "shared_paths": [
         "crates/engine/src/drivers.rs",
-        "crates/serve/src/soundcheck.rs"
+        "crates/serve/src/soundcheck.rs",
+        "crates/serve/src/coordinator_backend.rs",
+        "crates/serve/src/soundcheck_transport.rs",
+        "crates/audio/src/capture_mapping.rs"
       ],
       "engine_contracts": [
         "soundcheck_profile",
@@ -772,7 +775,9 @@
         "soundcheck_route_write"
       ],
       "acceptance": {
-        "profile": "Require a verified exact-model routing profile, journal original routes, independently verify readback and restore or visibly require recovery."
+        "profile": "Require a verified exact-model routing profile, journal original routes, independently verify readback and restore or visibly require recovery.",
+        "mapping": "Resolve saved physical capture source/tap identities to explicit provider output mappings, including reordered takes; imports without provenance require a user-confirmed mapping bound to fresh provider sources and selected device. Preserve and restore every touched selector and dependency.",
+        "transition": "Prepare the real output stream silently before switching inputs; confirm source changes, stop output before restoring routes, preserve existing live digital/internal inputs, and require recovery after uncertain writes or disconnects."
       },
       "required_evidence": [
         "unit",
@@ -796,7 +801,8 @@
       "engine_contracts": [],
       "required_hooks": [],
       "acceptance": {
-        "capture": "Capture actual OS interface channel counts/rates without a network mixer; verify PCM, bounded storage and device loss."
+        "capture": "Capture actual OS interface channel counts/rates without a network mixer; verify PCM, bounded storage and device loss.",
+        "provenance": "Save fresh provider-owned physical capture source/tap identities with the take when available; manual or unknown capture remains available without invented provenance."
       },
       "required_evidence": [
         "unit",
@@ -840,7 +846,8 @@
       "engine_contracts": [],
       "required_hooks": [],
       "acceptance": {
-        "export": "Export every recorded channel and name across segment boundaries; verify PCM, duration, large-file format, destination copy, failures and cleanup."
+        "export": "Export every recorded channel and name across segment boundaries; verify PCM, duration, large-file format, destination copy, failures and cleanup.",
+        "mapping": "Preserve ordered capture provenance and user-confirmed playback mappings through numbered mono-track export/import and native-take copies; external WAVs without provenance require mapping."
       },
       "required_evidence": [
         "unit",
@@ -906,7 +913,8 @@
       "engine_contracts": [],
       "required_hooks": [],
       "acceptance": {
-        "manual": "Play through an actual OS output mapping independently of mixer capabilities; require explicit manual routing confirmation and safe return to live."
+        "manual": "Play through an actual OS output mapping independently of mixer capabilities; require explicit manual routing confirmation and safe return to live.",
+        "transport": "Prepare silently and retain the output stream through pause, resume, seek and loop edits. Silence stale buffered generations, fade boundaries, and expose actual underruns/errors. Manual assignments obey masks and actual interface limits."
       },
       "required_evidence": [
         "unit",

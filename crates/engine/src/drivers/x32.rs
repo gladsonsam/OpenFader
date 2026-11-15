@@ -2,6 +2,37 @@
 use super::*;
 
 impl_dyn_driver!(openfader_proto_x32::X32Driver {
+    async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
+        let inventory = self.recorder_inventory().await?;
+        Ok(Some(RecorderDescriptor {
+            interface_names: inventory.interface_names,
+            capture_channels: inventory.capture_channels, output_channels: inventory.output_channels,
+            capture_sources: inventory.capture_sources,
+            channel_names: inventory.channel_names,
+            capture_strip_ids: inventory.capture_strip_ids,
+            input_channel_names: inventory.input_channel_names,
+        }))
+    }
+    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
+        let plan = self.soundcheck_plan().await?;
+        let profile = SoundcheckProfile {
+            capture_channels: plan.inventory.capture_channels, output_channels: plan.inventory.output_channels,
+            capture_sources: plan.inventory.capture_sources,
+            output_mapping: plan.output_mapping,
+            output_mask: plan.output_mask,
+            snapshot_keys: plan.inventory.expected.keys().cloned().collect(),
+            route_changes: plan.changes,
+            driver_state: serde_json::json!({"expected": plan.inventory.expected}),
+        };
+        profile.validate()?;
+        Ok(Some(profile))
+    }
+    async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
+        self.soundcheck_read(key, state, check).await
+    }
+    async fn soundcheck_route_write(&self, key: &str, state: &serde_json::Value, expected: i32, desired: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<serde_json::Value> {
+        self.soundcheck_write(key, state, expected, desired, check).await
+    }
     async fn reported_sample_rate(&self) -> Option<u32> { self.observed_sample_rate().await.ok() }
     fn param_write_context(&self, param: &str) -> &'static [&'static str] {
         if matches!(param, "gain" | "phantom") { &["source", "x32:preamp_state"] } else { &[] }
@@ -504,11 +535,5 @@ impl_dyn_driver!(openfader_proto_x32::X32Driver {
     async fn set_output_route(&self, id: &str, source: &str, expected: &openfader_core::routing::RouteState, context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
         self.set_output_route_guarded(id, source, expected, context).await
     }
-    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
-        // No verified routing profile exists: automatic soundcheck routing
-        // stays unsupported and manual virtual soundcheck stays independent
-        // of the desk. Returning None (rather than an invented profile) is
-        // the honest contract here.
-        Ok(None)
-    }
+
 });

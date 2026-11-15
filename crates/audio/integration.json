@@ -9,7 +9,11 @@
     "crates/serve/src/recorder.rs",
     "crates/serve/src/soundcheck.rs",
     "app/lib/screens/recorder.dart",
-    "app/lib/shell/recorder_store.dart"
+    "app/lib/shell/recorder_store.dart",
+    "crates/audio/src/capture_mapping.rs",
+    "crates/audio/src/service.rs",
+    "crates/serve/src/coordinator_backend.rs",
+    "crates/serve/src/soundcheck_transport.rs"
   ],
   "source_globs": [
     "crates/audio/src/**/*.rs"
@@ -37,7 +41,7 @@
   "features": {
     "recording": {
       "state": "implemented",
-      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -59,7 +63,7 @@
     },
     "export_tracks": {
       "state": "implemented",
-      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -81,7 +85,7 @@
     },
     "import_takes": {
       "state": "implemented",
-      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -92,7 +96,7 @@
     },
     "manual_soundcheck": {
       "state": "implemented",
-      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",

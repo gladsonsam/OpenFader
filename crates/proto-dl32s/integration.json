@@ -217,11 +217,17 @@
       ]
     },
     "auto_soundcheck": {
-      "state": "blocked",
-      "reason": "The provider deliberately rejects automatic soundcheck until the USB signal path, taps and linked routing have physical verification.",
+      "state": "partial",
+      "reason": "Provider-owned DL32S Mic Pre USB capture mapping and guarded A/B return switching are implemented, including repatched B assignments, reserved live USB inputs, stereo-link dependencies, independent readback and restoration. Physical signal/tap, linked-input behavior and both iOS simulator acceptance remain Testing needed.",
       "references": [
-        "crates/proto-dl32s/src/soundcheck.rs"
-      ]
+        "crates/proto-dl32s/src/soundcheck.rs",
+        "crates/proto-dl32s/src/output_routing.rs",
+        "crates/engine/src/drivers.rs"
+      ],
+      "public_note": "Testing needed. Requires matching USB audio interface and successful routing readback.",
+      "acceptance": {
+        "routing": "On DL32S hardware verify Mic Pre capture PCM, reordered USB sends, nondefault B assignment restoration, linked input routing and retained live USB sources; verify independent routing readback and disconnect recovery on both required simulators."
+      }
     },
     "pan_balance": {
       "state": "implemented",

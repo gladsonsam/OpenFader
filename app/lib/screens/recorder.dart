@@ -864,6 +864,179 @@ class _RecorderPageState extends State<RecorderPage> {
     }
   }
 
+  Future<Map<String, dynamic>?> _soundcheckArguments(
+    String takeId,
+    Map<String, dynamic> take,
+    String deviceId,
+  ) async {
+    final options = store.state['soundcheck_mapping'];
+    final rawSources = options is Map ? options['capture_sources'] : null;
+    final rawOutputs = options is Map ? options['output_mapping'] : null;
+    if (rawSources is! List ||
+        rawOutputs is! List ||
+        rawSources.length != rawOutputs.length) {
+      _feedback.show('Mixer routing is being checked. Try Play again shortly.');
+      return null;
+    }
+    final sources = rawSources.map((source) => '$source').toList();
+    final available = [
+      for (var lane = 0; lane < sources.length; lane++)
+        if (sources[lane].isNotEmpty && rawOutputs[lane] is int) lane,
+    ];
+    if (available.isEmpty) {
+      _feedback.show('No mixer inputs are available for automatic playback.');
+      return null;
+    }
+    final manifest = take['manifest'];
+    final saved =
+        take['playback_sources'] ??
+        (manifest is Map ? manifest['playback_sources'] : null);
+    final recorded =
+        saved ??
+        take['capture_sources'] ??
+        (manifest is Map ? manifest['capture_sources'] : null);
+    final channels = recorderChannelCount(take);
+    final hasMapping = recorded is List && recorded.length == channels;
+    final coversInputs =
+        hasMapping &&
+        available.every(
+          (lane) =>
+              recorded.where((source) => source == sources[lane]).length == 1,
+        );
+    final coversSavedSubset =
+        saved is List &&
+        hasMapping &&
+        recorded.any((source) => source is String && source.isNotEmpty) &&
+        recorded
+            .where((source) => source != '')
+            .every(
+              (source) =>
+                  available.where((lane) => sources[lane] == source).length ==
+                      1 &&
+                  recorded.where((other) => other == source).length == 1,
+            );
+    if (coversInputs || coversSavedSubset) {
+      return {'take_id': takeId, 'expected_device_id': deviceId};
+    }
+    final names = recorderChannelNames(take);
+    final sourceNames = store.state['capture_source_names'];
+    final mapping = List<int?>.generate(channels, (track) {
+      if (hasMapping) {
+        final lane = available
+            .where((lane) => sources[lane] == recorded[track])
+            .firstOrNull;
+        if (lane != null) return lane;
+      }
+      return track < available.length ? available[track] : null;
+    });
+    if (!mounted) return null;
+    final confirmed = await showDialog<List<int?>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => ConsoleAlertDialog(
+          title: const Text('Map tracks to mixer inputs'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Choose the input source for each track. OpenFader remembers this mapping, switches the mixer for playback, and restores its routing when you return live.',
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Unassigned tracks are silent. Use each source once.',
+                ),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: channels,
+                    itemBuilder: (context, track) => Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            names[track] ?? 'Track ${track + 1}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Flexible(
+                          child: DropdownButton<int>(
+                            isExpanded: true,
+                            value: mapping[track] ?? -1,
+                            items: [
+                              const DropdownMenuItem(
+                                value: -1,
+                                child: Text('Unassigned'),
+                              ),
+                              for (final lane in available)
+                                DropdownMenuItem(
+                                  value: lane,
+                                  child: Text(
+                                    sourceNames is List &&
+                                            lane < sourceNames.length &&
+                                            '${sourceNames[lane]}'
+                                                .trim()
+                                                .isNotEmpty
+                                        ? '${sourceNames[lane]}'
+                                        : 'USB return ${(rawOutputs[lane] as int) + 1}',
+                                  ),
+                                ),
+                            ],
+                            onChanged: (value) => update(
+                              () => mapping[track] = value == null || value < 0
+                                  ? null
+                                  : value,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final assigned = mapping.whereType<int>().toList();
+                if (assigned.isEmpty ||
+                    assigned.toSet().length != assigned.length) {
+                  _feedback.show(
+                    'Assign at least one track and use each source once.',
+                  );
+                  return;
+                }
+                Navigator.pop(context, List<int?>.of(mapping));
+              },
+              child: const Text('Save mapping and play'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == null ||
+        !mounted ||
+        store.pending ||
+        !store.connected ||
+        store.state['selected_device_id'] != deviceId ||
+        !_takeAvailable(takeId)) {
+      return null;
+    }
+    return {
+      'take_id': takeId,
+      'expected_device_id': deviceId,
+      'mapping_confirmed': true,
+      'capture_mapping': confirmed,
+      'expected_capture_sources': sources,
+    };
+  }
+
   Future<void> _playSelected(String? takeId) async {
     if (_startingPlay || store.pending) return;
     void message(String text) {
@@ -944,11 +1117,18 @@ class _RecorderPageState extends State<RecorderPage> {
         message('The take and interface sample rates must match.');
         return;
       }
+      await store.command('prepare_soundcheck');
+      if (!mounted || store.error != null) {
+        if (store.error != null) message(store.error!);
+        return;
+      }
       final caps = store.state['capabilities'] as Map? ?? {};
       if (caps['soundcheck'] == true) {
         // The provider revalidates its routing profile and physical state on
         // every entry. Playback never recalls a mixer scene or processing.
-        await store.command('enter_soundcheck', {'take_id': takeId});
+        final args = await _soundcheckArguments(takeId, take ?? {}, deviceId!);
+        if (args == null) return;
+        await store.command('enter_soundcheck', args);
       } else {
         var mapping = List<int?>.generate(
           takeChannels,
@@ -1025,20 +1205,23 @@ class _RecorderPageState extends State<RecorderPage> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            DropdownButton<int?>(
-                              value: mapping[i],
+                            DropdownButton<int>(
+                              value: mapping[i] ?? -1,
                               items: [
-                                const DropdownMenuItem<int?>(
-                                  value: null,
+                                const DropdownMenuItem<int>(
+                                  value: -1,
                                   child: Text('Unassigned'),
                                 ),
                                 for (var n = 0; n < outputs; n++)
-                                  DropdownMenuItem<int?>(
+                                  DropdownMenuItem<int>(
                                     value: n,
                                     child: Text('Output ${n + 1}'),
                                   ),
                               ],
-                              onChanged: (v) => update(() => mapping[i] = v),
+                              onChanged: (v) => update(
+                                () =>
+                                    mapping[i] = v == null || v < 0 ? null : v,
+                              ),
                             ),
                           ],
                         ),
@@ -1099,6 +1282,8 @@ class _RecorderPageState extends State<RecorderPage> {
         }
       }
       if (store.error != null) message(store.error!);
+    } catch (error) {
+      message('Could not prepare playback: $error');
     } finally {
       if (mounted) setState(() => _startingPlay = false);
     }

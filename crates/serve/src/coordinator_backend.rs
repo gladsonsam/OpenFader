@@ -8,7 +8,7 @@ use crate::{
     soundcheck_transport::Coordinator,
 };
 use openfader_audio::DeviceInfo;
-use openfader_engine::Engine;
+use openfader_engine::{drivers::SoundcheckProfile, Engine};
 use serde_json::Value;
 use std::{
     future::Future,
@@ -51,9 +51,7 @@ fn validate_take(
         "invalid take ID"
     );
     anyhow::ensure!(
-        (1..=64).contains(&channels)
-            && device.output_channels >= channels
-            && device.sample_rate > 0,
+        (1..=64).contains(&channels) && device.sample_rate > 0,
         "incompatible playback device"
     );
     let dir = root.join(id);
@@ -96,6 +94,31 @@ fn validate_take(
     Ok(())
 }
 
+async fn read_profile(
+    engine: &Arc<Engine>,
+    device: &DeviceInfo,
+) -> anyhow::Result<SoundcheckProfile> {
+    let session = engine.selector_session().await?;
+    let profile = session.soundcheck_profile().await?.ok_or_else(|| {
+        anyhow::anyhow!("The connected provider does not offer automatic routing")
+    })?;
+    profile.validate()?;
+    anyhow::ensure!(
+        device.output_channels >= profile.output_channels,
+        "Insufficient playback outputs"
+    );
+    let descriptor = session.recorder_descriptor().await?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "The connected provider has no audio interface association; use manual playback"
+        )
+    })?;
+    anyhow::ensure!(
+        crate::recorder::recorder_device_matches(&descriptor, device),
+        "The selected interface does not match the connected mixer; use manual playback"
+    );
+    Ok(profile)
+}
+
 fn valid_playback_status(status: &Value) -> bool {
     status.is_object()
         && status["position_frames"].as_u64().is_some()
@@ -116,7 +139,8 @@ pub struct CoordinatorBackend {
     manual_transport: String,
     cancellation: Mutex<CancellationSlot>,
     probe_key: Option<(u64, String, u16, u16, u32)>,
-    probe: Option<tokio::task::JoinHandle<Result<(), String>>>,
+    probe: Option<tokio::task::JoinHandle<Result<SoundcheckProfile, String>>>,
+    mapping_profile: Option<SoundcheckProfile>,
     profile_result: Option<Result<(), String>>,
 }
 
@@ -151,6 +175,7 @@ impl CoordinatorBackend {
             probe_key: None,
             probe: None,
             profile_result: None,
+            mapping_profile: None,
         }
     }
     async fn acquire(&mut self) -> anyhow::Result<()> {
@@ -170,7 +195,10 @@ impl CoordinatorBackend {
         Ok(())
     }
     async fn run(&mut self, action: &str, args: &Value) -> anyhow::Result<()> {
-        if !matches!(action, "enter_soundcheck" | "enter_manual_soundcheck") {
+        if !matches!(
+            action,
+            "enter_soundcheck" | "enter_manual_soundcheck" | "prepare_soundcheck"
+        ) {
             return self.run_inner(action, args, None).await;
         }
         let cancellation = {
@@ -202,6 +230,10 @@ impl CoordinatorBackend {
         let result = self
             .run_inner(action, args, Some((cancellation.clone(), started.clone())))
             .await;
+        if result.is_err() && action == "enter_soundcheck" && self.coordinator.is_none() {
+            self.profile_result = None;
+            self.mapping_profile = None;
+        }
         result
     }
     async fn run_inner(
@@ -211,6 +243,47 @@ impl CoordinatorBackend {
         operation: Option<(CancellationHandle, Arc<AtomicBool>)>,
     ) -> anyhow::Result<()> {
         let marker = self.config.root.join("manual-routing-pending");
+        if action == "prepare_soundcheck" {
+            anyhow::ensure!(
+                self.coordinator.is_none()
+                    && self.manual.is_none()
+                    && !marker.exists()
+                    && !self.config.journal.exists(),
+                "Return to live before preparing another playback"
+            );
+            if let Some(probe) = self.probe.take() {
+                probe.abort();
+            }
+            let device = self
+                .config
+                .device
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Select an audio interface"))?;
+            self.probe_key = Some((
+                self.engine.connection_generation(),
+                device.id.clone(),
+                device.input_channels,
+                device.output_channels,
+                device.sample_rate,
+            ));
+            match tokio::time::timeout(Duration::from_secs(8), read_profile(&self.engine, &device))
+                .await
+            {
+                Ok(Ok(profile)) => {
+                    self.mapping_profile = Some(profile);
+                    self.profile_result = Some(Ok(()));
+                }
+                result => {
+                    self.mapping_profile = None;
+                    self.profile_result = Some(Err(match result {
+                        Ok(Err(error)) => format!("{error:#}"),
+                        _ => "Mixer routing check timed out; manual playback remains available"
+                            .into(),
+                    }));
+                }
+            }
+            return Ok(());
+        }
         if action == "enter_manual_soundcheck" {
             anyhow::ensure!(
                 args["routing_confirmed"] == true,
@@ -264,9 +337,7 @@ impl CoordinatorBackend {
                 "invalid take ID"
             );
             let manifest = openfader_audio::read_manifest(self.config.root.join(take))?;
-            let mut take_device = device.clone();
-            take_device.output_channels = take_device.output_channels.max(manifest.channels);
-            validate_take(&self.config.root, take, &take_device, manifest.channels)?;
+            validate_take(&self.config.root, take, &device, manifest.channels)?;
             let mapping: Vec<Option<usize>> =
                 serde_json::from_value(args["output_mapping"].clone())?;
             anyhow::ensure!(
@@ -456,6 +527,12 @@ impl CoordinatorBackend {
                 .device
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("playback device unavailable"))?;
+            if let Some(expected) = args["expected_device_id"].as_str() {
+                anyhow::ensure!(
+                    expected == device.id,
+                    "Selected interface changed; try playback again"
+                );
+            }
             let take = args["take_id"]
                 .as_str()
                 .filter(|s| !s.is_empty())
@@ -471,7 +548,70 @@ impl CoordinatorBackend {
             profile.validate()?;
             let descriptor = session.recorder_descriptor().await?.ok_or_else(|| anyhow::anyhow!("The connected provider has no verified audio interface association; use manual virtual soundcheck"))?;
             anyhow::ensure!(crate::recorder::recorder_device_matches(&descriptor, &device), "The selected audio interface does not match the connected provider; use manual virtual soundcheck");
-            validate_take(&self.config.root, &take, &device, profile.capture_channels)?;
+            anyhow::ensure!(
+                take != "." && take != ".." && !take.contains(['/', '\\']),
+                "invalid take ID"
+            );
+            let manifest = openfader_audio::read_manifest(self.config.root.join(&take))?;
+            validate_take(&self.config.root, &take, &device, manifest.channels)?;
+            let recorded = if args["mapping_confirmed"] == true {
+                anyhow::ensure!(
+                    args["expected_device_id"].as_str() == Some(device.id.as_str()),
+                    "Selected interface changed; review the track mapping again"
+                );
+                let expected_sources: Vec<String> =
+                    serde_json::from_value(args["expected_capture_sources"].clone())?;
+                anyhow::ensure!(
+                    expected_sources == profile.capture_sources,
+                    "Mixer capture routing changed; review the track mapping again"
+                );
+                let lanes: Vec<Option<usize>> =
+                    serde_json::from_value(args["capture_mapping"].clone())?;
+                anyhow::ensure!(
+                    lanes.len() == usize::from(manifest.channels),
+                    "Map every take track"
+                );
+                let mut used = std::collections::HashSet::new();
+                let sources = lanes
+                    .iter()
+                    .map(|lane| -> anyhow::Result<String> {
+                        let Some(lane) = lane else {
+                            return Ok(String::new());
+                        };
+                        anyhow::ensure!(
+                            *lane < profile.capture_sources.len()
+                                && profile.output_mapping[*lane].is_some()
+                                && used.insert(*lane),
+                            "Choose distinct available capture lanes"
+                        );
+                        Ok(profile.capture_sources[*lane].clone())
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                anyhow::ensure!(!used.is_empty(), "Assign at least one track");
+                sources
+            } else {
+                openfader_audio::take_playback_sources(&manifest)?
+            };
+            // Explicit assignments can cover a subset; uncovered returns stay silent.
+            let mut outputs = profile.output_mapping.clone();
+            if args["mapping_confirmed"] == true
+                || manifest.metadata.contains_key("playback_sources")
+            {
+                for (source, output) in profile.capture_sources.iter().zip(&mut outputs) {
+                    if !recorded.contains(source) {
+                        *output = None;
+                    }
+                }
+            }
+            let output_mapping = openfader_audio::resolve_playback_mapping(
+                &recorded,
+                &profile.capture_sources,
+                &outputs,
+            )?;
+            if args["mapping_confirmed"] == true {
+                let _guard = openfader_audio::playback_guard(&self.config.root)?;
+                openfader_audio::save_playback_sources(&self.config.root.join(&take), &recorded)?;
+            }
             anyhow::ensure!(
                 device.output_channels >= profile.output_channels,
                 "insufficient playback outputs"
@@ -507,7 +647,7 @@ impl CoordinatorBackend {
                     deadline,
                     move |take| async move {
                         started.store(true, Ordering::Release);
-                        PlaybackClient::prepare_masked(
+                        PlaybackClient::prepare_mapped(
                             helper,
                             device,
                             root,
@@ -516,6 +656,8 @@ impl CoordinatorBackend {
                             deadline,
                             cancellation,
                             profile.output_mask,
+                            Some(output_mapping),
+                            None,
                         )
                         .ready()
                         .await
@@ -524,6 +666,8 @@ impl CoordinatorBackend {
                 )
                 .await;
             self.release_if_live();
+            self.profile_result = None;
+            self.mapping_profile = None;
             return result;
         }
         if matches!(action, "return_live" | "rebind_recovery") {
@@ -613,6 +757,17 @@ impl SoundcheckBackend for CoordinatorBackend {
         slot.handle = Some(handle.clone());
         slot.reserved = true;
         handle
+    }
+    fn mapping_options(&self) -> Option<Value> {
+        self.mapping_profile
+            .as_ref()
+            .filter(|_| self.available())
+            .map(|profile| {
+                serde_json::json!({
+                    "capture_sources": profile.capture_sources,
+                    "output_mapping": profile.output_mapping,
+                })
+            })
     }
     fn available(&self) -> bool {
         self.coordinator.is_some()
@@ -749,36 +904,33 @@ impl SoundcheckBackend for CoordinatorBackend {
                     }
                     self.probe_key = key.clone();
                     self.profile_result = None;
+                    self.mapping_profile = None;
                 }
                 if self.probe.as_ref().is_some_and(|p| p.is_finished()) {
                     if let Some(probe) = self.probe.take() {
-                        self.profile_result = Some(
-                            probe
-                                .await
-                                .unwrap_or_else(|e| Err(format!("profile probe failed: {e}"))),
-                        );
+                        match probe
+                            .await
+                            .unwrap_or_else(|e| Err(format!("profile probe failed: {e}")))
+                        {
+                            Ok(profile) => {
+                                self.mapping_profile = Some(profile);
+                                self.profile_result = Some(Ok(()));
+                            }
+                            Err(error) => {
+                                self.mapping_profile = None;
+                                self.profile_result = Some(Err(error));
+                            }
+                        }
                     }
                 }
                 if self.probe.is_none() && self.profile_result.is_none() {
                     if let Some(device) = self.config.device.clone() {
                         let engine = self.engine.clone();
                         self.probe = Some(tokio::spawn(async move {
-                            match tokio::time::timeout(Duration::from_secs(5), async {
-                                let session = engine.selector_session().await?;
-                                let profile =
-                                    session.soundcheck_profile().await?.ok_or_else(|| {
-                                        anyhow::anyhow!(
-                                            "connected driver does not provide soundcheck routing"
-                                        )
-                                    })?;
-                                anyhow::ensure!(
-                                    device.output_channels >= profile.output_channels,
-                                    "insufficient playback outputs"
-                                );
-                                let descriptor = session.recorder_descriptor().await?.ok_or_else(|| anyhow::anyhow!("The connected provider has no verified audio interface association; use manual virtual soundcheck"))?;
-                                anyhow::ensure!(crate::recorder::recorder_device_matches(&descriptor, &device), "The selected audio interface does not match the connected provider; use manual virtual soundcheck");
-                                Ok::<_, anyhow::Error>(())
-                            })
+                            match tokio::time::timeout(
+                                Duration::from_secs(8),
+                                read_profile(&engine, &device),
+                            )
                             .await
                             {
                                 Ok(result) => result.map_err(|e| format!("{e:#}")),
@@ -1012,6 +1164,13 @@ mod preflight_tests {
             openfader_audio::ChannelLayout::new(32).unwrap(),
         )
         .unwrap();
+        writer
+            .set_capture_sources(
+                &(0..32)
+                    .map(|lane| format!("sim:physical/{lane}:raw"))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
         writer.append_interleaved(&[0; 32]).unwrap();
         writer.finish().unwrap();
         let helper = root.join("helper");

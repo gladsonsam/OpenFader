@@ -112,6 +112,22 @@ impl SelectorSession {
         let mut descriptor = self.driver.recorder_descriptor().await?;
         self.check()?;
         if let Some(descriptor) = &mut descriptor {
+            anyhow::ensure!(
+                (1..=64).contains(&descriptor.capture_channels) && descriptor.output_channels <= 64,
+                "invalid recorder interface layout"
+            );
+            anyhow::ensure!(
+                descriptor.capture_sources.is_empty()
+                    || descriptor.capture_sources.len() == usize::from(descriptor.capture_channels),
+                "capture source count mismatch"
+            );
+            anyhow::ensure!(
+                descriptor
+                    .capture_sources
+                    .iter()
+                    .all(|source| source.len() <= 256 && !source.chars().any(char::is_control)),
+                "invalid capture source identity"
+            );
             let mut defaults = std::collections::BTreeMap::new();
             for family in self
                 .driver

@@ -279,6 +279,7 @@ async fn worker_with_config(
     let mut descriptor_generation = engine.as_ref().map(|e| e.connection_generation());
     let mut descriptor_dirty = true;
     let mut active_capture_names: Vec<String> = Vec::new();
+    let mut soundcheck_mapping = Value::Null;
     let mut disk_checked = Instant::now() - Duration::from_secs(3);
     let mut disk_free_bytes = None;
     let mut disk_space_error = None;
@@ -325,8 +326,10 @@ async fn worker_with_config(
                 backend_overdue = true;
                 if let Some(handle) = &backend_cancel {
                     handle.cancel();
-                    quarantine_handle = Some(handle.clone());
-                    quarantined = true;
+                    if !backend_task.as_ref().is_some_and(|pending| pending.1["action"] == "prepare_soundcheck") {
+                        quarantine_handle = Some(handle.clone());
+                        quarantined = true;
+                    }
                 }
                 continue;
             },
@@ -337,7 +340,8 @@ async fn worker_with_config(
                 let stale = operation != backend_operation;
                 let handle = backend_cancel.take();
                 let cancelled = stale || handle.as_ref().is_some_and(|h| h.cancellation_requested());
-                if cancelled {
+                let read_only = cmd["action"] == "prepare_soundcheck";
+                if cancelled && !read_only {
                     quarantined = true;
                     if quarantine_handle.is_none() { quarantine_handle = handle; }
                 }
@@ -356,6 +360,7 @@ async fn worker_with_config(
                         // The actor serializes backend ownership; retain the completed owner for recovery.
                         if backend.is_none() { backend = Some(returned); }
                         match result {
+                            _ if cancelled && read_only => json!({"ok":false,"request_id":id,"error":"playback preparation cancelled"}),
                             _ if cancelled => json!({"ok":false,"request_id":id,"error":"operation cancelled; routing recovery required"}),
                             Ok(()) => json!({"ok":true,"request_id":id,"error":null}),
                             Err(e) => json!({"ok":false,"request_id":id,"error":e}),
@@ -499,6 +504,7 @@ async fn worker_with_config(
                     "state" => {
                         if let Some(b) = backend.as_mut() {
                             playback_telemetry = b.telemetry().await;
+                            soundcheck_mapping = b.mapping_options().unwrap_or(Value::Null);
                             cached_backend = Some((b.state(), b.available()));
                             soundcheck_reason = b.unavailable_reason();
                         }
@@ -547,6 +553,7 @@ async fn worker_with_config(
                         }
                         if let Some(o) = v.as_object_mut() {
                             o.insert("available".into(), json!(true));
+                            o.insert("soundcheck_mapping".into(), soundcheck_mapping.clone());
                             let names = recorder_descriptor
                                 .as_ref()
                                 .filter(|descriptor| {
@@ -563,9 +570,35 @@ async fn worker_with_config(
                             } else {
                                 names
                             };
+                            let mapping_descriptor =
+                                recorder_descriptor.as_ref().filter(|descriptor| {
+                                    selected.as_ref().is_some_and(|device| {
+                                        recorder_device_matches(descriptor, device)
+                                    })
+                                });
+                            o.insert(
+                                "capture_sources".into(),
+                                json!(mapping_descriptor
+                                    .map(|descriptor| &descriptor.capture_sources)
+                                    .cloned()
+                                    .unwrap_or_default()),
+                            );
+                            o.insert(
+                                "capture_source_names".into(),
+                                json!(mapping_descriptor
+                                    .map(|descriptor| &descriptor.channel_names)
+                                    .cloned()
+                                    .unwrap_or_default()),
+                            );
                             o.insert("channel_names".into(), json!(names));
-                            o.insert("capture_names_automatic".into(), json!(capture_channel_names.is_empty()));
-                            o.insert("mixer_input_names".into(), json!(recorder_descriptor.as_ref().map(|d| &d.input_channel_names)));
+                            o.insert(
+                                "capture_names_automatic".into(),
+                                json!(capture_channel_names.is_empty()),
+                            );
+                            o.insert(
+                                "mixer_input_names".into(),
+                                json!(recorder_descriptor.as_ref().map(|d| &d.input_channel_names)),
+                            );
                             let device_reason = recorder_descriptor.as_ref().map(|descriptor| {
                                 let count = devices.iter().filter(|device| recorder_device_matches(descriptor, device)).count();
                                 if count > 1 {
@@ -814,9 +847,16 @@ async fn worker_with_config(
                                     backend_operation = backend_operation
                                         .checked_add(1)
                                         .expect("backend operation id exhausted");
-                                    quarantined = true;
-                                    quarantine_handle = backend_cancel.clone();
-                                    let response = json!({"ok":false,"request_id":id,"error":"cancellation requested; output termination and routing recovery unconfirmed"});
+                                    let read_only = backend_task.as_ref().is_some_and(|pending| {
+                                        pending.1["action"] == "prepare_soundcheck"
+                                    });
+                                    let response = if read_only {
+                                        json!({"ok":true,"request_id":id,"error":null})
+                                    } else {
+                                        quarantined = true;
+                                        quarantine_handle = backend_cancel.clone();
+                                        json!({"ok":false,"request_id":id,"error":"cancellation requested; output termination and routing recovery unconfirmed"})
+                                    };
                                     requests.insert(id.to_owned(), (cmd.clone(), response.clone()));
                                     let _ = reply.send(response);
                                     continue;
@@ -896,7 +936,8 @@ async fn worker_with_config(
                             }
                             let dispatch = backend.is_some()
                                 && match action {
-                                    "enter_soundcheck"
+                                    "prepare_soundcheck"
+                                    | "enter_soundcheck"
                                     | "enter_manual_soundcheck"
                                     | "accept_current_routing" => !capture_active,
                                     "play" | "pause" | "seek" | "set_loop" | "rebind_recovery"
@@ -918,7 +959,10 @@ async fn worker_with_config(
                                 let mut owned = backend.take().unwrap();
                                 if matches!(
                                     action,
-                                    "enter_soundcheck" | "enter_manual_soundcheck" | "play"
+                                    "prepare_soundcheck"
+                                        | "enter_soundcheck"
+                                        | "enter_manual_soundcheck"
+                                        | "play"
                                 ) {
                                     owned.configure(helper.clone(), selected.clone());
                                 }
@@ -997,11 +1041,24 @@ async fn worker_with_config(
                                     }) {
                                         if args["auto"] == true {
                                             let mapping = if let Some(engine) = engine.clone() {
-                                                tokio::time::timeout(Duration::from_secs(3), async move {
-                                                    engine.selector_session().await?.recorder_descriptor().await
-                                                }).await.map_err(|_| "USB patch readback timed out".to_string())
-                                                    .and_then(|r| r.map_err(|e| e.to_string()))
-                                            } else { Err("Mixer connection unavailable".into()) };
+                                                tokio::time::timeout(
+                                                    Duration::from_secs(3),
+                                                    async move {
+                                                        engine
+                                                            .selector_session()
+                                                            .await?
+                                                            .recorder_descriptor()
+                                                            .await
+                                                    },
+                                                )
+                                                .await
+                                                .map_err(|_| {
+                                                    "USB patch readback timed out".to_string()
+                                                })
+                                                .and_then(|r| r.map_err(|e| e.to_string()))
+                                            } else {
+                                                Err("Mixer connection unavailable".into())
+                                            };
                                             match mapping {
                                                 Ok(Some(descriptor)) if recorder_device_matches(&descriptor, device) => {
                                                     write_device_preference(&root, device, &[]).map(|_| {
@@ -1017,25 +1074,27 @@ async fn worker_with_config(
                                                 Err(e) => Err(format!("Auto names unavailable: {e}")),
                                             }
                                         } else {
-                                        let names: Result<Vec<String>, _> =
-                                            serde_json::from_value(args["channel_names"].clone());
-                                        names
-                                            .map_err(|_| {
-                                                "channel_names must be an array of strings"
-                                                    .to_string()
-                                            })
-                                            .and_then(|names| {
-                                                let names =
-                                                    openfader_audio::validate_channel_names(
-                                                        Some(&names),
-                                                        device.input_channels,
-                                                    )
-                                                    .map_err(|e| e.to_string())?;
-                                                write_device_preference(&root, device, &names)?;
-                                                capture_channel_names = names.clone();
-                                                saved_device = Some((device.clone(), names));
-                                                Ok(())
-                                            })
+                                            let names: Result<Vec<String>, _> =
+                                                serde_json::from_value(
+                                                    args["channel_names"].clone(),
+                                                );
+                                            names
+                                                .map_err(|_| {
+                                                    "channel_names must be an array of strings"
+                                                        .to_string()
+                                                })
+                                                .and_then(|names| {
+                                                    let names =
+                                                        openfader_audio::validate_channel_names(
+                                                            Some(&names),
+                                                            device.input_channels,
+                                                        )
+                                                        .map_err(|e| e.to_string())?;
+                                                    write_device_preference(&root, device, &names)?;
+                                                    capture_channel_names = names.clone();
+                                                    saved_device = Some((device.clone(), names));
+                                                    Ok(())
+                                                })
                                         }
                                     } else {
                                         Err("device_id must match the selected audio interface"
@@ -1108,37 +1167,41 @@ async fn worker_with_config(
                                         );
                                         // Re-read mapping at record start, rather than trusting stale
                                         // UI channel order or a cached USB patch.
-                                        active_capture_names = if let Some(engine) = engine.clone()
-                                        {
-                                            match tokio::time::timeout(
-                                                Duration::from_secs(3),
-                                                async move {
-                                                    engine
-                                                        .selector_session()
-                                                        .await?
-                                                        .recorder_descriptor()
-                                                        .await
-                                                },
-                                            )
-                                            .await
-                                            {
-                                                Ok(Ok(Some(descriptor)))
-                                                    if selected.as_ref().is_some_and(
-                                                        |device| {
-                                                            recorder_device_matches(
-                                                                &descriptor,
-                                                                device,
-                                                            )
-                                                        },
-                                                    ) =>
+                                        let (automatic_names, capture_sources) =
+                                            if let Some(engine) = engine.clone() {
+                                                match tokio::time::timeout(
+                                                    Duration::from_secs(3),
+                                                    async move {
+                                                        engine
+                                                            .selector_session()
+                                                            .await?
+                                                            .recorder_descriptor()
+                                                            .await
+                                                    },
+                                                )
+                                                .await
                                                 {
-                                                    descriptor.channel_names
+                                                    Ok(Ok(Some(descriptor)))
+                                                        if selected.as_ref().is_some_and(
+                                                            |device| {
+                                                                recorder_device_matches(
+                                                                    &descriptor,
+                                                                    device,
+                                                                )
+                                                            },
+                                                        ) =>
+                                                    {
+                                                        (
+                                                            descriptor.channel_names,
+                                                            descriptor.capture_sources,
+                                                        )
+                                                    }
+                                                    _ => (Vec::new(), Vec::new()),
                                                 }
-                                                _ => Vec::new(),
-                                            }
-                                        } else {
-                                            Vec::new()
-                                        };
+                                            } else {
+                                                (Vec::new(), Vec::new())
+                                            };
+                                        active_capture_names = automatic_names;
                                         if active_capture_names.is_empty() {
                                             descriptor_reason = Some("Fresh capture mapping could not be verified for the selected interface at record start".into());
                                         }
@@ -1157,11 +1220,12 @@ async fn worker_with_config(
                                         let task = tokio::spawn(async move {
                                             let c = prep.ready().await?;
                                             let v = c
-                                                .commit_with_channels(
+                                                .commit_with_mapping(
                                                     gen,
                                                     &take,
                                                     name.as_deref(),
                                                     names.as_deref(),
+                                                    Some(&capture_sources),
                                                 )
                                                 .await?;
                                             Ok((c, v["status"].clone()))
@@ -1794,10 +1858,12 @@ done"#,
         {
             Box::pin(async move {
                 self.calls.lock().unwrap().push(action.to_owned());
-                if action == "enter_soundcheck" {
+                if matches!(action, "enter_soundcheck" | "prepare_soundcheck") {
                     self.entered.notify_one();
                     self.release.notified().await;
-                    self.mode = "soundcheck".into();
+                    if action == "enter_soundcheck" {
+                        self.mode = "soundcheck".into();
+                    }
                 } else if action == "return_live" {
                     self.mode = "live".into();
                 }
@@ -1805,6 +1871,57 @@ done"#,
             })
         }
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelling_read_only_preparation_keeps_recording_available() {
+        let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let release = std::sync::Arc::new(tokio::sync::Notify::new());
+        let (recorder, root) = fixture_with_backend(
+            r#"read line
+printf '{"state":"READY","generation":1}\n'
+while read line; do
+ case "$line" in
+ *commit*) printf '{"state":"RECORDING","generation":1,"status":{"transport":"recording"}}\n';;
+ *status*) printf '{"state":"STATUS","generation":1,"status":{"transport":"recording"}}\n';;
+ *stop*) printf '{"state":"STOPPED","generation":1,"status":{}}\n'; exit 0;;
+ esac
+done"#,
+            Some(Box::new(BlockingBackend {
+                cancellation: soundcheck_backend::CancellationHandle::default(),
+                entered: entered.clone(),
+                release: release.clone(),
+                calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                mode: "live".into(),
+            })),
+        )
+        .await;
+        let prepare = tokio::spawn({
+            let recorder = recorder.clone();
+            async move {
+                recorder
+                    .request(command("prepare", "prepare_soundcheck"))
+                    .await
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(2), entered.notified())
+            .await
+            .unwrap();
+        assert_eq!(
+            recorder.request(command("cancel", "stop")).await["ok"],
+            true
+        );
+        release.notify_one();
+        assert_eq!(prepare.await.unwrap()["ok"], false);
+        assert_eq!(
+            recorder.request(json!({"op":"state"})).await["input_mode"],
+            "live"
+        );
+        assert_eq!(recorder.request(json!({"op":"command","command":{"request_id":"capture","action":"start_recording","args":{"take_id":"after-cancel"}}})).await["ok"], true);
+        recorder.request(command("stop-recording", "stop")).await;
+        recorder.request(json!({"op":"shutdown"})).await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn backend_transition_keeps_actor_responsive_and_queues_stop() {

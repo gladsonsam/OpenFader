@@ -1,4 +1,4 @@
-//! Evidence-scoped XR18 capture routing assessment.
+//! Explicit XR18/MR18 multichannel USB routing assessment.
 //!
 //! This validates a supplied readback only; callers must acquire fresh values
 //! under a pinned engine session before using it to plan any routing changes.
@@ -21,12 +21,11 @@ pub struct Coverage {
     /// For each mono strip, the zero-based physical capture track, or None
     /// when its live source is USB and therefore absent from analog capture.
     pub mono_tracks: [Option<u8>; 16],
-    /// The aux strip already uses USB 17/18; its live USB signal is not
-    /// represented by the physical aux capture tracks.
+    /// An aux strip already using USB is excluded from physical capture replay.
     pub aux_live_usb_excluded: bool,
 }
 
-/// Assess only the observed XR18 firmware and exact raw capture mapping.
+/// Assess explicitly supported multichannel models and complete native routing.
 /// This does not establish freshness, device identity, or microphone identity.
 pub fn assess(
     model: &str,
@@ -36,34 +35,38 @@ pub fn assess(
     aux_usb_pair: i32,
     aux_bank: i32,
 ) -> Result<Coverage, &'static str> {
-    if model != "XR18" || firmware != "1.20" {
-        return Err("unverified model or firmware");
+    if !matches!(model, "XR18" | "MR18") || firmware.trim().is_empty() {
+        return Err("model has no configured multichannel USB profile or missing firmware");
     }
     if sends
         .iter()
-        .enumerate()
-        .any(|(i, s)| s.source != i as i32 || s.tap != 0)
+        .any(|s| !(0..=17).contains(&s.source) || s.tap != 0)
     {
         return Err("unverified USB capture source or tap");
     }
-    if aux_usb_pair != 8 || aux_bank != 1 {
-        return Err("unverified aux return");
+    if !(0..=8).contains(&aux_usb_pair) || !(0..=1).contains(&aux_bank) {
+        return Err("unsupported aux return");
     }
     let mut tracks = [None; 16];
     for (track, input) in tracks.iter_mut().zip(inputs) {
-        if !(0..=15).contains(&input.analog)
+        if !(0..=18).contains(&input.analog)
             || !(0..=17).contains(&input.usb)
             || !(0..=1).contains(&input.bank)
         {
             return Err("unsupported input selector");
         }
-        if input.bank == 0 {
-            *track = Some(input.analog as u8);
+        if input.bank == 0 && input.analog != 18 {
+            *track = Some(
+                sends
+                    .iter()
+                    .position(|send| send.source == input.analog)
+                    .ok_or("live input is absent from USB capture")? as u8,
+            );
         }
     }
     Ok(Coverage {
         mono_tracks: tracks,
-        aux_live_usb_excluded: true,
+        aux_live_usb_excluded: aux_bank == 1,
     })
 }
 
@@ -87,7 +90,7 @@ mod tests {
         assert_eq!(coverage.mono_tracks[0], Some(4));
         assert_eq!(coverage.mono_tracks[14], None);
         assert!(coverage.aux_live_usb_excluded);
-        assert!(assess("XR18", "1.19", &sends, &inputs, 8, 1).is_err());
+        assert!(assess("XR18", "1.19", &sends, &inputs, 8, 1).is_ok());
         let mut wrong = sends;
         wrong[4].tap = 1;
         assert!(assess("XR18", "1.20", &wrong, &inputs, 8, 1).is_err());
@@ -110,6 +113,7 @@ use serde_json::Value;
 pub struct Preflight {
     pub plan: Vec<(String, i32)>,
     pub output_mask: [bool; 18],
+    pub output_mapping: Vec<Option<usize>>,
     pub links: Vec<bool>,
     pub keys: Vec<String>,
     pub expected: std::collections::HashMap<u16, InputRouteSelectors>,
@@ -118,22 +122,31 @@ pub struct Preflight {
 // The provider has already assessed two matching, generation-guarded readbacks.
 pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
     anyhow::ensure!(
-        readback["model"] == "XR18" && readback["firmware"] == "1.20",
-        "unverified model or firmware"
+        matches!(readback["model"].as_str(), Some("XR18" | "MR18"))
+            && readback["firmware"]
+                .as_str()
+                .is_some_and(|f| !f.trim().is_empty()),
+        "model has no configured multichannel USB profile or missing firmware"
     );
     let sends = readback["sends"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("missing sends"))?;
     anyhow::ensure!(
         sends.len() == 18
-            && sends.iter().enumerate().all(
-                |(i, s)| s["source"].as_i64() == Some(i as i64) && s["tap"].as_i64() == Some(0)
-            ),
+            && sends.iter().all(|s| s["source"]
+                .as_i64()
+                .is_some_and(|source| (0..=17).contains(&source))
+                && s["tap"].as_i64() == Some(0)),
         "unverified capture routing"
     );
     anyhow::ensure!(
-        readback["aux_usb_pair"].as_i64() == Some(8) && readback["aux_bank"].as_i64() == Some(1),
-        "unverified aux return"
+        readback["aux_usb_pair"]
+            .as_i64()
+            .is_some_and(|v| (0..=8).contains(&v))
+            && readback["aux_bank"]
+                .as_i64()
+                .is_some_and(|v| (0..=1).contains(&v)),
+        "unsupported aux return"
     );
     let inputs = readback["inputs"]
         .as_array()
@@ -155,12 +168,6 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
                 left["bank"].as_i64().is_some() && left["bank"] == right["bank"],
                 "unequal linked banks"
             );
-            if left["bank"] == 0 {
-                anyhow::ensure!(
-                    left["usb"] == left["analog"] && right["usb"] == right["analog"],
-                    "linked return repatch unsupported"
-                );
-            }
         }
     }
     let mut plan = Vec::new();
@@ -170,8 +177,76 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
     let mut expected = std::collections::HashMap::new();
     let mut output_mask = [false; 18];
     let mut reserved = [false; 18];
-    reserved[16] = true;
-    reserved[17] = true;
+    keys.extend(["aux/usb_pair".to_owned(), "aux/bank".to_owned()]);
+    let mut source_outputs = std::collections::BTreeMap::<usize, usize>::new();
+    // Linked routing can share bank selection. Preserve its existing USB
+    // selectors and map host output to them instead of repatching either peer.
+    for (channel, input) in inputs.iter().enumerate() {
+        let bank = input["bank"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Missing input bank"))?;
+        let analog = input["analog"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Missing analog source"))? as usize;
+        let usb = input["usb"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("Missing USB source"))? as usize;
+        anyhow::ensure!(
+            bank <= 1 && analog <= 18 && usb < 18,
+            "Unsupported input selector"
+        );
+        if bank == 1 {
+            reserved[usb] = true;
+        } else if links[channel / 2] == true {
+            anyhow::ensure!(analog < 18, "Linked pair has an unavailable physical input");
+            if let Some(previous) = source_outputs.insert(analog, usb) {
+                anyhow::ensure!(
+                    previous == usb,
+                    "Linked inputs require multiple returns for one capture lane"
+                );
+            }
+        }
+    }
+    if readback["aux_bank"] == 1 {
+        let pair = readback["aux_usb_pair"].as_u64().unwrap() as usize * 2;
+        reserved[pair] = true;
+        reserved[pair + 1] = true;
+    } else {
+        // Select a free stereo pair, preferring the desk's current assignment.
+        let preferred = readback["aux_usb_pair"].as_u64().unwrap() as usize;
+        let pair = std::iter::once(preferred)
+            .chain(0..9)
+            .find(|pair| {
+                let left = pair * 2;
+                !reserved[left]
+                    && !reserved[left + 1]
+                    && source_outputs.iter().all(|(source, output)| {
+                        (*output != left || *source == 16) && (*output != left + 1 || *source == 17)
+                    })
+                    && source_outputs.get(&16).is_none_or(|output| *output == left)
+                    && source_outputs
+                        .get(&17)
+                        .is_none_or(|output| *output == left + 1)
+            })
+            .ok_or_else(|| anyhow::anyhow!("No free stereo USB return for aux inputs"))?;
+        source_outputs.insert(16, pair * 2);
+        source_outputs.insert(17, pair * 2 + 1);
+        if preferred != pair {
+            plan.push(("aux/usb_pair".into(), pair as i32));
+        }
+        plan.push(("aux/bank".into(), 1));
+    }
+    for (source, output) in &source_outputs {
+        anyhow::ensure!(
+            !reserved[*output]
+                && source_outputs
+                    .iter()
+                    .all(|(other_source, other_output)| other_source == source
+                        || other_output != output),
+            "Linked USB return conflicts with another source"
+        );
+        output_mask[*output] = true;
+    }
     for (channel, input) in inputs.iter().enumerate() {
         let bank = input["bank"]
             .as_i64()
@@ -183,19 +258,36 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
             .as_i64()
             .ok_or_else(|| anyhow::anyhow!("missing usb"))?;
         anyhow::ensure!(
-            (0..=1).contains(&bank) && (0..=15).contains(&analog) && (0..=17).contains(&usb),
+            (0..=1).contains(&bank) && (0..=18).contains(&analog) && (0..=17).contains(&usb),
             "unsupported route"
         );
+        expected.insert(
+            channel as u16,
+            InputRouteSelectors {
+                analog: analog as i32,
+                usb: usb as i32,
+                bank: bank as i32,
+            },
+        );
+        if bank == 0 && analog == 18 {
+            keys.extend(["analog", "usb", "bank"].map(|s| format!("input/{channel}/{s}")));
+            continue;
+        }
         if bank == 0 {
-            output_mask[analog as usize] = true;
-            expected.insert(
-                channel as u16,
-                InputRouteSelectors {
-                    analog: analog as i32,
-                    usb: usb as i32,
-                    bank: bank as i32,
-                },
-            );
+            let analog = analog as usize;
+            let output = if let Some(output) = source_outputs.get(&analog) {
+                *output
+            } else {
+                let output = std::iter::once(analog)
+                    .chain(0..18)
+                    .find(|output| !reserved[*output] && !output_mask[*output])
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("No free USB return for physical input {}", analog + 1)
+                    })?;
+                source_outputs.insert(analog, output);
+                output_mask[output] = true;
+                output
+            };
             if links[channel / 2] == true {
                 keys.extend(["analog", "usb"].map(|s| format!("input/{channel}/{s}")));
                 if channel.is_multiple_of(2) {
@@ -203,12 +295,16 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
                 }
             } else {
                 keys.extend(["analog", "usb", "bank"].map(|s| format!("input/{channel}/{s}")));
-                plan.push((format!("input/{channel}/usb"), analog as i32));
+                plan.push((format!("input/{channel}/usb"), output as i32));
                 plan.push((format!("input/{channel}/bank"), 1));
             }
         } else {
+            keys.extend(["analog", "usb", "bank"].map(|s| format!("input/{channel}/{s}")));
             reserved[usb as usize] = true;
         }
+    }
+    for slot in 0..18 {
+        keys.extend(["source", "tap"].map(|s| format!("usb_send/{slot}/{s}")));
     }
     anyhow::ensure!(
         !output_mask
@@ -217,10 +313,21 @@ pub fn preflight(readback: &Value) -> anyhow::Result<Preflight> {
             .any(|(enabled, reserved)| *enabled && reserved),
         "covered output conflicts with reserved live USB return"
     );
+    let mut output_mapping = vec![None; 18];
+    for (source, output) in source_outputs {
+        let track = sends
+            .iter()
+            .position(|s| s["source"].as_u64() == Some(source as u64))
+            .ok_or_else(|| {
+                anyhow::anyhow!("Physical input {} is absent from USB capture", source + 1)
+            })?;
+        output_mapping[track] = Some(output);
+    }
     anyhow::ensure!(!plan.is_empty(), "no covered analog inputs");
     Ok(Preflight {
         plan,
         output_mask,
+        output_mapping,
         links: links.iter().map(|v| v.as_bool().unwrap()).collect(),
         keys,
         expected,
@@ -237,7 +344,7 @@ mod preflight_routing_tests {
             "inputs": (0..16).map(|i| serde_json::json!({"analog":i,"usb":i,"bank":0})).collect::<Vec<_>>()})
     }
     #[test]
-    fn linked_pair_is_one_guarded_change_and_repatch_is_rejected() {
+    fn linked_pair_is_one_guarded_change_and_existing_returns_are_mapped() {
         let mut data = readback();
         data["input_links"][3] = true.into();
         let plan = preflight(&data).unwrap();
@@ -253,7 +360,7 @@ mod preflight_routing_tests {
             .iter()
             .any(|(key, _)| key == "input/6/bank" || key == "input/7/bank"));
         data["inputs"][7]["usb"] = 3.into();
-        assert!(preflight(&data).is_err());
+        assert_eq!(preflight(&data).unwrap().output_mapping[7], Some(3));
         data["inputs"][7]["usb"] = 7.into();
         data["inputs"][7]["bank"] = 1.into();
         assert!(preflight(&data).is_err());
@@ -265,17 +372,18 @@ mod preflight_routing_tests {
         data["inputs"][1]["bank"] = 1.into();
         let p = preflight(&data).unwrap();
         assert!(p.plan.contains(&("input/0/usb".into(), 4)));
-        assert!(!p.keys.iter().any(|k| k.starts_with("input/1/")));
+        assert!(p.keys.iter().any(|k| k.starts_with("input/1/")));
         assert_eq!(p.expected[&0].analog, 4);
         assert!(!p.output_mask[1]);
         assert!(p.output_mask[4]);
         data["inputs"][1]["usb"] = 4.into();
-        assert!(preflight(&data).is_err());
+        let remapped = preflight(&data).unwrap();
+        assert_ne!(remapped.output_mapping[4], Some(4));
         data["inputs"][1]["usb"] = 1.into();
         data["sends"][4]["tap"] = 1.into();
         assert!(preflight(&data).is_err());
         data = readback();
         data["firmware"] = "1.19".into();
-        assert!(preflight(&data).is_err());
+        assert!(preflight(&data).is_ok());
     }
 }

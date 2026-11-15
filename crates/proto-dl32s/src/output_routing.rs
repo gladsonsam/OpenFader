@@ -20,6 +20,7 @@ pub const USB_SEND_COUNT: u16 = 32;
 /// This describes the desk's patch; it does not certify its physical audio tap.
 pub struct RecorderCaptureMapping {
     pub source_labels: Vec<String>,
+    pub capture_sources: Vec<String>,
     pub strip_ids: Vec<Vec<u16>>,
 }
 
@@ -168,6 +169,7 @@ impl Dl32sDriver {
             .map(|r| (r.pid, r.value))
             .collect();
         let mut source_labels = Vec::new();
+        let mut capture_sources = Vec::new();
         let mut strip_ids = Vec::new();
         for slot in 1..=u32::from(USB_SEND_COUNT) {
             let raw = values[&usb_send_address(slot)?];
@@ -196,6 +198,7 @@ impl Dl32sDriver {
                 5000..=5001 => vec![(raw - 5000 + 32) as u16],
                 _ => Vec::new(),
             };
+            capture_sources.push(format!("dl32s/usb-send/source/{raw}"));
             source_labels.push(source);
             strip_ids.push(ids);
         }
@@ -205,6 +208,7 @@ impl Dl32sDriver {
         );
         Ok(RecorderCaptureMapping {
             source_labels,
+            capture_sources,
             strip_ids,
         })
     }

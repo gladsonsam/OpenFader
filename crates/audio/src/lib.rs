@@ -1,5 +1,10 @@
 //! Durable multichannel take storage and desktop recorder service.
 
+pub mod capture_mapping;
+pub use capture_mapping::{
+    resolve_playback_mapping, save_playback_sources, take_capture_sources, take_playback_sources,
+    validate_capture_sources,
+};
 pub mod process_supervisor;
 pub mod transfer;
 use serde::{Deserialize, Serialize};
@@ -387,6 +392,18 @@ impl TakeWriter {
             f.flush()?;
             f.get_ref().sync_all()?;
             f.seek(SeekFrom::End(0))?;
+        }
+        publish(&self.dir, &self.manifest)
+    }
+    /// Persist capture provenance before the first audio frame is committed.
+    pub fn set_capture_sources(&mut self, sources: &[String]) -> io::Result<()> {
+        validate_capture_sources(sources, self.manifest.channels)?;
+        if sources.is_empty() {
+            self.manifest.metadata.remove("capture_sources");
+        } else {
+            self.manifest
+                .metadata
+                .insert("capture_sources".into(), serde_json::to_value(sources)?);
         }
         publish(&self.dir, &self.manifest)
     }

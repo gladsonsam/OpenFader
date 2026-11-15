@@ -68,6 +68,7 @@ fn main() {
                 .as_str()
                 .ok_or_else(|| io::Error::other("missing take_id"))?;
             service.load_take(id)?;
+            service.prepare_playback()?;
         } else {
             service.prepare_capture_with(|stage| {
                 let _ = send(json!({"state":"PROGRESS","generation":generation,"stage":stage}));
@@ -95,6 +96,13 @@ fn main() {
                             Some(serde_json::from_value(value.clone()).map_err(io::Error::other)?)
                         }
                     };
+                    let sources: Vec<String> = request
+                        .get("capture_sources")
+                        .filter(|value| !value.is_null())
+                        .map(|value| serde_json::from_value(value.clone()))
+                        .transpose()?
+                        .unwrap_or_default();
+                    service.set_capture_sources(sources)?;
                     service.commit_capture_with_channels_progress(
                         id,
                         name,

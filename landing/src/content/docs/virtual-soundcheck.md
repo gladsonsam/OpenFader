@@ -17,21 +17,18 @@ You need:
 
 When you start a soundcheck, OpenFader offers **Automatic mixer routing** if it can safely re-patch your mixer for you. Otherwise it goes straight to manual.
 
-| | Automatic | Manual |
-| --- | --- | --- |
-| Who re-patches the mixer | OpenFader, and it puts everything back afterwards | You |
-| Mixers | Behringer XR18 on firmware 1.20 only | Any mixer, or none |
-| Needs a network connection to the mixer | Yes | No |
+Automatic routing uses the connected mixer's own USB or card routing adapter. It requires a matching audio interface and a readable capture and return layout. Expanded integrations are **Testing needed**. If the current setup cannot be mapped, the manual screen shows the reason under **Automatic routing unavailable**.
 
-Automatic routing is limited to setups that have been checked on real hardware. The X32 and Mackie DL32S do not have it yet. When automatic is not available, the manual screen shows the reason under **Automatic routing unavailable**.
+Manual playback works with any suitable audio interface, with or without a network mixer connection. You set up and restore the mixer routing yourself.
 
 ## Run an automatic soundcheck
 
 1. In the recorder, open a take from **Browse takes** and tap **Play**.
-2. Pick a playback interface if asked. When the provider has a verified automatic routing profile, playback starts using that profile.
-3. Tap the mixer icon at the top left to use the normal mixer EQ, dynamics and levels.
+2. Pick a playback interface if asked. OpenFader checks the current mixer routing and matches the take’s saved capture mapping.
+3. If **Map tracks to mixer inputs** opens, choose the source for each track and tap **Save mapping and play**. This is needed for imports without a saved mapping or when the source layout has changed. Unassigned tracks remain silent. The mapping is remembered with the take.
+4. Tap the mixer icon at the top left to use the normal mixer EQ, dynamics and levels.
 
-OpenFader saves your live input patching, switches the channels to the USB returns, and starts playback. Your faders, mutes and processing work as normal while it plays.
+OpenFader prepares the audio interface silently, saves your live input patching, switches the covered channels to their USB or card returns, and starts playback. Your faders, mutes and processing work as normal while it plays.
 
 To finish, tap the return-to-live icon beside the timecode. OpenFader writes your original input patching back. EQ, dynamics, faders and other mix adjustments remain as you left them. On other screens, a recorder banner at the top also has a **Return to live** button.
 
