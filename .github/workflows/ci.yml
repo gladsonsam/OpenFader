@@ -26,6 +26,8 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/sync-version.mjs --check
+      - run: python3 scripts/mixer-lab/integration_matrix.py check
+      - run: python3 -B -m unittest discover -s scripts/mixer-lab -p 'test_integration_matrix.py'
 
   rust:
     runs-on: ubuntu-22.04

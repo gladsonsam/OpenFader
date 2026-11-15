@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "id": "dl32s",
+  "brand": "Mackie",
+  "family": "DL",
+  "scope": "provider",
+  "source_paths": [
+    "crates/proto-dl32s/src/lib.rs",
+    "crates/engine/src/drivers.rs"
+  ],
+  "source_globs": [
+    "crates/proto-dl32s/src/**/*.rs"
+  ],
+  "models": [
+    {
+      "id": "dl32s",
+      "name": "DL32S",
+      "fixture": "dl32s",
+      "model_state": "recognized"
+    }
+  ],
+  "features": {
+    "identity": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "catalogue": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "channel_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "levels": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fader_law": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "preamps": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "stereo_links": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "input_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "sends": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "groups": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "solo": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "meters": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fx": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "local_scenes": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "native_library": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processor_presets": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "console_controls": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "recorder_names": {
+      "state": "partial",
+      "reason": "USB patch/name readback integration is present in the working tree; physical DL32S naming and both iOS simulator checks remain unverified.",
+      "references": [
+        "crates/engine/src/drivers.rs",
+        "crates/proto-dl32s/src/output_routing.rs",
+        "app/lib/screens/recorder.dart"
+      ]
+    },
+    "auto_soundcheck": {
+      "state": "blocked",
+      "reason": "The provider deliberately rejects automatic soundcheck until the USB signal path, taps and linked routing have physical verification.",
+      "references": [
+        "crates/proto-dl32s/src/soundcheck.rs"
+      ]
+    },
+    "pan_balance": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    }
+  },
+  "evidence": [],
+  "adapter": "openfader_proto_dl32s::Dl32sDriver",
+  "identity_guards": [
+    {
+      "path": "crates/proto-dl32s/src/addrs.rs",
+      "function": "model_status",
+      "ignore": [
+        "auto"
+      ]
+    }
+  ]
+}

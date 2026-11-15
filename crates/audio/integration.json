@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "desktop-recorder",
+  "brand": "OpenFader",
+  "family": "Recorder host",
+  "scope": "host",
+  "source_paths": [
+    "crates/audio/src/lib.rs",
+    "crates/serve/src/recorder.rs",
+    "crates/serve/src/soundcheck.rs",
+    "app/lib/screens/recorder.dart",
+    "app/lib/shell/recorder_store.dart"
+  ],
+  "source_globs": [
+    "crates/audio/src/**/*.rs"
+  ],
+  "models": [
+    {
+      "id": "host-macos",
+      "name": "macOS / Core Audio",
+      "model_state": "host platform"
+    },
+    {
+      "id": "host-windows",
+      "name": "Windows / ASIO",
+      "model_state": "host platform"
+    },
+    {
+      "id": "host-linux",
+      "name": "Linux / ALSA",
+      "model_state": "host platform"
+    }
+  ],
+  "features": {
+    "recording": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "take_browser": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "export_tracks": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "export_mix": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "import_takes": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "manual_soundcheck": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "recovery": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "remote_recorder": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    }
+  },
+  "evidence": []
+}

@@ -557,7 +557,7 @@ class EngineState {
 
   String muteGroupLabel(int group) {
     final name = muteGroupNames[group]?.trim();
-    return name == null || name.isEmpty ? 'Mute group ${group + 1}' : name;
+    return name == null || name.isEmpty ? '${group + 1}' : name;
   }
 
   Map<String, bool> subgroupAssign = {};

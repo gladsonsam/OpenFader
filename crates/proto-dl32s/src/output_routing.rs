@@ -14,6 +14,15 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+pub const USB_SEND_COUNT: u16 = 32;
+
+/// Labels derived from reported selectors, independent of soundcheck eligibility.
+/// This describes the desk's patch; it does not certify its physical audio tap.
+pub struct RecorderCaptureMapping {
+    pub source_labels: Vec<String>,
+    pub strip_ids: Vec<Vec<u16>>,
+}
+
 pub fn planes() -> Vec<OutputPlane> {
     [
         ("output/xlr", "XLR outputs", 10),
@@ -149,6 +158,57 @@ impl OutputRoutes {
 }
 
 impl Dl32sDriver {
+    pub async fn recorder_capture_mapping(&self) -> anyhow::Result<RecorderCaptureMapping> {
+        let snapshot = self
+            .fresh_routing_snapshot(std::time::Duration::from_millis(800))
+            .await?;
+        let values: BTreeMap<_, _> = snapshot
+            .second_pass
+            .iter()
+            .map(|r| (r.pid, r.value))
+            .collect();
+        let mut source_labels = Vec::new();
+        let mut strip_ids = Vec::new();
+        for slot in 1..=u32::from(USB_SEND_COUNT) {
+            let raw = values[&usb_send_address(slot)?];
+            let source = label("output/usb", raw)
+                .ok_or_else(|| anyhow::anyhow!("USB send {slot}: unknown source selector {raw}"))?;
+            let ids = match raw {
+                1000..=1031 => {
+                    let mut ids = Vec::new();
+                    for channel in 1..=crate::addrs::INPUT_COUNT {
+                        let table = crate::addrs::dl32s_inputs();
+                        let selected = values[&table.address(channel, "source_select")?];
+                        let leaf = match selected {
+                            1 => "source_a",
+                            0 => "source_b",
+                            _ => anyhow::bail!(
+                                "Input {channel}: unknown source selection {selected}"
+                            ),
+                        };
+                        if values[&table.address(channel, leaf)?] == raw {
+                            ids.push((channel - 1) as u16);
+                        }
+                    }
+                    ids
+                }
+                4000..=4031 => vec![(raw - 4000) as u16],
+                5000..=5001 => vec![(raw - 5000 + 32) as u16],
+                _ => Vec::new(),
+            };
+            source_labels.push(source);
+            strip_ids.push(ids);
+        }
+        anyhow::ensure!(
+            self.generation.load(Ordering::Acquire) == snapshot.generation,
+            "Mixer connection changed while reading recorder names"
+        );
+        Ok(RecorderCaptureMapping {
+            source_labels,
+            strip_ids,
+        })
+    }
+
     pub fn output_route(&self, id: &str) -> anyhow::Result<RouteState> {
         let (pid, plane) = address(id)?;
         let generation = self.generation.load(Ordering::Acquire);

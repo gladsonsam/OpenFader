@@ -13,7 +13,23 @@ class ShellRecorderStore extends RecorderStore {
   final HostTransport? host;
   final Map<int, String> Function() names;
   @override
-  Map<int, String> get channelNames => names();
+  Map<int, String> get channelNames {
+    final inputs = Map<int, String>.of(names());
+    final reported = _state['mixer_input_names'];
+    if (reported is Map) {
+      for (final entry in reported.entries) {
+        final id = int.tryParse('${entry.key}');
+        if (id != null &&
+            inputs.containsKey(id) &&
+            entry.value is String &&
+            (entry.value as String).trim().isNotEmpty) {
+          inputs[id] = entry.value as String;
+        }
+      }
+    }
+    return inputs;
+  }
+
   bool _connected = false,
       _pending = false,
       _refreshing = false,
@@ -25,6 +41,7 @@ class ShellRecorderStore extends RecorderStore {
   DateTime _lastRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   late final RecorderCommandGate _gate = RecorderCommandGate(_notify);
   bool _uncertain = false;
+  bool _transferring = false;
   bool _observedUncertainPending = false;
   String? _uncertainTransferInstance;
   final _random = Random.secure();
@@ -152,6 +169,9 @@ class ShellRecorderStore extends RecorderStore {
   }
 
   void tick() {
+    // File transfers serialize on the recorder worker. State requests queued
+    // behind a large transfer would time out and falsely show a lost host.
+    if (_transferring) return;
     if (canAdminRemote &&
         DateTime.now().difference(_remoteLastRefresh) >=
             const Duration(seconds: 2)) {
@@ -284,6 +304,8 @@ class ShellRecorderStore extends RecorderStore {
           .join();
       final commandInstance =
           host is DesktopHost ? (host as DesktopHost).instanceId : null;
+      final transferring = action == 'import_take' || action == 'export_take';
+      _transferring = transferring;
       try {
         if (!kIsWeb &&
             action == 'start_recording' &&
@@ -304,9 +326,27 @@ class ShellRecorderStore extends RecorderStore {
             throw StateError(message);
           }
         }
-        final result = await _request('command',
-            body: {'request_id': id, 'action': action, 'args': args},
-            timeout: const Duration(seconds: 60));
+        Map<String, dynamic> result;
+        while (true) {
+          try {
+            result = await _request(
+              'command',
+              body: {'request_id': id, 'action': action, 'args': args},
+              timeout: const Duration(seconds: 60),
+            );
+            break;
+          } on TimeoutException {
+            if (!transferring ||
+                _disposed ||
+                commandInstance == null ||
+                host is! DesktopHost ||
+                (host as DesktopHost).instanceId != commandInstance) {
+              rethrow;
+            }
+            // Keep waiting for the same operation. The host caches results by
+            // request ID, so this cannot export/import twice or overwrite data.
+          }
+        }
         if (result['request_id'] != id || result['ok'] != true) {
           throw StateError(
               '${result['error'] ?? 'Command was not acknowledged'}');
@@ -325,6 +365,7 @@ class ShellRecorderStore extends RecorderStore {
         if (e is IOException) _connected = false;
         _error = 'Command $action failed: $e';
       } finally {
+        _transferring = false;
         _notify();
         await refresh();
       }

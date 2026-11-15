@@ -109,7 +109,7 @@ pub struct SoundcheckProfile {
     pub driver_state: serde_json::Value,
 }
 
-/// Provider-owned USB interface hints and verified physical capture labels.
+/// Provider-owned USB interface hints and capture labels from routing readback.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct RecorderDescriptor {
     pub interface_names: Vec<String>,
@@ -117,6 +117,7 @@ pub struct RecorderDescriptor {
     pub output_channels: u16,
     pub channel_names: Vec<String>,
     pub capture_strip_ids: Vec<Vec<u16>>,
+    pub input_channel_names: BTreeMap<u16, String>,
 }
 
 impl SoundcheckProfile {
@@ -1644,6 +1645,7 @@ impl_dyn_driver!(openfader_sim::SimDriver {
             output_channels: profile.output_channels,
             channel_names: names,
             capture_strip_ids: Vec::new(),
+            input_channel_names: BTreeMap::new(),
         }))
     }
 
@@ -1955,6 +1957,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
             output_channels: 18,
             channel_names: vec![String::new(); tracks.len()],
             capture_strip_ids: tracks,
+            input_channel_names: BTreeMap::new(),
         }))
     }
 
@@ -2471,6 +2474,17 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    async fn recorder_descriptor(&self) -> anyhow::Result<Option<RecorderDescriptor>> {
+        let mapping = self.recorder_capture_mapping().await?;
+        Ok(Some(RecorderDescriptor {
+            interface_names: vec!["DL32S".into()],
+            capture_channels: openfader_proto_dl32s::output_routing::USB_SEND_COUNT,
+            output_channels: openfader_proto_dl32s::output_routing::USB_SEND_COUNT,
+            channel_names: mapping.source_labels,
+            capture_strip_ids: mapping.strip_ids,
+            input_channel_names: BTreeMap::new(),
+        }))
+    }
     async fn diagnostics(&self, offset: usize, limit: usize) -> anyhow::Result<serde_json::Value> {
         self.read_diagnostics(offset, limit).await
     }

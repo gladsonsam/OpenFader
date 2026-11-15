@@ -1,0 +1,153 @@
+{
+  "schema": 1,
+  "id": "wing",
+  "brand": "Behringer",
+  "family": "WING",
+  "scope": "provider",
+  "source_paths": [
+    "crates/proto-wing/src/lib.rs",
+    "crates/engine/src/drivers/wing.rs"
+  ],
+  "source_globs": [
+    "crates/proto-wing/src/**/*.rs"
+  ],
+  "models": [
+    {
+      "id": "wing",
+      "name": "WING",
+      "fixture": "wing",
+      "model_state": "registered family / fixture",
+      "identities": [
+        "ngc-full"
+      ]
+    },
+    {
+      "id": "wing-compact",
+      "name": "WING Compact",
+      "fixture": "wing-compact",
+      "model_state": "registered family / fixture"
+    },
+    {
+      "id": "wing-rack",
+      "name": "WING Rack",
+      "fixture": "wing-rack",
+      "model_state": "registered family / fixture"
+    },
+    {
+      "id": "wing-bk",
+      "identities": [
+        "wing-bk"
+      ],
+      "name": "WING (wing-bk identity)",
+      "model_state": "recognized variant; no exact fixture"
+    }
+  ],
+  "features": {
+    "identity": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "catalogue": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "channel_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "levels": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fader_law": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "preamps": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "stereo_links": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "input_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "sends": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "groups": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "solo": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "meters": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fx": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "local_scenes": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "native_library": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processor_presets": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "console_controls": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "recorder_names": {
+      "state": "missing",
+      "reason": "The native protocol/UI may have routing data, but this provider has no recorder_descriptor adapter hook.",
+      "references": [
+        "crates/engine/src/drivers/wing.rs"
+      ]
+    },
+    "auto_soundcheck": {
+      "state": "missing",
+      "reason": "No provider soundcheck profile/read/write integration is registered; manual host playback is a separate feature.",
+      "references": [
+        "crates/engine/src/drivers/wing.rs"
+      ]
+    },
+    "pan_balance": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    }
+  },
+  "evidence": [],
+  "adapter": "openfader_proto_wing::WingDriver",
+  "identity_guards": [
+    {
+      "path": "crates/proto-wing/src/routing.rs",
+      "function": "local_input_count"
+    }
+  ]
+}

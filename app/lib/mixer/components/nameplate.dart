@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/semantics.dart';
 import '../../palette.dart';
+import '../../design.dart';
 import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../design.dart';
@@ -65,16 +66,14 @@ class MixerNameplate extends StatelessWidget {
                         : Color(0xff000000 | channel.colorChoice!.rgb!)
                     : ConsolePalette.of(context)
                         .tapes[(channel.channel ?? 0) % 8];
-            // Center smaller artwork above the tape, with symmetric clearance
-            // for the identity row (or the master tab).
+            // The number overlays the top-left corner; it consumes no artwork
+            // row. Center the icon with equal clearance above and below it.
             final identityHeight = math.min(iconHeight, nameOffset);
             final numberHeight =
                 math.min(identityHeight, (compact ? 20 : 26) * sx);
-            final tabHeight = channel.master ? (compact ? 18 : 26) * sx : 0.0;
-            final artworkPadding =
-                channel.master ? tabHeight : numberHeight + 2 * sx;
+            final artworkPadding = math.min(AppDesign.spaceSm, identityHeight / 4);
             final artworkSize = math.min((compact ? 48 : 86) * sx,
-                math.max(0.0, identityHeight - artworkPadding));
+                math.max(0.0, identityHeight - artworkPadding * 2));
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
@@ -83,7 +82,7 @@ class MixerNameplate extends StatelessWidget {
                     top: 0,
                     height: numberHeight,
                     child: Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: Alignment.topLeft,
                         child: FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
@@ -98,7 +97,7 @@ class MixerNameplate extends StatelessWidget {
                     left: 0,
                     right: 0,
                     top: artworkPadding,
-                    height: math.max(0, identityHeight - artworkPadding),
+                    height: math.max(0, identityHeight - artworkPadding * 2),
                     child: Center(
                         child: SizedBox.square(
                             dimension: artworkSize,

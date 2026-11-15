@@ -1,0 +1,191 @@
+{
+  "schema": 1,
+  "id": "xair",
+  "brand": "Behringer",
+  "family": "X Air / M Air",
+  "scope": "provider",
+  "source_paths": [
+    "crates/proto-xair/src/lib.rs",
+    "crates/engine/src/drivers.rs"
+  ],
+  "source_globs": [
+    "crates/proto-xair/src/**/*.rs"
+  ],
+  "models": [
+    {
+      "id": "xr12",
+      "name": "XR12",
+      "model_state": "recognized",
+      "overrides": {
+        "recorder_names": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        },
+        "auto_soundcheck": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        }
+      }
+    },
+    {
+      "id": "xr16",
+      "name": "XR16",
+      "model_state": "recognized",
+      "overrides": {
+        "recorder_names": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        },
+        "auto_soundcheck": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        }
+      }
+    },
+    {
+      "id": "xr18",
+      "name": "XR18",
+      "fixture": "xair",
+      "model_state": "recognized"
+    },
+    {
+      "id": "mr18",
+      "name": "MR18",
+      "brand": "Midas",
+      "model_state": "recognized",
+      "overrides": {
+        "recorder_names": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        },
+        "auto_soundcheck": {
+          "state": "blocked",
+          "reason": "Current recorder/soundcheck preflight explicitly accepts XR18 firmware 1.20 only; this model must not inherit its profile.",
+          "references": [
+            "crates/proto-xair/src/soundcheck_profile.rs"
+          ]
+        }
+      }
+    }
+  ],
+  "features": {
+    "identity": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "catalogue": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "channel_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "levels": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fader_law": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "preamps": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "stereo_links": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "input_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "sends": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "groups": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "solo": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "meters": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fx": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "local_scenes": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "native_library": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processor_presets": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "console_controls": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "recorder_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "auto_soundcheck": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "pan_balance": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    }
+  },
+  "evidence": [],
+  "adapter": "openfader_proto_xair::XAirDriver",
+  "identity_guards": [
+    {
+      "path": "crates/proto-xair/src/lifecycle.rs",
+      "function": "is_xair_model",
+      "ignore": [
+        "xair"
+      ]
+    }
+  ]
+}

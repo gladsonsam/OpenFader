@@ -86,32 +86,33 @@ class _MixerStripState extends State<MixerStrip> {
             phone: compact, width: box.maxWidth, height: box.maxHeight);
         final layout = PrefsService.instance.stripLayout;
         final ch = channel;
+        final shortSurface = box.maxHeight < 800;
         final hasArtwork = ch.showsArtwork;
         var showArtwork =
             (reserveArtwork ?? hasArtwork) && box.maxHeight >= 480;
         var identityHeight = showArtwork
-            ? AppDesign.spaceXl + math.min(64.0, box.maxWidth * .55)
+            ? AppDesign.spaceXl + math.min(32.0, box.maxWidth * .35)
             : AppDesign.spaceXl;
         // Tape grows by the system bottom inset so names clear the nav bar.
-        final nameHeight = AppDesign.touchTarget + bottomInset;
-        const gap = AppDesign.spaceSm;
+        final nameHeight = AppDesign.space2xl + bottomInset;
+        final gap = shortSurface ? AppDesign.spaceXs : AppDesign.spaceSm;
         var compactRack =
             compact || layout.compactProcessing || box.maxHeight < 520;
         final heights = <StripElement, double>{
           StripElement.processing: compactRack
               ? AppDesign.touchTarget
               : (g.rackH * (3 / layout.faderWeight).clamp(.6, 1.5))
-                  .clamp(96.0, 144.0),
-          StripElement.pan: AppDesign.touchTarget,
-          StripElement.mute: AppDesign.controlHeight,
-          StripElement.solo: AppDesign.controlHeight,
+                  .clamp(88.0, shortSurface ? 88.0 : 120.0),
+          StripElement.pan: AppDesign.space2xl,
+          StripElement.mute: AppDesign.touchTarget,
+          StripElement.solo: AppDesign.touchTarget,
           StripElement.nameplate: identityHeight + nameHeight,
         };
         final visible = [...layout.visibleOrder];
-        // Budget the fader first in logical pixels, never as a fraction of the
-        // authored portrait mock. Its cell includes the cap and level readout,
-        // so a 240-point cell leaves useful travel on short landscape screens.
-        const minimumFaderHeight = 240.0;
+        // Reserve most of the usable strip for level control. A fixed minimum
+        // alone lets secondary rows consume too much of landscape windows.
+        // Keep a logical-pixel floor because the cap needs endpoint clearance.
+        final minimumFaderHeight = math.max(240.0, box.maxHeight * .55);
         final hasFader = visible.contains(StripElement.fader);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
@@ -160,9 +161,7 @@ class _MixerStripState extends State<MixerStrip> {
           if (rect == null) return const SizedBox.shrink();
           // Rows already reserve their full touch targets. Expanding them
           // independently here can cover an adjacent fader's outline.
-          final inset = element == StripElement.processing
-              ? AppDesign.spaceXs / 2
-              : AppDesign.spaceXs;
+          const inset = AppDesign.spaceXs;
           return Positioned(
               left: inset,
               right: inset,
@@ -206,7 +205,8 @@ class _MixerStripState extends State<MixerStrip> {
                             ? MixerPan(
                                 name: ch.name,
                                 value: 0,
-                                visualHeight: allocated(StripElement.pan),
+                                visualHeight: math.min(AppDesign.space2xl,
+                                    allocated(StripElement.pan)),
                                 onChanged: null)
                             : ValueListenableBuilder<double>(
                                 valueListenable: controller.panNoteOf(chIndex),
@@ -215,7 +215,8 @@ class _MixerStripState extends State<MixerStrip> {
                                     value: pan,
                                     onTouch: () => onControlFocus
                                         ?.call(MixerReadoutControl.pan),
-                                    visualHeight: allocated(StripElement.pan),
+                                    visualHeight: math.min(AppDesign.space2xl,
+                                        allocated(StripElement.pan)),
                                     onChanged: ready & 4 != 0
                                         ? (v) {
                                             onControlFocus
@@ -231,8 +232,10 @@ class _MixerStripState extends State<MixerStrip> {
                                 controller.muteNoteOf(chIndex, isMaster),
                             builder: (context, muted, _) => MixerToggle(
                                 label: ready & 2 != 0 ? 'Mute' : 'Mute · -',
-                                visualHeight: allocated(StripElement.mute),
-                                fontSize: g.x(compact ? 20 : 32),
+                                visualHeight: math.min(AppDesign.toggleHeight,
+                                    allocated(StripElement.mute)),
+                                fontSize: g.x(compact ? 22 : 32)
+                                    .clamp(AppDesign.controlLabel, 20.0),
                                 channelName: ch.name,
                                 on: ready & 2 != 0 && muted,
                                 activeColor: ConsolePalette.of(context).mute,
@@ -321,8 +324,10 @@ class _MixerStripState extends State<MixerStrip> {
                                 label: 'Solo',
                                 unavailableReason:
                                     ready & 8 != 0 ? null : 'Solo unavailable',
-                                visualHeight: allocated(StripElement.solo),
-                                fontSize: g.x(compact ? 20 : 32),
+                                visualHeight: math.min(AppDesign.toggleHeight,
+                                    allocated(StripElement.solo)),
+                                fontSize: g.x(compact ? 22 : 32)
+                                    .clamp(AppDesign.controlLabel, 20.0),
                                 channelName: ch.name,
                                 on: ready & 8 != 0 && solo,
                                 activeColor: ConsolePalette.of(context).solo,

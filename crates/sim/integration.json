@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "id": "sim",
+  "brand": "OpenFader",
+  "family": "Simulation",
+  "scope": "provider",
+  "source_paths": [
+    "crates/sim/src/lib.rs",
+    "crates/engine/src/drivers.rs"
+  ],
+  "source_globs": [
+    "crates/sim/src/**/*.rs"
+  ],
+  "models": [
+    {
+      "id": "sim-generic",
+      "name": "Generic fixture",
+      "physical": false,
+      "model_state": "simulation"
+    },
+    {
+      "id": "sim-studio",
+      "name": "Studio fixture",
+      "physical": false,
+      "model_state": "simulation"
+    }
+  ],
+  "features": {
+    "identity": {
+      "state": "not_applicable",
+      "reason": "Named local simulation fixture; it is not a discoverable hardware mixer.",
+      "references": [
+        "crates/sim/src/lib.rs"
+      ]
+    },
+    "catalogue": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "channel_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "levels": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fader_law": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "preamps": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "stereo_links": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "input_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_routing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "sends": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "groups": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "solo": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "meters": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "fx": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "local_scenes": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "native_library": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "processor_presets": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "console_controls": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "recorder_names": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "auto_soundcheck": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "pan_balance": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    },
+    "output_processing": {
+      "state": "unreviewed",
+      "reason": "End-to-end feature audit and exact-model evidence have not been recorded in this matrix."
+    }
+  },
+  "evidence": [],
+  "adapter": "openfader_sim::SimDriver"
+}

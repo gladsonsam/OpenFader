@@ -599,6 +599,12 @@ class _RecorderPageState extends State<RecorderPage> {
   }
 
   bool _transferBusy = false;
+  String? _transferLabel;
+
+  bool get _localTransferAvailable =>
+      !kIsWeb &&
+      store.canAdminRemote &&
+      (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   Future<void> _rejectLinkedParents(String value) async {
     var current = path.absolute(value);
@@ -668,8 +674,7 @@ class _RecorderPageState extends State<RecorderPage> {
       );
       return;
     }
-    if (!store.canAdminRemote ||
-        !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    if (!_localTransferAvailable) {
       _snapshotMessage(
         'Take transfer is available only on a local desktop recorder host.',
       );
@@ -680,27 +685,55 @@ class _RecorderPageState extends State<RecorderPage> {
       builder: (context) => SimpleDialog(
         title: Text(importing ? 'Import take' : 'Export take'),
         children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'wav'),
-            child: const Text('Multichannel WAV file'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'native'),
-            child: const Text('Native take folder'),
-          ),
+          if (importing)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'wav'),
+              child: const Text('Multichannel WAV file'),
+            ),
+          if (importing)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'native'),
+              child: const Text('Native take folder'),
+            ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'tracks'),
-            child: Text(
-              importing
-                  ? 'Mono WAV tracks folder (OpenFader export)'
-                  : 'Mono WAV tracks folder',
-            ),
+            child: importing
+                ? const Text('Mono WAV tracks folder (OpenFader export)')
+                : const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Multitrack',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      SizedBox(height: 4),
+                      Text('One WAV per recorded track. For editing.'),
+                    ],
+                  ),
           ),
           if (!importing)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'mix'),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Stereo mix',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(height: 4),
+                  Text('All tracks combined into one stereo WAV.'),
+                ],
+              ),
+            ),
+          if (!importing)
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 16),
               child: Text(
-                'Multichannel WAV is limited to 4 GiB. For longer takes, export mono tracks or a native take folder.',
+                'Stereo mix combines all tracks at equal level, centered, '
+                'and reduces the level if needed to prevent clipping. '
+                'Mixer processing is not included.\n\n'
+                'Files over 4 GiB use RF64 WAV.',
               ),
             ),
         ],
@@ -721,56 +754,27 @@ class _RecorderPageState extends State<RecorderPage> {
       );
     }
     if (!mounted || selected == null) return;
-    setState(() => _transferBusy = true);
+    setState(() {
+      _transferBusy = true;
+      _transferLabel = importing ? 'Importing take…' : 'Exporting take…';
+    });
     String? staged;
     String? exportDestination;
     var safeToClean = false;
     try {
-      final root = Platform.isMacOS
-          ? path.join(
-              Platform.environment['HOME'] ?? '',
-              'Library',
-              'Application Support',
-              'OpenFader',
-              'Recorder',
-              'transfers',
-            )
-          : Platform.isLinux
-          ? path.join(
-              (Platform.environment['XDG_DATA_HOME']?.startsWith('/') ?? false)
-                  ? Platform.environment['XDG_DATA_HOME']!
-                  : path.join(
-                      Platform.environment['HOME'] ?? '',
-                      '.local',
-                      'share',
-                    ),
-              'OpenFader',
-              'Recorder',
-              'transfers',
-            )
-          : path.join(
-              Platform.environment['APPDATA'] ?? '',
-              'OpenFader',
-              'Recorder',
-              'transfers',
-            );
-      if ((Platform.isMacOS
-                  ? Platform.environment['HOME']
-                  : Platform.isLinux
-                  ? (Platform.environment['XDG_DATA_HOME']?.startsWith('/') ==
-                            true
-                        ? Platform.environment['XDG_DATA_HOME']
-                        : Platform.environment['HOME'])
-                  : Platform.environment['APPDATA'])
-              ?.isNotEmpty !=
-          true) {
-        throw StateError('Recorder data directory is unavailable.');
+      final hostRoot = store.state['transfer_directory'];
+      if (hostRoot is! String || !path.isAbsolute(hostRoot)) {
+        throw StateError(
+          'Recorder transfer directory is unavailable. Restart the recorder host.',
+        );
       }
+      final root = hostRoot;
       await _rejectLinkedParents(root);
       await _rejectLinkedParents(selected);
       if (!importing) {
         final filename = switch (format) {
           'wav' => '$takeId.wav',
+          'mix' => '$takeId-mix.wav',
           'tracks' => '$takeId-tracks',
           _ => '$takeId-native',
         };
@@ -825,6 +829,9 @@ class _RecorderPageState extends State<RecorderPage> {
       safeToClean = true;
       if (!importing) {
         final destination = exportDestination!;
+        if (mounted) {
+          setState(() => _transferLabel = 'Saving export to destination…');
+        }
         await _copyTransfer(staged, destination);
         _snapshotMessage('Take exported to $destination');
       } else {
@@ -848,7 +855,12 @@ class _RecorderPageState extends State<RecorderPage> {
           _snapshotMessage('Could not remove staging data at $staged: $e');
         }
       }
-      if (mounted) setState(() => _transferBusy = false);
+      if (mounted) {
+        setState(() {
+          _transferBusy = false;
+          _transferLabel = null;
+        });
+      }
     }
   }
 
@@ -1169,6 +1181,7 @@ class _RecorderPageState extends State<RecorderPage> {
 
   bool get _canPrepare =>
       store.connected &&
+      !_transferBusy &&
       !store.pending &&
       store.state['available'] == true &&
       store.state['input_mode'] == 'live' &&
@@ -1461,6 +1474,22 @@ class _RecorderPageState extends State<RecorderPage> {
                 ),
               ),
             ),
+            if (take?['complete'] == true && _localTransferAvailable)
+              TextButton.icon(
+                onPressed:
+                    store.connected &&
+                        !store.pending &&
+                        !_transferBusy &&
+                        s['input_mode'] == 'live' &&
+                        s['transport'] == 'stopped'
+                    ? () => _transferTake(
+                        importing: false,
+                        takeId: take!['id'] as String,
+                      )
+                    : null,
+                icon: const Icon(Icons.file_download_outlined, size: 20),
+                label: const Text('Export'),
+              ),
             IconButton(
               tooltip: 'Audio setup',
               onPressed: () => _showSetup(context, store),
@@ -1486,13 +1515,6 @@ class _RecorderPageState extends State<RecorderPage> {
                     }
                   case 'details':
                     if (take != null) _inspectTake(take);
-                  case 'export':
-                    if (take != null) {
-                      _transferTake(
-                        importing: false,
-                        takeId: take['id'] as String,
-                      );
-                    }
                   case 'snapshot':
                     if (take != null) _linkSnapshot(take['id'] as String);
                   case 'recall':
@@ -1542,11 +1564,6 @@ class _RecorderPageState extends State<RecorderPage> {
                   const PopupMenuItem(
                     value: 'details',
                     child: Text('Take details'),
-                  ),
-                  PopupMenuItem(
-                    value: 'export',
-                    enabled: !_transferBusy && !store.pending,
-                    child: const Text('Export take'),
                   ),
                   PopupMenuItem(
                     value: 'snapshot',
@@ -1666,12 +1683,31 @@ class _RecorderPageState extends State<RecorderPage> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ColoredBox(color: p.recorderSurface, child: header),
+          Container(
+            color: p.recorderSurface,
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+            child: header,
+          ),
           Container(
             color: p.recorderBar,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: transportControls,
           ),
+          if (_transferBusy)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(_transferLabel ?? 'Transferring take…')),
+                ],
+              ),
+            ),
           if (recordReason != null &&
               !soundcheck &&
               !recording &&
@@ -1956,6 +1992,12 @@ class _RecorderPageState extends State<RecorderPage> {
                 await _transferTake(importing: true);
               },
         onRecover: _canPrepare && store.canAdminRemote ? _recoverTake : null,
+        onExport: _localTransferAvailable && !_transferBusy
+            ? (id) async {
+                Navigator.pop(context);
+                await _transferTake(importing: false, takeId: id);
+              }
+            : null,
       ),
     );
     if (!mounted || id == null) return;
@@ -2102,7 +2144,9 @@ class _RecorderPageState extends State<RecorderPage> {
                       label: const Text('Input names and mixer mapping'),
                     ),
                     Text(
-                      'Confirm which mixer channel feeds each interface input. Names are saved with recordings; this does not change mixer routing.',
+                      s['capture_names_automatic'] == true
+                          ? 'Track names follow the mixer’s reported USB patch automatically when available. Review or override them here.'
+                          : 'Custom track names are active. Use Auto from USB patch to follow the mixer again.',
                       style: TextStyle(color: p.mutedText),
                     ),
                   ],
@@ -2151,6 +2195,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
   late final Map<String, dynamic>? _device;
   late final List<TextEditingController> _labels;
   bool _saving = false;
+  bool _edited = false;
   String? _error;
   @override
   void initState() {
@@ -2163,11 +2208,17 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
     final count = recorderChannelCount(
       device == null ? null : device['input_channels'],
     );
-    final saved = s['capture_channel_names'];
+    final saved = s['capture_names_automatic'] == true
+        ? s['channel_names']
+        : s['capture_channel_names'];
     _labels = List.generate(
       count,
       (i) => TextEditingController(
-        text: saved is List && saved.length == count && saved[i] is String
+        text:
+            saved is List &&
+                saved.length == count &&
+                saved[i] is String &&
+                (saved[i] as String).trim().isNotEmpty
             ? saved[i] as String
             : 'Input ${i + 1}',
       ),
@@ -2184,6 +2235,10 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
 
   Future<void> _save() async {
     final store = widget.store;
+    if (!_edited && store.state['capture_names_automatic'] == true) {
+      Navigator.pop(context);
+      return;
+    }
     final device = store.devices
         .where((d) => d['id'] == _device?['id'])
         .firstOrNull;
@@ -2249,12 +2304,99 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
     Navigator.pop(context);
   }
 
+  Future<void> _useAutoNames() async {
+    if (_saving || _device == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    await widget.store.command('set_capture_channel_names', {
+      'device_id': _device['id'],
+      'auto': true,
+    });
+    if (!mounted) return;
+    if (widget.store.error != null ||
+        widget.store.state['capture_names_automatic'] != true) {
+      setState(() {
+        _saving = false;
+        _error =
+            widget.store.error ??
+            'Automatic names were not confirmed by the recorder.';
+      });
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  Future<void> _chooseMixerInput(int input) async {
+    var query = '';
+    final inputs = widget.store.channelNames.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final matches = inputs
+              .where(
+                (e) => '${e.key + 1} ${e.value}'.toLowerCase().contains(query),
+              )
+              .toList();
+          return ConsoleAlertDialog(
+            title: Text('Choose input channel · ${inputs.length} inputs'),
+            content: SizedBox(
+              width: 440,
+              height: min(480, MediaQuery.sizeOf(context).height * .55),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: const InputDecoration(
+                      hintText: 'Search by channel number or name',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onChanged: (value) =>
+                        update(() => query = value.trim().toLowerCase()),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: matches.isEmpty
+                        ? const Center(child: Text('No input channels match.'))
+                        : ListView.builder(
+                            itemCount: matches.length,
+                            itemBuilder: (context, i) => ListTile(
+                              title: Text(
+                                '${matches[i].key + 1} · ${matches[i].value}',
+                              ),
+                              onTap: () =>
+                                  Navigator.pop(context, matches[i].value),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted || name == null) return;
+    _labels[input].text = name;
+    _edited = true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
-    final mixerNames = widget.store.channelNames.entries
-        .where((e) => e.value.trim().isNotEmpty)
-        .toList();
+    final mixerNames =
+        widget.store.channelNames.entries
+            .where((e) => e.value.trim().isNotEmpty)
+            .toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
     return ConsoleAlertDialog(
       title: const Text('Input names and mixer mapping'),
       content: SizedBox(
@@ -2269,10 +2411,24 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Match each interface input to the signal it carries. Choose a mixer name or type a label. This saves track names; it does not patch the mixer.',
+              'Auto reads the mixer’s USB patch and follows its channel names. You can also choose an input channel or type a custom track name. This does not change mixer routing.',
               style: TextStyle(color: p.mutedText),
             ),
             const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _saving ? null : _useAutoNames,
+                icon: const Icon(Icons.auto_fix_high_outlined),
+                label: const Text('Auto from USB patch'),
+              ),
+            ),
+            if (widget.store.state['channel_names_reason'] is String)
+              Text(
+                widget.store.state['channel_names_reason'] as String,
+                style: TextStyle(color: p.mutedText),
+              ),
+            const SizedBox(height: 8),
             Expanded(
               child: ListView.builder(
                 itemCount: _labels.length,
@@ -2290,6 +2446,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
                       Expanded(
                         child: TextField(
                           controller: _labels[i],
+                          onChanged: (_) => _edited = true,
                           enabled: !_saving,
                           decoration: const InputDecoration(
                             labelText: 'Recorded track name',
@@ -2297,20 +2454,12 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
                         ),
                       ),
                       if (mixerNames.isNotEmpty)
-                        PopupMenuButton<String>(
-                          tooltip: 'Choose mixer channel',
-                          enabled: !_saving,
+                        IconButton(
+                          tooltip: 'Choose mixer input channel',
+                          onPressed: _saving
+                              ? null
+                              : () => _chooseMixerInput(i),
                           icon: const Icon(Icons.account_tree_outlined),
-                          onSelected: (name) => _labels[i].text = name,
-                          itemBuilder: (_) => [
-                            for (final entry in mixerNames)
-                              PopupMenuItem(
-                                value: entry.value,
-                                child: Text(
-                                  '${entry.key + 1} · ${entry.value}',
-                                ),
-                              ),
-                          ],
                         ),
                     ],
                   ),
@@ -2521,11 +2670,13 @@ class _TakeBrowser extends StatefulWidget {
     required this.durationOf,
     this.onImport,
     this.onRecover,
+    this.onExport,
   });
   final RecorderStore store;
   final String Function(Map<String, dynamic>) nameOf, dateOf, durationOf;
   final Future<void> Function()? onImport;
   final Future<void> Function(String)? onRecover;
+  final Future<void> Function(String)? onExport;
   @override
   State<_TakeBrowser> createState() => _TakeBrowserState();
 }
@@ -2570,146 +2721,177 @@ class _TakeBrowserState extends State<_TakeBrowser> {
           (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
       return SizedBox(
         height: MediaQuery.sizeOf(context).height * .85,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Browse takes',
-                      style: TextStyle(
-                        color: p.text1,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Browse takes',
+                        style: TextStyle(
+                          color: p.text1,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close takes',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                onChanged: (v) =>
-                    setState(() => _query = v.trim().toLowerCase()),
-                decoration: const InputDecoration(
-                  hintText: 'Search takes',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButton<String>(
-                      value: _sort,
-                      isExpanded: true,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'newest',
-                          child: Text('Newest first'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'oldest',
-                          child: Text('Oldest first'),
-                        ),
-                        DropdownMenuItem(value: 'name', child: Text('Name')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) setState(() => _sort = v);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (canTransfer)
                     IconButton(
-                      tooltip: 'Import take',
-                      onPressed: canOpen ? widget.onImport : null,
-                      icon: const Icon(Icons.file_upload_outlined),
+                      tooltip: 'Close takes',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
                     ),
-                ],
-              ),
-              if (!canOpen)
-                Text(
-                  store.state['transport'] == 'recording'
-                      ? 'Recording continues. Stop recording to open another take.'
-                      : 'Return to live inputs and stop playback to open another take.',
-                  style: TextStyle(color: p.amber),
+                  ],
                 ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: takes.isEmpty
-                    ? Center(
-                        child: Text(
-                          _query.isEmpty
-                              ? 'No takes yet. Press Record to start.'
-                              : 'No takes match your search.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: p.mutedText),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: takes.length,
-                        separatorBuilder: (context, index) =>
-                            Divider(color: p.linePanel, height: 1),
-                        itemBuilder: (context, index) {
-                          final take = takes[index];
-                          final complete = take['complete'] == true;
-                          final date = widget.dateOf(take);
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 6,
-                            ),
-                            leading: Icon(
-                              complete
-                                  ? Icons.audio_file_outlined
-                                  : Icons.warning_amber_rounded,
-                              color: complete ? p.mutedText : p.amber,
-                            ),
-                            title: Text(
-                              widget.nameOf(take),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: p.text1,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${widget.durationOf(take)} · ${recorderChannelCount(take)} tracks${date.isEmpty ? '' : ' · $date'}${complete ? '' : ' · Recovery needed'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onTap: complete && canOpen
-                                ? () => Navigator.pop(
-                                    context,
-                                    take['id'] as String,
-                                  )
-                                : null,
-                            trailing: complete
-                                ? Icon(Icons.chevron_right, color: p.mutedText)
-                                : widget.onRecover != null
-                                ? TextButton(
-                                    onPressed: canOpen
-                                        ? () => widget.onRecover!(
-                                            take['id'] as String,
-                                          )
-                                        : null,
-                                    child: const Text('Recover'),
-                                  )
-                                : null,
-                          );
+                const SizedBox(height: 8),
+                TextField(
+                  onChanged: (v) =>
+                      setState(() => _query = v.trim().toLowerCase()),
+                  decoration: const InputDecoration(
+                    hintText: 'Search takes',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: _sort,
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'newest',
+                            child: Text('Newest first'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'oldest',
+                            child: Text('Oldest first'),
+                          ),
+                          DropdownMenuItem(value: 'name', child: Text('Name')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _sort = v);
                         },
                       ),
-              ),
-            ],
+                    ),
+                    const SizedBox(width: 12),
+                    if (canTransfer)
+                      IconButton(
+                        tooltip: 'Import take',
+                        onPressed: canOpen ? widget.onImport : null,
+                        icon: const Icon(Icons.file_upload_outlined),
+                      ),
+                  ],
+                ),
+                if (!canOpen)
+                  Text(
+                    store.state['transport'] == 'recording'
+                        ? 'Recording continues. Stop recording to open another take.'
+                        : 'Return to live inputs and stop playback to open another take.',
+                    style: TextStyle(color: p.amber),
+                  ),
+                if (!canTransfer)
+                  Text(
+                    'Import and export are available on the recorder computer.',
+                    style: TextStyle(color: p.mutedText),
+                  ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: takes.isEmpty
+                      ? Center(
+                          child: Text(
+                            _query.isEmpty
+                                ? 'No takes yet. Press Record to start.'
+                                : 'No takes match your search.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: p.mutedText),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: takes.length,
+                          separatorBuilder: (context, index) =>
+                              Divider(color: p.linePanel, height: 1),
+                          itemBuilder: (context, index) {
+                            final take = takes[index];
+                            final complete = take['complete'] == true;
+                            final date = widget.dateOf(take);
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 6,
+                              ),
+                              leading: Icon(
+                                complete
+                                    ? Icons.audio_file_outlined
+                                    : Icons.warning_amber_rounded,
+                                color: complete ? p.mutedText : p.amber,
+                              ),
+                              title: Text(
+                                widget.nameOf(take),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: p.text1,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${widget.durationOf(take)} · ${recorderChannelCount(take)} tracks${date.isEmpty ? '' : ' · $date'}${complete ? '' : ' · Recovery needed'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: complete && canOpen
+                                  ? () => Navigator.pop(
+                                      context,
+                                      take['id'] as String,
+                                    )
+                                  : null,
+                              trailing: complete
+                                  ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (canTransfer)
+                                          TextButton.icon(
+                                            onPressed:
+                                                canOpen &&
+                                                    widget.onExport != null
+                                                ? () => widget.onExport!(
+                                                    take['id'] as String,
+                                                  )
+                                                : null,
+                                            icon: const Icon(
+                                              Icons.file_download_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Export'),
+                                          ),
+                                        Icon(
+                                          Icons.chevron_right,
+                                          color: p.mutedText,
+                                        ),
+                                      ],
+                                    )
+                                  : widget.onRecover != null
+                                  ? TextButton(
+                                      onPressed: canOpen
+                                          ? () => widget.onRecover!(
+                                              take['id'] as String,
+                                            )
+                                          : null,
+                                      child: const Text('Recover'),
+                                    )
+                                  : null,
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       );

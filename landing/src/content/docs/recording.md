@@ -33,7 +33,9 @@ The recorder uses the interface's current sample rate. There is no sample rate s
 
 **New take** in the recorder actions menu is optional: use it to choose a name before recording. Tap the take name in the header to browse previous recordings. Hold or hover over an icon to see its action.
 
-Under **Audio setup → Input names and mixer mapping**, confirm the signal carried by each interface input. Choose a mixer channel name or type a label. These names are remembered on the recorder computer and saved into each new take. Names in existing recordings stay as they were when recorded. This naming step does not change the mixer's physical or USB routing; the app does not assume input 1 carries mixer channel 1.
+Track names default to the connected provider's reported USB patch when its audio interface matches and complete routing readback is available. The recorder reads the patch again when recording starts, so a USB send patched to another input follows that input's name. Matching channel counts alone do not establish a mapping.
+
+Under **Audio setup → Input names and mixer mapping**, use **Auto from USB patch** to refresh automatic names or return from custom labels to automatic naming. The manual picker lists the provider's input channels, including those outside the visible mixer bank; returns and VCAs are not numbered as extra input channels. You can also type custom labels, which are remembered on the recorder computer. Names in existing recordings stay as they were when recorded. Naming does not change the mixer's physical or USB routing or enable automatic soundcheck routing. Missing or unreadable routing is reported in Audio setup.
 
 You cannot quit OpenFader while it is recording. It asks you to stop first.
 
@@ -51,12 +53,13 @@ Use the mixer icon at the top left to work with the normal mixer EQ, dynamics an
 ## Export a take
 
 1. Stop playback and tap **Return to live** if playback routing is active.
-2. Open a take from **Browse takes**, then choose **Export take** from the recorder actions menu.
-3. Choose a format:
-   - **Multichannel WAV file:** one file with every channel. Limited to 4 GB.
-   - **Mono WAV tracks folder:** one WAV per channel. Use this for long takes or for opening in a DAW.
-   - **Native take folder:** OpenFader's own format, for moving a take to another OpenFader computer.
-4. Pick a folder.
+2. Open **Browse takes** and tap **Export** beside the recording. You can also tap **Export** in the open take's top bar.
+3. Choose **Multitrack** for a folder containing one WAV file per recorded channel, or **Stereo mix** for one stereo WAV file.
+4. Pick a destination folder and wait for the export confirmation. Long takes can take several minutes to process and save.
+
+Stereo mix combines every recorded track at equal level, centered. If the combined signal would clip, OpenFader reduces the level of the entire mix to prevent clipping. It does not include the mixer's live fader settings, EQ, dynamics or effects. It does not assume any recorded channel is a master output.
+
+Exports use 24-bit WAV, with RF64 for files over 4 GiB. Your audio software must support RF64 for those files, and the destination drive must support large files (FAT32 does not). Multitrack exports also include the channel names and an OpenFader import manifest.
 
 ## Import a take
 

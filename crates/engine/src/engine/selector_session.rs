@@ -112,28 +112,66 @@ impl SelectorSession {
         let mut descriptor = self.driver.recorder_descriptor().await?;
         self.check()?;
         if let Some(descriptor) = &mut descriptor {
+            let mut defaults = std::collections::BTreeMap::new();
+            for family in self
+                .driver
+                .topology()
+                .into_iter()
+                .filter(|f| f.kind == openfader_core::StripKind::In)
+            {
+                for index in 0..family.count {
+                    defaults.insert(
+                        (family.first + index) as u16,
+                        format!("{} {}", family.name_prefix, index + 1),
+                    );
+                }
+            }
+            let mut ids: std::collections::BTreeSet<_> = defaults.keys().copied().collect();
+            ids.extend(descriptor.capture_strip_ids.iter().flatten().copied());
+            // Read the whole provider input catalogue, not just the visible bank's
+            // parameter cache. Capture references may also explicitly name returns.
+            let reads =
+                futures::future::join_all(ids.into_iter().map(|id| async move {
+                    (id, self.driver.get_param(StripId(id), "name").await)
+                }))
+                .await;
+            self.check()?;
+            let mut actual = std::collections::BTreeMap::new();
+            for (id, value) in reads {
+                if let Ok(openfader_core::ParamValue::Text(name)) = value {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        actual.insert(id, name.to_owned());
+                    }
+                }
+            }
+            descriptor.input_channel_names = defaults
+                .into_iter()
+                .map(|(id, fallback)| (id, actual.get(&id).cloned().unwrap_or(fallback)))
+                .collect();
             if !descriptor.capture_strip_ids.is_empty() {
-                let cache = self.engine.param_cache.read().unwrap();
                 descriptor.channel_names = descriptor
                     .capture_strip_ids
                     .iter()
-                    .map(|ids| {
+                    .enumerate()
+                    .map(|(index, ids)| {
                         let mut names = Vec::new();
                         for id in ids {
-                            if let Some(name) = cache
-                                .get(id)
-                                .and_then(|params| params.get("name"))
-                                .and_then(serde_json::Value::as_str)
-                                .map(str::trim)
-                                .filter(|name| !name.is_empty())
-                            {
-                                let name: String = name.chars().take(128).collect();
-                                if !names.contains(&name) {
-                                    names.push(name);
+                            if let Some(name) = actual.get(id) {
+                                if !names.contains(&name.as_str()) {
+                                    names.push(name.as_str());
                                 }
                             }
                         }
-                        names.join(" / ")
+                        if names.is_empty() {
+                            descriptor
+                                .channel_names
+                                .get(index)
+                                .cloned()
+                                .unwrap_or_default()
+                        } else {
+                            names.join(" / ").chars().take(120).collect()
+                        }
                     })
                     .collect();
             }

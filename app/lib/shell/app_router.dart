@@ -146,12 +146,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     final host = widget.api;
     _recorder = ShellRecorderStore(
-        host: host is HostTransport ? host : null,
-        names: () => {
-              for (final strip in widget.store.assignmentStrips)
-                if (strip.ch >= 0 && strip.name.isNotEmpty)
-                  strip.ch: strip.name
-            });
+      host: host is HostTransport ? host : null,
+      names: () => {
+        for (final family in widget.store.engine.topology)
+          if (family['kind'] == 'in')
+            for (var i = 0; i < (family['count'] as num).toInt(); i++)
+              (family['first'] as num).toInt() + i:
+                  widget.store.assignmentStrips
+                      .where(
+                        (s) =>
+                            s.ch == (family['first'] as num).toInt() + i &&
+                            s.name.trim().isNotEmpty,
+                      )
+                      .firstOrNull
+                      ?.name ??
+                  '${family['name_prefix'] ?? family['label']} ${i + 1}',
+      },
+    );
     widget.desktop?.attach(this, _prepareDesktopQuit);
     widget.store.addListener(_updateDesktopStatus);
     _recorder.addListener(_updateDesktopStatus);

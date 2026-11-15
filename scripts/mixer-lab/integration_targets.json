@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "sq5",
+      "brand": "Allen & Heath",
+      "family": "SQ",
+      "name": "SQ5",
+      "model_state": "target / blocked",
+      "fixture": "sq5",
+      "reason": "Emulator transport available; OpenFader SQ driver and verification adapter needed. MIDI coverage does not establish full SQ control.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "dlive",
+      "brand": "Allen & Heath",
+      "family": "dLive",
+      "name": "dLive family",
+      "model_state": "target / blocked",
+      "fixture": "dlive",
+      "reason": "Emulator transport available; OpenFader dLive driver and verification adapter needed. MIDI coverage does not establish full dLive control.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "promix01",
+      "brand": "Yamaha",
+      "family": "ProMix",
+      "name": "ProMix 01",
+      "model_state": "target / blocked",
+      "fixture": "promix01",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "02r",
+      "brand": "Yamaha",
+      "family": "Digital",
+      "name": "02R",
+      "model_state": "target / blocked",
+      "fixture": "02r",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "01v",
+      "brand": "Yamaha",
+      "family": "Digital",
+      "name": "01V",
+      "model_state": "target / blocked",
+      "fixture": "01v",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "dm2000",
+      "brand": "Yamaha",
+      "family": "Digital",
+      "name": "DM2000",
+      "model_state": "target / blocked",
+      "fixture": "dm2000",
+      "reason": "Requires MIDI transport lab adapter and OpenFader driver.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "pro2",
+      "brand": "Midas",
+      "family": "PRO",
+      "name": "PRO2",
+      "model_state": "target / blocked",
+      "fixture": "pro2",
+      "reason": "Sidecar profile has no published control protocol; emulated DSP is not hardware remote control.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "xenyx1202",
+      "brand": "Behringer",
+      "family": "XENYX",
+      "name": "Q1202USB",
+      "model_state": "target / blocked",
+      "fixture": "xenyx1202",
+      "reason": "Physical analog mixer has no remote control protocol; USB audio does not provide control of its knobs.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "universal",
+      "brand": "Sidecar",
+      "family": "Software console",
+      "name": "Universal fixture",
+      "model_state": "target / blocked",
+      "fixture": "universal",
+      "reason": "Sidecar software console, not a physical mixer; needs a dedicated capability-complete integration.",
+      "references": [
+        "scripts/mixer-lab/matrix.json"
+      ]
+    },
+    {
+      "id": "dl16s",
+      "brand": "Mackie",
+      "family": "DL",
+      "name": "DL16S",
+      "model_state": "explicitly rejected",
+      "reason": "The DL32S driver explicitly rejects this model because its native map is unverified.",
+      "references": [
+        "crates/proto-dl32s/src/addrs.rs"
+      ]
+    },
+    {
+      "id": "dl32r",
+      "brand": "Mackie",
+      "family": "DL",
+      "name": "DL32R",
+      "model_state": "explicitly rejected",
+      "reason": "The DL32S driver explicitly rejects this model because its native map is unverified.",
+      "references": [
+        "crates/proto-dl32s/src/addrs.rs"
+      ]
+    }
+  ]
+}

@@ -121,3 +121,37 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
   shared flows. Validate against multiple differing descriptors or fixtures
   using the existing gates; do not add frontend tests or expand desk protocol
   tests without the owner's instruction.
+
+## Integration accounting (binding)
+
+- Keep public UI and website disclosure minimal: show the status and information
+  needed to use a feature; reveal extra explanation on request. Keep engineering
+  evidence, internal gates and audit methodology in developer reports. Ship only
+  referenced website assets; keep design experiments outside public assets.
+
+- The feature catalogue is `scripts/mixer-lab/integration_features.json`.
+  Each registered provider owns `crates/<provider>/integration.json`, including
+  its model inventory and an explicit disposition for every provider feature.
+  Host recording features belong to `crates/audio/integration.json`; they must
+  not be repeated as mixer-dependent capabilities. Planned or rejected models
+  stay visible in `scripts/mixer-lab/integration_targets.json`.
+- Before adding or changing a capability, model, driver hook or shared flow,
+  inspect the affected matrix cells and update their implementation disposition,
+  source ownership and acceptance criteria. A new feature needs an explicit
+  disposition for every provider. New engine hooks and model identity literals
+  in declared guards must be classified; do not bypass the inventory check.
+- Run `python3 scripts/mixer-lab/integration_matrix.py check`. Use `report`
+  for the matrix, `tasks` for open work and `task <model>:<feature>` for an agent
+  brief. Shared implementation can be reused; verification never transfers
+  automatically between models, firmware, emulator and physical hardware.
+- Hook presence, a registered driver, a runnable emulator and a passing generic
+  suite are not feature completion. Mark unreviewed behaviour, partial wiring,
+  unsupported features and missing evidence explicitly. Never fill gaps with
+  inferred support, invented mappings or a sibling model's defaults.
+- A completed cell requires its acceptance checks and current, checksummed,
+  source-bound evidence for that exact model and required verification types.
+  Record physical model/firmware and both required simulator identities where
+  applicable. Keep unavailable hardware/emulators/simulators blocked; existing
+  gates and the prohibition on frontend suites remain binding. Check a proposed
+  completion with `integration_matrix.py --evidence <records.json> check
+  --complete <model>:<feature>` before claiming it is done.

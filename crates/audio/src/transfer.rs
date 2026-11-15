@@ -2,7 +2,7 @@
 use crate::{header, invalid, publish, read_manifest, ChannelLayout, TakeManifest, TakeWriter};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -113,12 +113,76 @@ fn u16le(b: &[u8]) -> u16 {
 fn u32le(b: &[u8]) -> u32 {
     u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
+fn u64le(b: &[u8]) -> u64 {
+    u64::from_le_bytes(b[..8].try_into().unwrap())
+}
+
+// Transfer files use standard RIFF when they fit, RF64 otherwise (EBU Tech 3306).
+// Capture segments keep their existing fixed 44-byte header and size limits.
+fn export_header(
+    out: &mut (impl Write + Seek),
+    rate: u32,
+    frames: u64,
+    layout: ChannelLayout,
+    extra: u64,
+) -> io::Result<()> {
+    let data = frames
+        .checked_mul(layout.frame_bytes())
+        .ok_or_else(|| invalid("audio size overflow"))?;
+    let riff = data
+        .checked_add(36 + data % 2)
+        .and_then(|n| n.checked_add(extra))
+        .ok_or_else(|| invalid("audio size overflow"))?;
+    if riff <= u64::from(u32::MAX) {
+        header(out, rate, frames, layout)?;
+        out.seek(SeekFrom::Start(4))?;
+        out.write_all(&(riff as u32).to_le_bytes())?;
+        out.seek(SeekFrom::Start(44))?;
+    } else {
+        out.write_all(b"RF64")?;
+        out.write_all(&u32::MAX.to_le_bytes())?;
+        out.write_all(b"WAVEds64")?;
+        out.write_all(&28u32.to_le_bytes())?;
+        out.write_all(
+            &riff
+                .checked_add(36)
+                .ok_or_else(|| invalid("audio size overflow"))?
+                .to_le_bytes(),
+        )?;
+        out.write_all(&data.to_le_bytes())?;
+        out.write_all(&frames.to_le_bytes())?;
+        out.write_all(&0u32.to_le_bytes())?;
+        let mut fmt = io::Cursor::new(Vec::new());
+        header(&mut fmt, rate, 0, layout)?;
+        out.write_all(&fmt.into_inner()[12..40])?;
+        out.write_all(&u32::MAX.to_le_bytes())?;
+    }
+    Ok(())
+}
 fn parse(f: &mut File) -> io::Result<Wav> {
     let len = f.metadata()?.len();
     let mut head = [0; 12];
     f.read_exact(&mut head)?;
-    if &head[..4] != b"RIFF" || &head[8..] != b"WAVE" || u64::from(u32le(&head[4..8])) + 8 != len {
+    let rf64 = &head[..4] == b"RF64";
+    if (!rf64 && &head[..4] != b"RIFF")
+        || &head[8..] != b"WAVE"
+        || (!rf64 && u64::from(u32le(&head[4..8])) + 8 != len)
+        || (rf64 && u32le(&head[4..8]) != u32::MAX)
+    {
         return Err(invalid("invalid or incomplete RIFF/WAVE"));
+    }
+    let mut extended = None;
+    if rf64 {
+        let mut ds = [0; 36];
+        f.read_exact(&mut ds)?;
+        if &ds[..4] != b"ds64"
+            || u32le(&ds[4..8]) != 28
+            || u64le(&ds[8..16]).checked_add(8) != Some(len)
+            || u32le(&ds[32..]) != 0
+        {
+            return Err(invalid("unsupported or incomplete RF64 sizes"));
+        }
+        extended = Some((u64le(&ds[16..24]), u64le(&ds[24..32])));
     }
     let mut format = None;
     let mut data = None;
@@ -126,7 +190,11 @@ fn parse(f: &mut File) -> io::Result<Wav> {
     while f.stream_position()? < len {
         let mut ch = [0; 8];
         f.read_exact(&mut ch)?;
-        let size = u64::from(u32le(&ch[4..]));
+        let size = if &ch[..4] == b"data" && u32le(&ch[4..]) == u32::MAX {
+            extended.ok_or_else(|| invalid("missing RF64 sizes"))?.0
+        } else {
+            u64::from(u32le(&ch[4..]))
+        };
         let start = f.stream_position()?;
         let end = start
             .checked_add(size)
@@ -189,6 +257,7 @@ fn parse(f: &mut File) -> io::Result<Wav> {
     let (offset, size) = data.ok_or_else(|| invalid("missing WAV data"))?;
     if size == 0
         || size % u64::from(align) != 0
+        || extended.is_some_and(|(_, frames)| frames != 0 && frames != size / u64::from(align))
         || (!names.is_empty() && names.len() != channels as usize)
     {
         return Err(invalid("invalid WAV frames or channel names"));
@@ -373,9 +442,6 @@ pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
     no_target(destination)?;
     let m = validate_take(source)?;
     let mono = ChannelLayout::new(1)?;
-    if m.frames > (u32::MAX as u64 - 37) / 3 {
-        return Err(invalid("a mono track exceeds WAV size limit"));
-    }
     let tmp = stage(parent(destination)?)?;
     let staged = tmp.0.join("content");
     fs::create_dir(&staged)?;
@@ -383,11 +449,14 @@ pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
     let mut entries = Vec::new();
     for index in 0..m.channels {
         let filename = format!("track-{:02}.wav", index + 1);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(staged.join(&filename))?;
-        header(&mut file, m.sample_rate, m.frames, mono)?;
+        let mut file = BufWriter::with_capacity(
+            256 * 1024,
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(staged.join(&filename))?,
+        );
+        export_header(&mut file, m.sample_rate, m.frames, mono, 0)?;
         entries.push(serde_json::json!({"channel":index + 1,"name":m.channel_names.get(index as usize),"file":filename}));
         outputs.push(file);
     }
@@ -414,10 +483,9 @@ pub fn export_tracks(source: &Path, destination: &Path) -> io::Result<TakeManife
     for mut file in outputs {
         if m.frames % 2 != 0 {
             file.write_all(&[0])?;
-            file.seek(SeekFrom::Start(4))?;
-            file.write_all(&(36u32 + (m.frames as u32 * 3) + 1).to_le_bytes())?;
         }
-        file.sync_all()?;
+        file.flush()?;
+        file.get_ref().sync_all()?;
     }
     let manifest = serde_json::json!({"version":1,"sample_rate":m.sample_rate,"frames":m.frames,"tracks":entries});
     let mut file = OpenOptions::new()
@@ -441,8 +509,7 @@ pub fn export_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest>
     let data = m
         .frames
         .checked_mul(layout.frame_bytes())
-        .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| invalid("take exceeds WAV size limit"))?;
+        .ok_or_else(|| invalid("audio size overflow"))?;
     let names = if m.channel_names.is_empty() {
         Vec::new()
     } else {
@@ -454,18 +521,13 @@ pub fn export_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest>
         8 + names.len() + (names.len() % 2)
     };
     let pad = (data % 2) as usize;
-    let riff = 36u64 + u64::from(data) + extra as u64 + pad as u64;
-    if riff > u64::from(u32::MAX) {
-        return Err(invalid("take exceeds WAV size limit"));
-    }
     let tmp = stage(parent(destination)?)?;
     let staged = tmp.0.join("content");
     let mut out = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&staged)?;
-    header(&mut out, m.sample_rate, m.frames, layout)?;
-    out.seek(SeekFrom::End(0))?;
+    export_header(&mut out, m.sample_rate, m.frames, layout, extra as u64)?;
     for s in &m.segments {
         let mut f = File::open(source.join(&s.file))?;
         f.seek(SeekFrom::Start(44))?;
@@ -482,9 +544,70 @@ pub fn export_wav(source: &Path, destination: &Path) -> io::Result<TakeManifest>
             out.write_all(&[0])?;
         }
     }
-    out.seek(SeekFrom::Start(4))?;
-    out.write_all(&(riff as u32).to_le_bytes())?;
     out.sync_all()?;
+    drop(out);
+    commit_file(&staged, destination)?;
+    Ok(m)
+}
+
+// Read bounded PCM blocks across every segment; no mixer or audio device needed.
+fn visit_mix(
+    source: &Path,
+    m: &TakeManifest,
+    mut visit: impl FnMut(i64) -> io::Result<()>,
+) -> io::Result<()> {
+    let frame_bytes = usize::from(m.channels) * 3;
+    let mut block = vec![0u8; frame_bytes * 8192];
+    for segment in &m.segments {
+        let mut input = File::open(source.join(&segment.file))?;
+        input.seek(SeekFrom::Start(44))?;
+        let mut remaining = segment.frames;
+        while remaining > 0 {
+            let frames = remaining.min(8192) as usize;
+            input.read_exact(&mut block[..frames * frame_bytes])?;
+            for frame in block[..frames * frame_bytes].chunks_exact(frame_bytes) {
+                let sum = frame
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|b| i64::from(i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8))
+                    .sum();
+                visit(sum)?;
+            }
+            remaining -= frames as u64;
+        }
+    }
+    Ok(())
+}
+
+/// Equal-level, centered stereo mix of the recorded tracks. Attenuate the whole
+/// take only when its summed peak would clip; preserve dynamics across segments.
+pub fn export_mix(source: &Path, destination: &Path) -> io::Result<TakeManifest> {
+    no_target(destination)?;
+    let m = validate_take(source)?;
+    let mut peak = 0i64;
+    visit_mix(source, &m, |sum| {
+        peak = peak.max(sum.abs());
+        Ok(())
+    })?;
+    let divisor = peak.max(8_388_607);
+    let tmp = stage(parent(destination)?)?;
+    let staged = tmp.0.join("content");
+    let mut out = BufWriter::with_capacity(
+        256 * 1024,
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staged)?,
+    );
+    export_header(&mut out, m.sample_rate, m.frames, ChannelLayout::new(2)?, 0)?;
+    visit_mix(source, &m, |sum| {
+        let sample = ((sum * 8_388_607 / divisor) as i32).to_le_bytes();
+        out.write_all(&sample[..3])?;
+        out.write_all(&sample[..3])
+    })?;
+    out.flush()?;
+    out.get_ref().sync_all()?;
     drop(out);
     commit_file(&staged, destination)?;
     Ok(m)
@@ -508,6 +631,112 @@ mod tests {
         fs::create_dir(&p).unwrap();
         p
     }
+    #[test]
+    fn export_headers_cross_riff_limit_without_allocating_audio() {
+        let root = fixture();
+        for channels in [1, 2, 3, 16, 64] {
+            let layout = ChannelLayout::new(channels).unwrap();
+            let limit = (u64::from(u32::MAX) - 37) / layout.frame_bytes();
+            for frames in [1, 3, limit, limit + 2] {
+                let file_path = root.join(format!("{channels}-{frames}.wav"));
+                let mut file = File::create(&file_path).unwrap();
+                export_header(&mut file, 96000, frames, layout, 0).unwrap();
+                let offset = file.stream_position().unwrap();
+                let data = frames * layout.frame_bytes();
+                // Sparse files exercise actual 64-bit offsets with no multi-GB writes.
+                file.set_len(offset + data + data % 2).unwrap();
+                drop(file);
+                let mut file = File::open(&file_path).unwrap();
+                let wav = parse(&mut file).unwrap();
+                assert_eq!(
+                    (wav.channels, wav.frames, wav.rate),
+                    (channels, frames, 96000)
+                );
+                assert_eq!(wav.offset, offset);
+                assert_eq!(offset, if frames > limit { 80 } else { 44 });
+                fs::remove_file(file_path).unwrap();
+            }
+        }
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn stereo_mix_preserves_timing_and_scales_clipping_across_segments() {
+        let root = fixture();
+        for channels in [1, 3, 32, 64] {
+            let source = root.join(format!("source-{channels}"));
+            let mut w = TakeWriter::create_with_layout(
+                &source,
+                48000,
+                2,
+                ChannelLayout::new(channels).unwrap(),
+            )
+            .unwrap();
+            let samples: Vec<_> = [4_000_000, -4_000_000, 1_000_000, 0, 2_000_000]
+                .into_iter()
+                .flat_map(|s| std::iter::repeat_n(s, usize::from(channels)))
+                .collect();
+            w.append_interleaved(&samples).unwrap();
+            let manifest = w.finish().unwrap();
+            let destination = root.join(format!("mix-{channels}.wav"));
+            export_mix(&source, &destination).unwrap();
+            let mut file = File::open(&destination).unwrap();
+            let wav = parse(&mut file).unwrap();
+            assert_eq!((wav.channels, wav.frames, wav.rate), (2, 5, 48000));
+            file.seek(SeekFrom::Start(wav.offset)).unwrap();
+            let mut pcm = vec![0; 30];
+            file.read_exact(&mut pcm).unwrap();
+            let divisor = (4_000_000i64 * i64::from(channels)).max(8_388_607);
+            for (index, frame) in pcm.as_chunks::<6>().0.iter().enumerate() {
+                let actual = i32::from_le_bytes([0, frame[0], frame[1], frame[2]]) >> 8;
+                let expected = (i64::from(samples[index * usize::from(channels)])
+                    * i64::from(channels)
+                    * 8_388_607
+                    / divisor) as i32;
+                assert_eq!(actual, expected);
+                assert_eq!(&frame[..3], &frame[3..]);
+            }
+            assert_eq!(read_manifest(&source).unwrap(), manifest);
+            assert!(export_mix(&source, &destination).is_err());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rf64_import_preserves_pcm_and_rejects_bad_sizes() {
+        let root = fixture();
+        let wav_path = root.join("rf64.wav");
+        let mut wav = io::Cursor::new(Vec::new());
+        export_header(
+            &mut wav,
+            44100,
+            u64::from(u32::MAX),
+            ChannelLayout::new(1).unwrap(),
+            0,
+        )
+        .unwrap();
+        // A small RF64 fixture exercises import without processing gigabytes.
+        let mut bytes = wav.into_inner();
+        bytes[20..28].copy_from_slice(&82u64.to_le_bytes());
+        bytes[28..36].copy_from_slice(&9u64.to_le_bytes());
+        bytes[36..44].copy_from_slice(&3u64.to_le_bytes());
+        bytes.extend_from_slice(&[1, 0, 0, 255, 255, 255, 0, 0, 128, 0]);
+        fs::write(&wav_path, &bytes).unwrap();
+        let dest = root.join("imported");
+        let m = import_wav(&wav_path, &dest).unwrap();
+        assert_eq!((m.frames, m.channels, m.sample_rate), (3, 1, 44100));
+        assert_eq!(waveform_bytes(&dest, &m), bytes[80..89]);
+        bytes[36..44].copy_from_slice(&4u64.to_le_bytes());
+        fs::write(&wav_path, &bytes).unwrap();
+        assert!(import_wav(&wav_path, &root.join("bad-frames")).is_err());
+        bytes.pop();
+        fs::write(&wav_path, &bytes).unwrap();
+        assert!(import_wav(&wav_path, &root.join("truncated")).is_err());
+        assert!(!root.join("bad-frames").exists());
+        assert!(!root.join("truncated").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn wav_and_native_roundtrip_preserve_pcm_and_names() {
         let root = fixture();

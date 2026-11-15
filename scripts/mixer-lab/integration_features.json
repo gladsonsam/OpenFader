@@ -1,0 +1,928 @@
+{
+  "schema": 1,
+  "features": [
+    {
+      "id": "identity",
+      "label": "Discovery & identity",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/connection.dart"
+      ],
+      "engine_contracts": [
+        "claims_device",
+        "concurrent_initial_master_reads",
+        "connect",
+        "control_health",
+        "dial_addr",
+        "disconnect",
+        "discover",
+        "discovered_name",
+        "display_name",
+        "identify",
+        "initial_read_timeout",
+        "is_hardware",
+        "name",
+        "needs_hydration",
+        "probe_table",
+        "query_info",
+        "read_lan",
+        "write_lan"
+      ],
+      "required_hooks": [
+        "identify",
+        "discover"
+      ],
+      "acceptance": {
+        "identity": "Identify exact model and firmware; reject incompatible models; reconnect without retaining another desk state."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "catalogue",
+      "label": "Topology, ranges & options",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/core/mixer_provider_policy.dart"
+      ],
+      "engine_contracts": [
+        "bus_count",
+        "capabilities",
+        "channel_count",
+        "diagnostics",
+        "essentials_extra_ids",
+        "get_param",
+        "get_param_display",
+        "guarded_bus_writes",
+        "mutation_state_from_observations",
+        "param_applicable_strips",
+        "param_defs",
+        "param_dependents",
+        "param_kind_ranges",
+        "param_label_overrides",
+        "param_numeric_display",
+        "param_plane_snapshot",
+        "param_presentations",
+        "param_range_overrides",
+        "param_read_only",
+        "param_readback_equivalent",
+        "param_swatches",
+        "param_symbols",
+        "param_text_rules",
+        "param_write_context",
+        "poll_bg_share",
+        "poll_focus_limit",
+        "poll_inflight",
+        "poll_visible_take",
+        "prio_always_armed",
+        "read_rta_settings",
+        "readback_confirms_writes",
+        "reported_sample_rate",
+        "scope_restrictions",
+        "set_param",
+        "set_param_guarded",
+        "set_param_guarded_checked",
+        "snapshot",
+        "static_extra_rows",
+        "stereo_pairs",
+        "strip_count",
+        "subscribe_updates",
+        "topology"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "capabilities": "Use actual input/output families, counts, parameter ranges and native options; unsupported controls give a reason."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "channel_names",
+      "label": "Channel names",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/shell/app_router.dart",
+        "app/lib/mixer/components/strip.dart",
+        "app/lib/mixer/components/nameplate.dart"
+      ],
+      "engine_contracts": [
+        "get_name",
+        "set_name"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "all_inputs": "Read and update names across all provider input families, including non-visible banks; distinguish inputs from returns, buses and VCAs."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "levels",
+      "label": "Faders & mutes",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/mixer/store.dart",
+        "app/lib/mixer/components/strip.dart"
+      ],
+      "engine_contracts": [
+        "get_bus_fader",
+        "get_bus_mute",
+        "get_fader",
+        "get_main_fader",
+        "get_main_mute",
+        "get_mute",
+        "set_bus_fader",
+        "set_bus_mute",
+        "set_fader",
+        "set_main_fader",
+        "set_main_mute",
+        "set_mute"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "controls": "Read/write input, destination and main levels/mutes with independent native readback and provider ranges.",
+        "fader_space": "At short and tall viewport sizes, prioritize fader travel over artwork, labels and processing previews; secondary controls must not overlap the fader or safe area."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "pan_balance",
+      "label": "Pan & balance",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart",
+        "app/lib/mixer/components/strip.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "pan": "Use actual mono pan/stereo balance ranges, units and linked-member behaviour with independent readback."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "fader_law",
+      "label": "Fader law & dB",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/core/fader_law.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "law": "Advertise the actual model law; check endpoints and reference levels; unknown law disables readouts instead of inheriting a default."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "processing",
+      "label": "EQ & dynamics",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart",
+        "app/lib/mixer/components/strip.dart"
+      ],
+      "engine_contracts": [
+        "automix_gain_param",
+        "read_automix_settings"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "processing": "Read/write every advertised input EQ, filter, delay, gate and compressor option with correct units, scopes and guard behaviour; expose missing domains."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "preamps",
+      "label": "Preamps",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart"
+      ],
+      "engine_contracts": [
+        "guarded_preamp_writes",
+        "preamp_invalidation_count",
+        "preamp_invalidation_fields"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "physical_source": "Resolve the actual routed physical preamp; verify gain/phantom on that source without inventing input-to-preamp identity."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "output_processing",
+      "label": "Output EQ & dynamics",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/core/output_processing.dart"
+      ],
+      "engine_contracts": [
+        "set_output_processor_guarded",
+        "read_output_geq"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "output_domains": "Enumerate actual buses, mains and matrices with their available EQ/GEQ, compressor/limiter and tap domains; unsupported processors expose a reason."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "stereo_links",
+      "label": "Stereo links",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart"
+      ],
+      "engine_contracts": [
+        "capture_input_links_with_global",
+        "control_members",
+        "current_control_members",
+        "guarded_link_writes",
+        "input_pair_link",
+        "linked_input_bank_guarded",
+        "read_link_settings",
+        "set_stereo_link"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "linked_members": "Identify all affected members, verify link readback and protect both strips during edits and recalls."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "input_routing",
+      "label": "Input routing",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/routing.dart"
+      ],
+      "engine_contracts": [
+        "canonical_routing_target",
+        "input_patch_requires_guard",
+        "input_route_guard",
+        "input_route_guard_matches",
+        "input_routes_bulk",
+        "patch_clear",
+        "patch_set",
+        "patch_target_clear",
+        "patch_target_guarded",
+        "patch_target_set",
+        "routing_control",
+        "routing_groups",
+        "routing_param_ids",
+        "routing_planes",
+        "routing_source",
+        "routing_strip_kind",
+        "routing_targets",
+        "selector_change",
+        "selector_pair_valid",
+        "set_routing_control_guarded",
+        "source_bulk"
+      ],
+      "required_hooks": [
+        "routing_groups",
+        "routing_targets",
+        "routing_source",
+        "patch_target_set"
+      ],
+      "acceptance": {
+        "route_readback": "Read and write provider-native source choices with expected-state guards, independent readback, reconnect and linked-input handling."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "output_routing",
+      "label": "Output / USB patch",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/routing.dart"
+      ],
+      "engine_contracts": [
+        "output_route",
+        "read_output_taps",
+        "set_output_route",
+        "set_output_tap_guarded"
+      ],
+      "required_hooks": [
+        "output_route",
+        "set_output_route"
+      ],
+      "acceptance": {
+        "patch": "Use each actual output plane and source set; independently read back non-identity USB/output patches and reject unknown selectors."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "sends",
+      "label": "Sends & destinations",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/mixer/store.dart"
+      ],
+      "engine_contracts": [
+        "canonical_send_field",
+        "destination_controls",
+        "guarded_send_writes",
+        "send_destination",
+        "set_destination_control",
+        "set_destination_control_guarded"
+      ],
+      "required_hooks": [
+        "send_destination"
+      ],
+      "acceptance": {
+        "destinations": "Expose every advertised bus/aux/matrix/main send with actual destination labels, ranges, tap choices and stereo behaviour."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "groups",
+      "label": "Groups & assignments",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart",
+        "app/lib/engine.dart",
+        "app/lib/mixer/components/banks.dart"
+      ],
+      "engine_contracts": [
+        "get_mute_group",
+        "get_mute_group_assign",
+        "get_mute_group_assign_verified",
+        "get_mute_group_name",
+        "get_mute_group_verified",
+        "get_subgroup_assign",
+        "get_subgroup_fader",
+        "get_subgroup_mute",
+        "group_assign_caps",
+        "mg_assign_bulk",
+        "mute_group_count",
+        "mute_group_snapshot_applies",
+        "mute_group_snapshot_supported",
+        "restore_mute_group_mask",
+        "restore_mute_group_master",
+        "set_mute_group",
+        "set_mute_group_assign",
+        "set_mute_group_assign_checked",
+        "set_subgroup_assign",
+        "set_subgroup_fader",
+        "set_subgroup_mute",
+        "snapshot_mute_group_mask",
+        "sub_assign_bulk",
+        "subgroup_count"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "assignments": "Distinguish subgroup, mute-group and DCA/VCA domains; verify advertised memberships and group masters."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "solo",
+      "label": "Solo & monitoring",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/channel.dart"
+      ],
+      "engine_contracts": [
+        "clear_solo",
+        "clear_solo_scope",
+        "get_solo",
+        "get_solo_verified",
+        "live_solo_bank",
+        "read_monitor_settings",
+        "set_solo",
+        "set_solo_checked",
+        "set_target_solo",
+        "solo_bank",
+        "solo_bulk",
+        "solo_states"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "solo": "Verify solo state, clear scope and monitor controls; report unsupported monitor settings without fake success."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "meters",
+      "label": "Meters & telemetry",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/meters.dart"
+      ],
+      "engine_contracts": [
+        "demo_spectrum",
+        "dyn_gr",
+        "gr_channel_count",
+        "meter_taps",
+        "output_meter_targets",
+        "poll_dynamics_meters",
+        "poll_meters",
+        "poll_output_meters",
+        "poll_spectrum",
+        "poll_taps",
+        "refresh_streams",
+        "set_spectrum_target",
+        "subscribe_meters",
+        "telemetry_timestamps",
+        "wants_meter_subscribe"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "telemetry": "Validate input/output meter targets, units, freshness, dropouts and reconnect; use the shell-owned poll loop only."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "fx",
+      "label": "FX catalogue & controls",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/fx.dart"
+      ],
+      "engine_contracts": [
+        "fx_apply_row",
+        "fx_flavor",
+        "fx_get_param_by_id",
+        "fx_get_type",
+        "fx_insert_supported",
+        "fx_push",
+        "fx_set_bypass",
+        "fx_set_on",
+        "fx_set_param",
+        "fx_set_param_by_id",
+        "fx_set_type",
+        "fx_slot_count",
+        "fx_snapshot",
+        "fx_type_caps",
+        "fx_type_index",
+        "fx_type_index_for_slot",
+        "fx_type_index_of",
+        "fx_type_name",
+        "fx_type_name_for_slot",
+        "fx_type_param_count",
+        "fx_type_param_count_for_slot",
+        "get_fx_insert",
+        "get_fx_param",
+        "get_fx_param_with_type",
+        "set_fx_control_guarded",
+        "set_fx_insert",
+        "set_fx_param"
+      ],
+      "required_hooks": [
+        "fx_flavor",
+        "fx_slot_count",
+        "fx_set_type"
+      ],
+      "acceptance": {
+        "fx_domains": "Use actual effect slots, per-slot model catalogues, parameter units/ranges and return/send topology with native readback."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "local_scenes",
+      "label": "Local scenes",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "app/lib/screens/scenes.dart"
+      ],
+      "engine_contracts": [
+        "capture_param_applicable",
+        "capture_param_override",
+        "param_recall_group",
+        "recall",
+        "recall_scene",
+        "recall_show",
+        "scene_input_route_target",
+        "scene_input_routes"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "recall": "Capture and restore advertised scope with durable storage, validation, routing guards and partial/uncertain outcomes."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "native_library",
+      "label": "Native files & snapshots",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/core/native_library_store.dart"
+      ],
+      "engine_contracts": [
+        "download_file",
+        "file_transfer",
+        "native_library",
+        "native_library_action",
+        "native_snapshots",
+        "upload_file"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "native_files": "Use provider archive/schema and slot validation; read back recall/write outcomes; preserve files and show unsupported operations."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "processor_presets",
+      "label": "Processor presets",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/core/processor_presets.dart"
+      ],
+      "engine_contracts": [
+        "capture_native_processors",
+        "channel_processing_guard",
+        "guarded_processor_targets",
+        "input_processor",
+        "input_processor_guard",
+        "legacy_native_processor_required",
+        "preflight_native_processors",
+        "recall_native_processors",
+        "revalidate_captured_native_processors",
+        "validate_native_processors"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "preset_domains": "Enumerate actual input/output processor domains and native models; validate before writes and verify readback without cross-model fallback."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "console_controls",
+      "label": "Native console controls",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/core/src/lib.rs",
+        "app/lib/screens/debug.dart"
+      ],
+      "engine_contracts": [
+        "console_control_write",
+        "console_controls_capability",
+        "console_controls_node"
+      ],
+      "required_hooks": [],
+      "acceptance": {
+        "console": "Browse advertised native control descriptors with correct enum/range/type and guarded verified writes."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "recorder_names",
+      "label": "Recorder USB names",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "crates/engine/src/engine/selector_session.rs",
+        "app/lib/shell/recorder_store.dart",
+        "app/lib/shell/app_router.dart"
+      ],
+      "engine_contracts": [
+        "recorder_descriptor"
+      ],
+      "required_hooks": [
+        "recorder_descriptor"
+      ],
+      "acceptance": {
+        "usb_names": "Name every captured track from a fresh actual USB patch on the matching interface; test remapped, duplicate, non-input and unreadable sources.",
+        "picker": "Offer all actual input channels beyond the visible bank; exclude buses/returns/VCAs from the input picker; preserve custom labels and existing takes."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "auto_soundcheck",
+      "label": "Automatic soundcheck",
+      "scope": "provider",
+      "shared_paths": [
+        "crates/engine/src/drivers.rs",
+        "crates/serve/src/soundcheck.rs"
+      ],
+      "engine_contracts": [
+        "soundcheck_profile",
+        "soundcheck_readback",
+        "soundcheck_route_read",
+        "soundcheck_route_write"
+      ],
+      "required_hooks": [
+        "soundcheck_profile",
+        "soundcheck_route_read",
+        "soundcheck_route_write"
+      ],
+      "acceptance": {
+        "profile": "Require a verified exact-model routing profile, journal original routes, independently verify readback and restore or visibly require recovery."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "recording",
+      "label": "Multitrack capture",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "capture": "Capture actual OS interface channel counts/rates without a network mixer; verify PCM, bounded storage and device loss."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "take_browser",
+      "label": "Take browser",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "takes": "Browse complete and recoverable takes, visible export actions, clear transfer progress, safe cancellation and actionable errors."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "export_tracks",
+      "label": "Multitrack export",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "export": "Export every recorded channel and name across segment boundaries; verify PCM, duration, large-file format, destination copy, failures and cleanup."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "export_mix",
+      "label": "Stereo mix export",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "mix": "Verify the documented mix policy, clipping protection, PCM/rate/duration, large-file format, destination copy and failures."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "import_takes",
+      "label": "Take import",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "import": "Import advertised native/WAV/track formats with actual layout/rate and integrity checks; reject unsupported/truncated input without fake success."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "manual_soundcheck",
+      "label": "Manual soundcheck",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "manual": "Play through an actual OS output mapping independently of mixer capabilities; require explicit manual routing confirmation and safe return to live."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "recovery",
+      "label": "Capture / routing recovery",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "recovery": "Recover only durable captured frames, preserve sources, confirm output termination and display unresolved routing recovery."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    },
+    {
+      "id": "remote_recorder",
+      "label": "Remote recorder control",
+      "scope": "host",
+      "shared_paths": [
+        "crates/audio/src/lib.rs",
+        "crates/serve/src/recorder.rs",
+        "app/lib/screens/recorder.dart",
+        "app/lib/shell/recorder_store.dart"
+      ],
+      "engine_contracts": [],
+      "required_hooks": [],
+      "acceptance": {
+        "remote": "Phones/tablets control a reachable recorder host; local-only operations stay explicit and authentication/connection errors remain visible."
+      },
+      "required_evidence": [
+        "unit",
+        "hardware",
+        "ipad",
+        "iphone"
+      ]
+    }
+  ]
+}

@@ -244,3 +244,68 @@ The old positional gate/compressor selectors are unavailable on WING 3.1 or an
 unknown firmware, where the native browser supplies the actual model choices.
 These gaps and the physical/media limitations above prevent a claim of complete
 hardware compatibility.
+
+## Integration catalogue and agent work
+
+The emulator matrix above answers which exact protocol fixtures can run. The
+integration catalogue answers a different question: what is implemented and
+verified for each brand, model and feature, including the application flow.
+It does not infer support from an emulator or the presence of a driver method.
+
+Each registered provider owns `crates/<provider>/integration.json`. Host recording
+features live in `crates/audio/integration.json`, independently of network mixers.
+`scripts/mixer-lab/integration_features.json` defines feature contracts and
+classifies engine hooks. `integration_targets.json` records planned and rejected
+models without borrowing another driver's capabilities. Model overrides allow
+shared implementation while keeping verification specific to each model.
+
+```sh
+python3 scripts/mixer-lab/integration_matrix.py check
+python3 scripts/mixer-lab/integration_matrix.py report --format html --output /tmp/openfader-matrix.html
+python3 scripts/mixer-lab/integration_matrix.py tasks --feature recorder_names
+python3 scripts/mixer-lab/integration_matrix.py task x32:recorder_names
+python3 -B -m unittest discover -s scripts/mixer-lab -p 'test_integration_matrix.py'
+```
+
+Give an agent the output of `task model:feature`. It includes ownership,
+acceptance criteria, missing hooks, exact fixture availability and existing gates.
+The agent updates the owning disposition and supplies evidence; missing hardware
+or simulator access stays open. Adding a model, registered driver, engine hook or
+feature must update the catalogue. CI checks those relationships. The initial
+catalogue deliberately marks unaudited existing behavior `unreviewed`; these cells
+are an audit queue, not a claim that every feature is broken.
+
+Implementation states are `unreviewed`, `missing`, `partial`, `implemented`,
+`blocked` and `not_applicable`. Wiring is reported separately from implementation.
+A feature with a present hook may still be a stub, fail for a particular model or
+lack a working UI flow. Only current exact-model evidence can make it complete.
+
+Evidence is a JSON list, passed with `--evidence records.json` **before** the
+subcommand, or stored in the owning manifest's `evidence` list. Each record needs:
+
+- `model`, `feature`, `kind` (`unit`, `emulator`, `hardware`, `ipad` or `iphone`),
+  `result` (`pass`, `fail` or `blocked`) and timezone-aware `recorded_at`.
+- A real `artifact` file and its SHA-256 in `sha256`.
+- `source_sha256`: SHA-256 for every path in that cell's JSON `source_paths`.
+  This includes the contract and owning manifest; settle the disposition before
+  collecting external evidence. External evidence avoids a manifest checksum cycle.
+- `checks`: acceptance keys actually checked. A pass requires all keys.
+- `firmware` for hardware, or explicit OS and audio-driver versions for host audio;
+  `device` for simulator evidence, including the required model identity.
+
+Source changes invalidate old proof. The newest record for each evidence kind
+wins, including a failure. Sibling models do not inherit evidence. Completion
+requires every evidence kind declared by that feature (physical-model checks
+include hardware and both required iOS simulators). Emulator proof supplements
+these checks and cannot replace hardware proof. Existing restrictions on frontend
+and desk protocol tests still apply; this catalogue does not add those suites.
+
+```sh
+python3 scripts/mixer-lab/integration_matrix.py --evidence /path/records.json check --complete x32:recorder_names
+```
+
+The website's `/compatibility` page runs the same validator and reads a public
+projection at build time (`report --format public-json`). It exposes feature statuses without engineering evidence,
+internal paths, artifacts or agent briefs.
+Building or serving `landing` requires Python 3 and the full repository checkout.
+No independently maintained website matrix or generated catalogue is checked in.

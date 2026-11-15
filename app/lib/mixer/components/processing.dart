@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
@@ -40,15 +41,19 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final sy = box.maxHeight / 202;
         final sx = box.maxWidth / 178.2;
+        const insetY = MixerDesign.spaceXs;
+        const gainHeight = 20.0;
+        const dynamicsHeight = 16.0;
+        const eqTop = insetY + gainHeight + MixerDesign.spaceXs;
+        final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
         Widget place(double top, double height, Widget child,
                 {double? inset}) =>
             Positioned(
                 left: inset ?? 5 * sx,
                 right: inset ?? 5 * sx,
-                top: top * sy,
-                height: height * sy,
+                top: top,
+                height: height,
                 child: child);
         return DecoratedBox(
             decoration: BoxDecoration(
@@ -57,8 +62,8 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                 border: Border.all(color: ConsolePalette.of(context).line)),
             child: Stack(children: [
               place(
-                  5,
-                  36,
+                  insetY,
+                  gainHeight,
                   widget.channel.master || widget.gainRange == null
                       ? Semantics(
                           button: true,
@@ -113,14 +118,14 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       widget.gainRange,
                                       widget.showPhantom)))))),
               place(
-                  47,
-                  79,
+                  eqTop,
+                  math.max(0, dynamicsTop - MixerDesign.spaceXs - eqTop),
                   MixerEqPreview(
                       channel: widget.channel, onOpen: widget.onOpen),
                   inset: MixerDesign.spaceSm),
               place(
-                  132,
-                  62,
+                  dynamicsTop,
+                  dynamicsHeight,
                   Semantics(
                       button: true,
                       label: '${widget.channel.name} dynamics and processing',
@@ -214,14 +219,11 @@ class _GainPainter extends CustomPainter {
   _GainPainter(this.palette, this.params, this.demo, this.gainRange, this.showPhantom);
   @override
   void paint(Canvas c, Size s) {
-    c.save();
-    final horizontalScale = s.width / 168.2;
-    c.scale(horizontalScale, s.height / 36);
-    s = const Size(168.2, 36);
     mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
-    final left = 4 / horizontalScale;
-    final width = s.width * .60;
-    mixerBox(c, Rect.fromLTWH(left, 13, width, 11), palette.control,
+    const left = 4.0;
+    final width = math.max(0.0, s.width - 40);
+    final trackY = (s.height - 6) / 2;
+    mixerBox(c, Rect.fromLTWH(left, trackY, width, 6), palette.control,
         radius: 3, border: palette.lineCtl);
     final amount = gainRange == null
         ? 0.0
@@ -229,23 +231,18 @@ class _GainPainter extends CustomPainter {
                     gainRange!.first) /
                 (gainRange!.last - gainRange!.first))
             .clamp(0.0, 1.0);
-    mixerBox(
-        c, Rect.fromLTWH(left + 3, 16, (width - 7) * amount, 5), palette.meterCover,
-        radius: 2, border: palette.lime);
-    mixerBox(c, Rect.fromLTWH(left + 1 + (width - 7) * amount, 14, 5, 9), palette.text4,
-        radius: 1);
-    // Design: 48V indicator replaces the A/B label (red when phantom is on).
-    final phantom = params['phantom'] == true || params['phantom'] == 1;
-    const labelWidth = 32.0;
-    final labelRight = s.width - 10 / horizontalScale;
+    final travel = math.max(0.0, width - 5);
+    mixerBox(c, Rect.fromLTWH(left, trackY + 1, travel * amount, 4),
+        palette.meterCover, radius: 2);
+    mixerBox(c, Rect.fromLTWH(left + travel * amount, trackY, 3, 6),
+        palette.text4, radius: 1);
+    // Text uses logical pixels, independently of the rack's aspect ratio.
     if (showPhantom) {
-      mixerText(c, '48V', Offset(labelRight - labelWidth, 13), 13,
-        color: phantom ? palette.phantom : palette.mutedText,
-        width: labelWidth,
-        align: TextAlign.right,
-        weight: FontWeight.w700);
+      final phantom = params['phantom'] == true || params['phantom'] == 1;
+      mixerText(c, '48V', Offset(s.width - 31, (s.height - 12) / 2), 10,
+          color: phantom ? palette.phantom : palette.mutedText,
+          width: 28, align: TextAlign.right, weight: FontWeight.w700);
     }
-    c.restore();
   }
 
   @override

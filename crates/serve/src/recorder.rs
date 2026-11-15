@@ -558,12 +558,14 @@ async fn worker_with_config(
                                 .unwrap_or_default();
                             let names = if client.is_some() {
                                 active_capture_names.clone()
-                            } else if names.is_empty() {
+                            } else if !capture_channel_names.is_empty() || names.is_empty() {
                                 capture_channel_names.clone()
                             } else {
                                 names
                             };
                             o.insert("channel_names".into(), json!(names));
+                            o.insert("capture_names_automatic".into(), json!(capture_channel_names.is_empty()));
+                            o.insert("mixer_input_names".into(), json!(recorder_descriptor.as_ref().map(|d| &d.input_channel_names)));
                             let device_reason = recorder_descriptor.as_ref().map(|descriptor| {
                                 let count = devices.iter().filter(|device| recorder_device_matches(descriptor, device)).count();
                                 if count > 1 {
@@ -647,6 +649,7 @@ async fn worker_with_config(
                             o.insert("soundcheck_pending".into(), json!(backend_task.is_some()));
                             o.insert("soundcheck_overdue".into(), json!(backend_overdue));
                             o.insert("disk_free_bytes".into(), json!(disk_free_bytes));
+                            o.insert("transfer_directory".into(), json!(root.join("transfers")));
                             o.insert("disk_space_error".into(), json!(disk_space_error));
                             o.insert(
                                 "capabilities".into(),
@@ -992,6 +995,28 @@ async fn worker_with_config(
                                     } else if let Some(device) = selected.as_ref().filter(|d| {
                                         args["device_id"].as_str() == Some(d.id.as_str())
                                     }) {
+                                        if args["auto"] == true {
+                                            let mapping = if let Some(engine) = engine.clone() {
+                                                tokio::time::timeout(Duration::from_secs(3), async move {
+                                                    engine.selector_session().await?.recorder_descriptor().await
+                                                }).await.map_err(|_| "USB patch readback timed out".to_string())
+                                                    .and_then(|r| r.map_err(|e| e.to_string()))
+                                            } else { Err("Mixer connection unavailable".into()) };
+                                            match mapping {
+                                                Ok(Some(descriptor)) if recorder_device_matches(&descriptor, device) => {
+                                                    write_device_preference(&root, device, &[]).map(|_| {
+                                                        capture_channel_names.clear();
+                                                        saved_device = Some((device.clone(), Vec::new()));
+                                                        recorder_descriptor = Some(descriptor);
+                                                        descriptor_reason = None;
+                                                        if let Some(job) = descriptor_job.take() { job.abort(); }
+                                                        descriptor_dirty = false;
+                                                    })
+                                                }
+                                                Ok(_) => Err("Auto names require the connected mixer's matching audio interface and readable USB patch".into()),
+                                                Err(e) => Err(format!("Auto names unavailable: {e}")),
+                                            }
+                                        } else {
                                         let names: Result<Vec<String>, _> =
                                             serde_json::from_value(args["channel_names"].clone());
                                         names
@@ -1011,6 +1036,7 @@ async fn worker_with_config(
                                                 saved_device = Some((device.clone(), names));
                                                 Ok(())
                                             })
+                                        }
                                     } else {
                                         Err("device_id must match the selected audio interface"
                                             .into())
@@ -1117,10 +1143,10 @@ async fn worker_with_config(
                                             descriptor_reason = Some("Fresh capture mapping could not be verified for the selected interface at record start".into());
                                         }
                                         let names = names.or_else(|| {
-                                            if !active_capture_names.is_empty() {
-                                                Some(active_capture_names.clone())
-                                            } else if !capture_channel_names.is_empty() {
+                                            if !capture_channel_names.is_empty() {
                                                 Some(capture_channel_names.clone())
+                                            } else if !active_capture_names.is_empty() {
+                                                Some(active_capture_names.clone())
                                             } else {
                                                 None
                                             }
@@ -1300,7 +1326,8 @@ async fn worker_with_config(
                                                     ("export_take", "wav") => openfader_audio::transfer::export_wav(&take, &transfer),
                                                     ("export_take", "native") => openfader_audio::transfer::copy_take(&take, &transfer),
                                                     ("export_take", "tracks") => openfader_audio::transfer::export_tracks(&take, &transfer),
-                                                    _ => return Err("format must be wav, native, or tracks".to_string()),
+                                                    ("export_take", "mix") => openfader_audio::transfer::export_mix(&take, &transfer),
+                                                    _ => return Err("unsupported take transfer format".to_string()),
                                                 }.map(|_| ()).map_err(|e| e.to_string())
                                             })
                                         }
