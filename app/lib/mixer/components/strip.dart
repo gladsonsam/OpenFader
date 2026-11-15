@@ -92,7 +92,8 @@ class _MixerStripState extends State<MixerStrip> {
         var identityHeight = showArtwork
             ? AppDesign.spaceXl + math.min(64.0, box.maxWidth * .55)
             : AppDesign.spaceXl;
-        const nameHeight = AppDesign.touchTarget;
+        // Tape grows by the system bottom inset so names clear the nav bar.
+        final nameHeight = AppDesign.touchTarget + bottomInset;
         const gap = AppDesign.spaceSm;
         var compactRack =
             compact || layout.compactProcessing || box.maxHeight < 520;
@@ -343,6 +344,7 @@ class _MixerStripState extends State<MixerStrip> {
                                 showArtwork: showArtwork && hasArtwork,
                                 iconHeight: identityHeight,
                                 nameHeight: nameHeight,
+                                bottomInset: bottomInset,
                                 nameOffset: identityHeight,
                                 fontSize: g.nameText.clamp(12.0, 18.0),
                                 compact: compact,
