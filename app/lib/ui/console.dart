@@ -11,6 +11,7 @@ export 'controls/console_icon_button.dart';
 export 'controls/console_select.dart';
 export 'controls/console_toggle.dart';
 export 'icons/design_icon.dart';
+export 'layout/console_navigation_tile.dart';
 export 'layout/console_panel.dart';
 export 'layout/console_preference_row.dart';
 export 'overlays/anchored_menu.dart';

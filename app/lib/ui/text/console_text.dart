@@ -7,6 +7,7 @@ import '../../palette.dart';
 enum ConsoleTextRole {
   pageTitle(AppDesign.pageTitle, FontWeight.w600),
   dialogTitle(AppDesign.dialogTitle, FontWeight.w600),
+  sheetTitle(AppDesign.sheetTitle, FontWeight.w600),
   sectionTitle(AppDesign.sectionTitle, FontWeight.w600),
   rowLabel(AppDesign.rowLabel, FontWeight.w400),
   controlLabel(AppDesign.controlLabel, FontWeight.w400),
@@ -14,6 +15,7 @@ enum ConsoleTextRole {
   smallLabel(AppDesign.smallLabel, FontWeight.w400),
   caption(AppDesign.caption, FontWeight.w400),
   minor(AppDesign.minorText, FontWeight.w400),
+  entryValue(AppDesign.entryValue, FontWeight.w600, tabular: true),
   parameterValue(AppDesign.parameterValue, FontWeight.w600, tabular: true),
   compactParameterValue(
     AppDesign.compactParameterValue,

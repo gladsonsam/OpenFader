@@ -115,13 +115,6 @@
  "app/lib/screens/processing_workspace.dart": {
   "numeric-font-size": 2
  },
- "app/lib/screens/recorder.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 2
- },
- "app/lib/screens/recorder_arrangement.dart": {
-  "numeric-breakpoint": 1
- },
  "app/lib/screens/routing.dart": {
   "numeric-font-size": 7,
   "raw-button": 11,
@@ -190,13 +183,6 @@
   "numeric-breakpoint": 2
  },
  "app/lib/widgets/channel_name_editor.dart": {
-  "color-literal": 2,
-  "raw-button": 1
- },
- "app/lib/widgets/inline_feedback.dart": {
-  "numeric-breakpoint": 1
- },
- "app/lib/widgets/number_entry.dart": {
-  "numeric-font-size": 1
+  "color-literal": 2
  }
 }

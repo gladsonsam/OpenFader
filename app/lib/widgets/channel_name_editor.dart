@@ -530,24 +530,15 @@ class _NameEditorState extends State<_NameEditor> {
 
   Widget _option(String label, IconData icon, VoidCallback? action,
       {String? reason, Widget? leading, bool navigates = true}) {
-    final p = ConsolePalette.of(context);
     return Padding(
         padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
         child: Row(children: [
           Expanded(
-              child: TextButton(
-                  onPressed: _pending || reason != null ? null : action,
-                  style: TextButton.styleFrom(
-                      backgroundColor: p.navigationTile,
-                      padding: AppDesign.controlPadding,
-                      minimumSize: const Size(0, AppDesign.controlHeight)),
-                  child: Row(children: [
-                    leading ?? Icon(icon, size: AppDesign.iconSize),
-                    const SizedBox(width: AppDesign.spaceMd),
-                    Expanded(child: Text(label)),
-                    if (reason == null && navigates)
-                      const Icon(Icons.chevron_right, size: AppDesign.iconSize),
-                  ]))),
+              child: ConsoleNavigationTile(
+                  label: label,
+                  leading: leading ?? Icon(icon),
+                  showChevron: reason == null && navigates,
+                  onTap: _pending || reason != null ? null : action)),
           if (reason != null) ...[
             const SizedBox(width: AppDesign.spaceSm),
             ConsoleIconButton(

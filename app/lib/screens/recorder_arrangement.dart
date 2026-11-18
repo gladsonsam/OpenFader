@@ -339,7 +339,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     final meters = s['live_peaks'] is List ? s['live_peaks'] as List : const [];
     return LayoutBuilder(
       builder: (context, arrangementConstraints) {
-        final labelWidth = arrangementConstraints.maxWidth < 600
+        final labelWidth = arrangementConstraints.maxWidth < AppDesign.narrowBreakpoint
             ? 120.0
             : 220.0;
         return Container(

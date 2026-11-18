@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../design.dart';
 import '../../palette.dart';
 import '../controls/console_button.dart';
+import '../motion.dart';
 import '../text/console_text.dart';
 
 /// Standard dialog action spacing, including when the action bar stacks on
@@ -135,6 +136,145 @@ Future<T?> showConsoleChoice<T>(
     ],
   ),
 );
+
+/// One row of [showConsoleSelection].
+class ConsoleSelectionOption<T> {
+  final String label;
+  final T value;
+  final String? detail;
+  final IconData? icon;
+  final bool enabled;
+  const ConsoleSelectionOption({
+    required this.label,
+    required this.value,
+    this.detail,
+    this.icon,
+    this.enabled = true,
+  });
+}
+
+/// Picks one of several options. Cancel returns null. [selected] shows a
+/// check mark but does not change what a tap returns.
+Future<T?> showConsoleSelection<T>(
+  BuildContext context, {
+  required String title,
+  String? message,
+  required List<ConsoleSelectionOption<T>> options,
+  T? selected,
+}) => showConsoleDialog<T>(
+  context,
+  builder: (context) => ConsoleDialog(
+    title: title,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (message != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
+            child: Text(
+              message,
+              style: consoleTextStyle(
+                context,
+                ConsoleTextRole.controlLabel,
+              ).copyWith(height: 1.4),
+            ),
+          ),
+        for (final option in options)
+          _SelectionRow<T>(
+            option: option,
+            selected: selected != null && option.value == selected,
+            onTap: () => Navigator.pop(context, option.value),
+          ),
+      ],
+    ),
+    actions: [
+      ConsoleButton(
+        label: 'Cancel',
+        variant: ConsoleButtonVariant.quiet,
+        size: ConsoleButtonSize.regular,
+        onPressed: () => Navigator.pop(context),
+      ),
+    ],
+  ),
+);
+
+class _SelectionRow<T> extends StatelessWidget {
+  final ConsoleSelectionOption<T> option;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SelectionRow({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = option.enabled
+        ? ConsoleTextTone.normal
+        : ConsoleTextTone.subtle;
+    return Semantics(
+      button: true,
+      enabled: option.enabled,
+      selected: selected,
+      label: option.label,
+      excludeSemantics: true,
+      child: ConsolePressFeedback(
+        enabled: option.enabled,
+        child: InkWell(
+          onTap: option.enabled ? onTap : null,
+          borderRadius: AppDesign.radius,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: AppDesign.touchTarget),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppDesign.spaceSm),
+              child: Row(
+                children: [
+                  if (option.icon != null) ...[
+                    Icon(
+                      option.icon,
+                      size: AppDesign.iconSize,
+                      color: consoleTextColor(context, tone),
+                    ),
+                    const SizedBox(width: AppDesign.spaceMd),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ConsoleText(
+                          option.label,
+                          role: ConsoleTextRole.controlLabel,
+                          tone: tone,
+                          weight: selected ? FontWeight.w600 : null,
+                        ),
+                        if (option.detail != null)
+                          ConsoleText(
+                            option.detail!,
+                            role: ConsoleTextRole.body,
+                            tone: ConsoleTextTone.muted,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (selected) ...[
+                    const SizedBox(width: AppDesign.spaceMd),
+                    Icon(
+                      Icons.check,
+                      size: AppDesign.iconSize,
+                      color: consoleTextColor(context, ConsoleTextTone.accent),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// Collects a decision only. Callers retain captured-target/access validation
 /// and perform the action after the dialog closes.

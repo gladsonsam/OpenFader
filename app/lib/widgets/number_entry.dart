@@ -39,9 +39,8 @@ Future<double?> showNumberEntry({
                   FilteringTextInputFormatter.allow(
                       RegExp(r'[-+0-9.,infIN°F ]')),
                 ],
-                style: AppDesign.type(24,
-                    color: ConsolePalette.of(context).lime,
-                    weight: FontWeight.w700),
+                style: consoleTextStyle(context, ConsoleTextRole.entryValue,
+                    tone: ConsoleTextTone.accent),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: ConsolePalette.of(context).well,

@@ -49,10 +49,14 @@ abstract final class AppDesign {
   static const sectionTitle = 18.0;
   static const pageTitle = 26.0;
   static const dialogTitle = 20.0;
+  static const sheetTitle = 22.0;
+  static const entryValue = 24.0;
   static const dialogMaxWidth = 520.0;
   static const parameterValue = 18.0;
   static const compactParameterValue = 16.0;
 
+  /// Narrow content panes (not the whole window).
+  static const narrowBreakpoint = 600.0;
   static const phoneBreakpoint = 700.0;
   static const compactToolbarBreakpoint = 800.0;
   static const settingsSidebarBreakpoint = 900.0;

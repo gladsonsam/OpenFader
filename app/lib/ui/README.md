@@ -23,8 +23,16 @@ acyclic and avoid accidentally coupling primitives to the whole library.
   outcomes, Cancel returns null), `showConsoleTextInput` / `showConsoleNameDialog`
   (text, with optional inline `validate`), `showConsoleDialog` + `ConsoleDialog`
   for custom content.
+- Selection list: `showConsoleSelection` (pick one of several options, optional
+  detail line and check on the selected one; Cancel returns null).
+- Tappable row that opens a page or action: `ConsoleNavigationTile` (label,
+  optional detail, leading, trailing chevron by default; `onTap: null` disables).
 - Text: `ConsoleText` or `consoleTextStyle` with a `ConsoleTextRole` (size and
-  weight) and `ConsoleTextTone` (colour).
+  weight; `sheetTitle` for full-screen sheets, `entryValue` for large entered
+  values) and `ConsoleTextTone` (colour).
+- Breakpoints: shared ones come from `AppDesign` (`narrowBreakpoint` for narrow
+  content panes, `phoneBreakpoint`, ...). A feature-specific threshold must be a
+  named const in its file. Painter/graph geometry stays in its module.
 
 Screens must not use raw `TextButton`, `FilledButton`, `ElevatedButton`,
 `OutlinedButton`, `IconButton`, `AlertDialog` or numeric font sizes.

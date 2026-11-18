@@ -1,6 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 import '../ui/console.dart';
 
+/// Below this width the dismiss button moves under the message.
+const _stackedDismissWidth = 240.0;
+
 /// Persistent operation feedback, placed in the surface that owns the action.
 class InlineFeedbackController extends ValueNotifier<String?> {
   InlineFeedbackController() : super(null);
@@ -37,7 +40,7 @@ class InlineFeedbackView extends StatelessWidget {
                           label: 'Dismiss message',
                           onPressed: controller.clear,
                           child: const Icon(Icons.close));
-                      if (constraints.maxWidth < 240) {
+                      if (constraints.maxWidth < _stackedDismissWidth) {
                         return Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,

@@ -86,6 +86,9 @@ Map<int, String> recorderChannelNames(Map source) {
   };
 }
 
+/// Below this width the transport header stacks.
+const _transportNarrowWidth = 650.0;
+
 class _GoToTimeDialog extends StatefulWidget {
   const _GoToTimeDialog({required this.duration, required this.rate});
   final double duration;
@@ -455,32 +458,24 @@ class _RecorderPageState extends State<RecorderPage> {
       return;
     }
     final captured = native.nativeContext;
-    final selected = await showConsoleDialog<Map<String, dynamic>>(
+    final selected = await showConsoleSelection<Map<String, dynamic>>(
       context,
-      builder: (context) => ConsoleDialog(
-        title: 'Link native mixer snapshot',
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'A device-local reference, separate from OpenFader scenes. Create or manage native snapshots in Scenes, then inspect here. Verify the mixer before recall.',
-            ),
-            for (final slot in view.slots)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, slot),
-                child: Text(
-                  '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}',
-                ),
-              ),
-            if (_snapshotLinks.containsKey(takeId))
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, <String, dynamic>{}),
-                child: const Text('Remove link'),
-              ),
-          ],
-        ),
-      ),
+      title: 'Link native mixer snapshot',
+      message:
+          'A device-local reference, separate from OpenFader scenes. Create or manage native snapshots in Scenes, then inspect here. Verify the mixer before recall.',
+      options: [
+        for (final slot in view.slots)
+          ConsoleSelectionOption(
+            label:
+                '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}',
+            value: slot,
+          ),
+        if (_snapshotLinks.containsKey(takeId))
+          const ConsoleSelectionOption(
+            label: 'Remove link',
+            value: <String, dynamic>{},
+          ),
+      ],
     );
     if (!mounted || selected == null) return;
     if (native.nativeContext != captured ||
@@ -674,68 +669,42 @@ class _RecorderPageState extends State<RecorderPage> {
       );
       return;
     }
-    final format = await showConsoleDialog<String>(
+    final format = await showConsoleSelection<String>(
       context,
-      builder: (context) => ConsoleDialog(
-        title: importing ? 'Import take' : 'Export take',
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-          if (importing)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, 'wav'),
-              child: const Text('Multichannel WAV file'),
-            ),
-          if (importing)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, 'native'),
-              child: const Text('Native take folder'),
-            ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'tracks'),
-            child: importing
-                ? const Text('Mono WAV tracks folder (OpenFader export)')
-                : const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Multitrack',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 4),
-                      Text('One WAV per recorded track. For editing.'),
-                    ],
-                  ),
-          ),
-          if (!importing)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, 'mix'),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Stereo mix',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 4),
-                  Text('All tracks combined into one stereo WAV.'),
-                ],
-              ),
-            ),
-          if (!importing)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(0, 8, 0, 16),
-              child: Text(
-                'Stereo mix combines all tracks at equal level, centered, '
+      title: importing ? 'Import take' : 'Export take',
+      message: importing
+          ? null
+          : 'Stereo mix combines all tracks at equal level, centered, '
                 'and reduces the level if needed to prevent clipping. '
                 'Mixer processing is not included.\n\n'
                 'Files over 4 GiB use RF64 WAV.',
+      options: importing
+          ? const [
+              ConsoleSelectionOption(
+                label: 'Multichannel WAV file',
+                value: 'wav',
               ),
-            ),
-          ],
-        ),
-      ),
+              ConsoleSelectionOption(
+                label: 'Native take folder',
+                value: 'native',
+              ),
+              ConsoleSelectionOption(
+                label: 'Mono WAV tracks folder (OpenFader export)',
+                value: 'tracks',
+              ),
+            ]
+          : const [
+              ConsoleSelectionOption(
+                label: 'Multitrack',
+                detail: 'One WAV per recorded track. For editing.',
+                value: 'tracks',
+              ),
+              ConsoleSelectionOption(
+                label: 'Stereo mix',
+                detail: 'All tracks combined into one stereo WAV.',
+                value: 'mix',
+              ),
+            ],
     );
     if (!mounted || format == null) return;
     String? selected;
@@ -1087,24 +1056,18 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       var deviceId = store.state['selected_device_id'] as String?;
       if (!devices.any((d) => d['id'] == deviceId)) {
-        deviceId = await showConsoleDialog<String>(
+        deviceId = await showConsoleSelection<String>(
           context,
-          builder: (context) => ConsoleDialog(
-            title: 'Choose playback interface',
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final d in devices)
-                  SimpleDialogOption(
-                    onPressed: () => Navigator.pop(context, '${d['id']}'),
-                    child: Text(
-                      '${d['name']} · ${d['output_channels']} outputs · ${d['sample_rate']} Hz',
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          title: 'Choose playback interface',
+          options: [
+            for (final d in devices)
+              ConsoleSelectionOption(
+                label: '${d['name']}',
+                detail:
+                    '${d['output_channels']} outputs · ${d['sample_rate']} Hz',
+                value: '${d['id']}',
+              ),
+          ],
         );
         if (deviceId == null || !mounted) return;
         await store.command('select_device', {'device_id': deviceId});
@@ -1642,7 +1605,7 @@ class _RecorderPageState extends State<RecorderPage> {
         color: p.panel,
         child: child,
       );
-      final narrow = MediaQuery.sizeOf(context).width < 650;
+      final narrow = MediaQuery.sizeOf(context).width < _transportNarrowWidth;
       Widget header = SizedBox(
         height: 48,
         child: Row(
@@ -2200,12 +2163,9 @@ class _RecorderPageState extends State<RecorderPage> {
                   Row(
                     children: [
                       const Expanded(
-                        child: Text(
+                        child: ConsoleText(
                           'Audio setup',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          role: ConsoleTextRole.sheetTitle,
                         ),
                       ),
                       ConsoleIconButton(
@@ -2893,13 +2853,9 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
+                      child: const ConsoleText(
                         'Browse takes',
-                        style: TextStyle(
-                          color: p.text1,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        role: ConsoleTextRole.sheetTitle,
                       ),
                     ),
                     ConsoleIconButton(
