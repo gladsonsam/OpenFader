@@ -612,7 +612,7 @@ class _DeviceRow extends StatelessWidget {
               variant: primary
                   ? ConsoleButtonVariant.primary
                   : ConsoleButtonVariant.secondary,
-              size: ConsoleButtonSize.large,
+              size: wide ? ConsoleButtonSize.hero : ConsoleButtonSize.large,
               onPressed: busy || connecting ? null : onConnect,
             ),
           ),
@@ -645,59 +645,32 @@ class _BoxActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = TextButton.styleFrom(
-        foregroundColor: ConsolePalette.of(context).text,
-        backgroundColor: Colors.transparent,
-        disabledBackgroundColor: Colors.transparent,
-        minimumSize: Size(64, wide ? 56 : 48),
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: AppDesign.type(wide ? 24 : 17,
-            weight: FontWeight.w500, color: ConsolePalette.of(context).text));
-    Widget label(String text) => Flexible(
-        fit: FlexFit.loose,
-        child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(text,
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
-                style: AppDesign.type(wide ? 24 : 17,
-                    weight: FontWeight.w500,
-                    color: ConsolePalette.of(context).text))));
+    final size = wide ? ConsoleButtonSize.hero : ConsoleButtonSize.large;
     return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: wide ? 28 : 16, vertical: wide ? 20 : 12),
       child: Row(
         children: [
           Expanded(
-              child: TextButton(
-                  style: style,
-                  onPressed: onDiscover,
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _ScanGlyph(),
-                        const SizedBox(width: 8),
-                        label('Discover mixers'),
-                      ]))),
+              child: ConsoleButton(
+                  label: 'Discover mixers',
+                  variant: ConsoleButtonVariant.quiet,
+                  size: size,
+                  padding: ConsoleButtonPadding.tight,
+                  leading: const _ScanGlyph(),
+                  onPressed: onDiscover)),
           const SizedBox(width: 12),
           Container(
               width: 1, height: 36, color: ConsolePalette.of(context).line),
           const SizedBox(width: 12),
           Expanded(
-              child: TextButton(
-                  style: style,
-                  onPressed: onAdd,
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _PlusGlyph(),
-                        const SizedBox(width: 8),
-                        label('Add manually'),
-                      ]))),
+              child: ConsoleButton(
+                  label: 'Add manually',
+                  variant: ConsoleButtonVariant.quiet,
+                  size: size,
+                  padding: ConsoleButtonPadding.tight,
+                  leading: const _PlusGlyph(),
+                  onPressed: onAdd)),
         ],
       ),
     );
@@ -709,26 +682,15 @@ class _WorkOffline extends StatelessWidget {
   const _WorkOffline({required this.onTap});
 
   @override
-  Widget build(BuildContext context) => TextButton(
+  Widget build(BuildContext context) => ConsoleButton(
+        label: 'Work offline',
+        variant: ConsoleButtonVariant.quiet,
+        size: MediaQuery.sizeOf(context).width >
+                AppDesign.settingsSidebarBreakpoint
+            ? ConsoleButtonSize.hero
+            : ConsoleButtonSize.large,
+        trailing: const _ChevronGlyph(),
         onPressed: onTap,
-        style: TextButton.styleFrom(
-            foregroundColor: ConsolePalette.of(context).text,
-            backgroundColor: Colors.transparent,
-            disabledBackgroundColor: Colors.transparent,
-            minimumSize: const Size(200, 56),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: AppDesign.type(
-                MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint ? 26 : 20,
-                weight: FontWeight.w400,
-                color: ConsolePalette.of(context).text)),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Work offline'),
-            SizedBox(width: 8),
-            _ChevronGlyph(),
-          ],
-        ),
       );
 }
 

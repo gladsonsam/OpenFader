@@ -18,7 +18,12 @@ acyclic and avoid accidentally coupling primitives to the whole library.
   action), `quiet` (low emphasis, e.g. Cancel in dense spots), `danger`
   (outlined risky action), `destructive` (filled irreversible confirm). Sizes:
   `compact` (default), `regular` (dialogs, forms), `large` (page actions).
-  `selected` marks a toggle on state. Icon-only: `ConsoleIconButton`.
+  `selected` marks a toggle on state. Extra size `dense` (11) and `hero` (24,
+  front-door actions). `padding: ConsoleButtonPadding.tight/none` for fixed
+  slots, `leading`/`trailing` widgets (glyph, drop-down arrow), `alignment`,
+  `subtitle` (muted second line), `foreground` (on-colour when filled) and
+  `accent` (also the text colour of `quiet`). Icon-only: `ConsoleIconButton`.
+- Underline tabs: `ConsoleTabStrip<T>`.
 - Dialogs: `showConsoleConfirmation` (yes/no), `showConsoleChoice` (2-3
   outcomes, Cancel returns null), `showConsoleTextInput` / `showConsoleNameDialog`
   (text, with optional inline `validate`), `showConsoleDialog` + `ConsoleDialog`
@@ -26,10 +31,12 @@ acyclic and avoid accidentally coupling primitives to the whole library.
 - Selection list: `showConsoleSelection` (pick one of several options, optional
   detail line and check on the selected one; Cancel returns null).
 - Tappable row that opens a page or action: `ConsoleNavigationTile` (label,
-  optional detail, leading, trailing chevron by default; `onTap: null` disables).
+  optional detail, leading, trailing chevron by default; `outlined` for
+  standalone panel tiles; `onTap: null` disables).
 - Text: `ConsoleText` or `consoleTextStyle` with a `ConsoleTextRole` (size and
   weight; `sheetTitle` for full-screen sheets, `entryValue` for large entered
-  values) and `ConsoleTextTone` (colour).
+  values, `micro` 10) and `ConsoleTextTone` (colour). `AppDesign.tickLabel` (8)
+  is for painter tick labels only.
 - Breakpoints: shared ones come from `AppDesign` (`narrowBreakpoint` for narrow
   content panes, `phoneBreakpoint`, ...). A feature-specific threshold must be a
   named const in its file. Painter/graph geometry stays in its module.

@@ -200,6 +200,7 @@ class _PresetsButton extends StatelessWidget {
         showProcessorPresetLibrary(context, store, kind, target);
       },
       label: 'Presets',
+      trailing: const Icon(Icons.arrow_drop_down, size: 20),
     );
   }
 }

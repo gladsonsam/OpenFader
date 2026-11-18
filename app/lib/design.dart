@@ -40,6 +40,10 @@ abstract final class AppDesign {
   static const panelRadius = 10.0;
   static const fieldRadius = 8.0;
 
+  static const microText = 10.0;
+
+  /// Painter tick labels only; not for widgets.
+  static const tickLabel = 8.0;
   static const minorText = 11.0;
   static const caption = 12.0;
   static const smallLabel = 13.0;

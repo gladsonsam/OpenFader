@@ -62,6 +62,10 @@ class MixerToolbar extends StatelessWidget {
                                     alignment: Alignment.centerRight,
                                     child: ConsoleButton(
                                         variant: ConsoleButtonVariant.quiet,
+                                        accent:
+                                            ConsolePalette.of(context).mutedText,
+                                        alignment: MainAxisAlignment.end,
+                                        padding: ConsoleButtonPadding.none,
                                         onPressed: () => onNavigate(
                                             MixerDestination.connect),
                                         label: controller.connected

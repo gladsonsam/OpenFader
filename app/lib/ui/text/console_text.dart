@@ -14,6 +14,7 @@ enum ConsoleTextRole {
   body(AppDesign.body, FontWeight.w400),
   smallLabel(AppDesign.smallLabel, FontWeight.w400),
   caption(AppDesign.caption, FontWeight.w400),
+  micro(AppDesign.microText, FontWeight.w400),
   minor(AppDesign.minorText, FontWeight.w400),
   entryValue(AppDesign.entryValue, FontWeight.w600, tabular: true),
   parameterValue(AppDesign.parameterValue, FontWeight.w600, tabular: true),

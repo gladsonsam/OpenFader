@@ -14,6 +14,10 @@ class ConsoleNavigationTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool selected, showChevron;
+
+  /// Panel background with a hairline border and a bold label, for tiles that
+  /// stand alone on a page rather than in a list.
+  final bool outlined;
   const ConsoleNavigationTile({
     super.key,
     required this.label,
@@ -23,6 +27,7 @@ class ConsoleNavigationTile extends StatelessWidget {
     this.trailing,
     this.selected = false,
     this.showChevron = true,
+    this.outlined = false,
   });
 
   @override
@@ -51,14 +56,26 @@ class ConsoleNavigationTile extends StatelessWidget {
           animationDuration: MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
               : ConsoleMotion.state,
-          color: selected ? palette.selected : palette.navigationTile,
+          color: selected
+              ? palette.selected
+              : outlined
+              ? palette.panel
+              : palette.navigationTile,
           shape: RoundedRectangleBorder(
-            borderRadius: AppDesign.radius,
-            side: selected ? BorderSide(color: palette.cyan) : BorderSide.none,
+            borderRadius: outlined
+                ? BorderRadius.circular(AppDesign.panelRadius)
+                : AppDesign.radius,
+            side: selected
+                ? BorderSide(color: palette.cyan)
+                : outlined
+                ? BorderSide(color: palette.linePanel)
+                : BorderSide.none,
           ),
           child: InkWell(
             onTap: onTap,
-            borderRadius: AppDesign.radius,
+            borderRadius: outlined
+                ? BorderRadius.circular(AppDesign.panelRadius)
+                : AppDesign.radius,
             child: ConstrainedBox(
               constraints: const BoxConstraints(
                 minHeight: AppDesign.controlHeight,
@@ -83,13 +100,18 @@ class ConsoleNavigationTile extends StatelessWidget {
                         children: [
                           ConsoleText(
                             label,
-                            role: ConsoleTextRole.controlLabel,
+                            role: outlined
+                                ? ConsoleTextRole.rowLabel
+                                : ConsoleTextRole.controlLabel,
+                            weight: outlined ? FontWeight.w600 : null,
                             tone: tone,
                           ),
                           if (detail != null)
                             ConsoleText(
                               detail!,
-                              role: ConsoleTextRole.body,
+                              role: outlined
+                                  ? ConsoleTextRole.smallLabel
+                                  : ConsoleTextRole.body,
                               tone: ConsoleTextTone.muted,
                             ),
                         ],

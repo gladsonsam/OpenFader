@@ -350,12 +350,14 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                           Padding(
                                             padding: EdgeInsets.only(left: 6),
                                             child: Text('Library current',
-                                                style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: ConsolePalette.of(
-                                                            context)
-                                                        .meterGreen)),
+                                                style: consoleTextStyle(
+                                                        context,
+                                                        ConsoleTextRole.micro,
+                                                        weight: FontWeight.w700)
+                                                    .copyWith(
+                                                        color: ConsolePalette
+                                                                .of(context)
+                                                            .meterGreen)),
                                           ),
                                       ],
                                     ),
@@ -380,6 +382,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                       children: [
                                         ConsoleButton(
                                           label: 'RECALL',
+                                          size: ConsoleButtonSize.dense,
                                           onPressed: store.busy
                                               ? null
                                               : () => _recallSnapshot(e),
@@ -387,6 +390,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ConsoleButton(
                                           variant: ConsoleButtonVariant.quiet,
                                           label: 'RENAME',
+                                          size: ConsoleButtonSize.dense,
                                           onPressed: store.busy
                                               ? null
                                               : () {
@@ -400,6 +404,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ConsoleButton(
                                           variant: ConsoleButtonVariant.danger,
                                           label: 'DELETE',
+                                          size: ConsoleButtonSize.dense,
                                           onPressed: store.busy
                                               ? null
                                               : () => _confirm(

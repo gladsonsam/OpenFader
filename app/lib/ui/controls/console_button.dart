@@ -22,8 +22,23 @@ enum ConsoleButtonVariant {
   destructive,
 }
 
+/// Horizontal padding of a [ConsoleButton].
+enum ConsoleButtonPadding {
+  /// [AppDesign.controlPadding].
+  standard,
+
+  /// Horizontal [AppDesign.spaceSm] only.
+  tight,
+
+  /// None; for fixed-width slots inside an already-sized parent.
+  none,
+}
+
 /// Label size of a [ConsoleButton]. Every size keeps the 44-point target.
 enum ConsoleButtonSize {
+  /// Smallest label, for dense inline actions.
+  dense(AppDesign.minorText),
+
   /// Dense toolbars and inline actions.
   compact(AppDesign.smallLabel),
 
@@ -31,7 +46,10 @@ enum ConsoleButtonSize {
   regular(AppDesign.controlLabel),
 
   /// Prominent page-level actions.
-  large(AppDesign.rowLabel);
+  large(AppDesign.rowLabel),
+
+  /// Front-door actions with a large glyph.
+  hero(AppDesign.entryValue);
 
   final double fontSize;
   const ConsoleButtonSize(this.fontSize);
@@ -47,6 +65,20 @@ class ConsoleButton extends StatelessWidget {
   final bool selected;
   final Color? accent;
   final IconData? icon;
+
+  /// On-colour used when the button is filled; defaults to the palette's.
+  final Color? foreground;
+
+  /// Custom widget before the label (alternative to [icon]).
+  final Widget? leading;
+
+  /// Widget after the label, such as a drop-down arrow.
+  final Widget? trailing;
+  final ConsoleButtonPadding padding;
+  final MainAxisAlignment alignment;
+
+  /// Optional muted second line under the label.
+  final String? subtitle;
   const ConsoleButton({
     super.key,
     required this.label,
@@ -56,7 +88,13 @@ class ConsoleButton extends StatelessWidget {
     this.selected = false,
     this.accent,
     this.icon,
-  });
+    this.foreground,
+    this.leading,
+    this.trailing,
+    this.padding = ConsoleButtonPadding.standard,
+    this.alignment = MainAxisAlignment.center,
+    this.subtitle,
+  }) : assert(icon == null || leading == null);
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +109,11 @@ class ConsoleButton extends StatelessWidget {
         variant == ConsoleButtonVariant.primary ||
         variant == ConsoleButtonVariant.destructive;
     final outlined = variant == ConsoleButtonVariant.danger && !filled;
+    final textColor = filled
+        ? (foreground ?? (danger ? p.onDanger : p.onAccent))
+        : quiet && accent != null
+        ? accent!
+        : p.text;
     final animationsOff = MediaQuery.disableAnimationsOf(context);
     return ConsolePressFeedback(
       enabled: onPressed != null,
@@ -83,13 +126,22 @@ class ConsoleButton extends StatelessWidget {
                   : quiet
                   ? Colors.transparent
                   : p.control,
-              foregroundColor: filled
-                  ? (danger ? p.onDanger : p.onAccent)
-                  : p.text,
+              foregroundColor: textColor,
               disabledBackgroundColor: quiet ? Colors.transparent : p.selected,
               disabledForegroundColor: p.mutedText,
               minimumSize: AppDesign.controlSize,
-              padding: AppDesign.controlPadding,
+              alignment: switch (alignment) {
+                MainAxisAlignment.start => Alignment.centerLeft,
+                MainAxisAlignment.end => Alignment.centerRight,
+                _ => Alignment.center,
+              },
+              padding: switch (padding) {
+                ConsoleButtonPadding.standard => AppDesign.controlPadding,
+                ConsoleButtonPadding.tight => const EdgeInsets.symmetric(
+                  horizontal: AppDesign.spaceSm,
+                ),
+                ConsoleButtonPadding.none => EdgeInsets.zero,
+              },
               textStyle: AppDesign.type(size.fontSize, weight: FontWeight.w600),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppDesign.radius,
@@ -109,19 +161,49 @@ class ConsoleButton extends StatelessWidget {
             ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: alignment,
           children: [
-            if (icon != null) ...[
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: AppDesign.spaceSm),
+            ] else if (icon != null) ...[
               Icon(icon, size: AppDesign.iconSize),
               const SizedBox(width: AppDesign.spaceSm),
             ],
             Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
+              child: subtitle == null
+                  ? Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: alignment == MainAxisAlignment.start
+                          ? TextAlign.start
+                          : TextAlign.center,
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: alignment == MainAxisAlignment.start
+                          ? CrossAxisAlignment.start
+                          : CrossAxisAlignment.center,
+                      children: [
+                        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(
+                          subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppDesign.type(
+                            AppDesign.minorText,
+                            color: filled ? textColor : p.mutedText,
+                            weight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
+            if (trailing != null) ...[
+              const SizedBox(width: AppDesign.spaceSm),
+              trailing!,
+            ],
           ],
         ),
       ),

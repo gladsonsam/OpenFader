@@ -483,6 +483,7 @@ class _ControlTileState extends State<_ControlTile> {
                 Expanded(
                     child: ConsoleButton(
                         variant: ConsoleButtonVariant.quiet,
+                        alignment: MainAxisAlignment.start,
                         onPressed: () =>
                             widget.onFocus(control, null, _pending),
                         label: control.label)),

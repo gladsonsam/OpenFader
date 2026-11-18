@@ -20,20 +20,8 @@
  "app/lib/mixer/controller.dart": {
   "color-literal": 1
  },
- "app/lib/screens/fx.dart": {
-  "numeric-font-size": 2
- },
- "app/lib/screens/meters.dart": {
-  "numeric-font-size": 2
- },
  "app/lib/screens/routing.dart": {
-  "raw-button": 2
- },
- "app/lib/screens/scenes.dart": {
-  "numeric-font-size": 1
- },
- "app/lib/screens/start.dart": {
-  "raw-button": 3
+  "raw-button": 1
  },
  "app/lib/shell/bank_rail.dart": {
   "color-literal": 4

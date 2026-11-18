@@ -496,9 +496,8 @@ class _LadderGroup extends StatelessWidget {
                   padding: EdgeInsets.only(left: 8),
                   child: Text(
                     'no data',
-                    style: TextStyle(
+                    style: consoleTextStyle(context, ConsoleTextRole.micro).copyWith(
                       fontFamily: U4.font,
-                      fontSize: 10,
                       color: ConsolePalette.of(context).text7,
                     ),
                   ),
@@ -663,7 +662,7 @@ class _LadderPainter extends CustomPainter {
           style: TextStyle(
             fontFamily: U4.font,
             color: palette.text10,
-            fontSize: 8,
+            fontSize: AppDesign.tickLabel,
             fontFeatures: [FontFeature.tabularFigures()],
           ),
         ),

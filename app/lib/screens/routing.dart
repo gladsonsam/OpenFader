@@ -171,7 +171,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   }
 
   Widget _targetSelector() {
-    final p = ConsolePalette.of(context);
     return LayoutBuilder(builder: (context, constraints) {
       final compact =
           MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
@@ -195,45 +194,20 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
           scrollDirection: Axis.horizontal,
           child: SizedBox(
               width: width,
-              child: Row(spacing: 8, children: [
-                for (final target in store.targets)
-                  Expanded(
-                      child: Semantics(
-                          selected: target.key == store.target,
-                          child: Container(
-                            decoration: BoxDecoration(
-                                border: Border(
-                                    bottom: BorderSide(
-                                        color: target.key == store.target
-                                            ? p.cyan
-                                            : p.tileBorder,
-                                        width: target.key == store.target
-                                            ? 3
-                                            : 1))),
-                            child: TextButton(
-                                style: TextButton.styleFrom(
-                                    minimumSize: const Size(0, 48),
-                                    foregroundColor: target.key == store.target
-                                        ? p.cyan
-                                        : p.text4,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12)),
-                                onPressed: () {
-                                  if (target.key == store.target) return;
-                                  setState(() {
-                                    _previewStrip = null;
-                                    _previewSource = null;
-                                    _pickedStrip = null;
-                                    _pickedSource = null;
-                                    _dragStart = null;
-                                    _dragPending = [];
-                                  });
-                                  store.selectTarget(target.key);
-                                },
-                                child: Text(target.label,
-                                    maxLines: 1, style: tabStyle)),
-                          ))),
-              ])));
+              child: ConsoleTabStrip<String>(
+                  tabs: [for (final t in store.targets) (t.key, t.label)],
+                  selected: store.target,
+                  onSelected: (key) {
+                    setState(() {
+                      _previewStrip = null;
+                      _previewSource = null;
+                      _pickedStrip = null;
+                      _pickedSource = null;
+                      _dragStart = null;
+                      _dragPending = [];
+                    });
+                    store.selectTarget(key);
+                  })));
     });
   }
 

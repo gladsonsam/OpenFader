@@ -43,6 +43,7 @@ class WorkspaceHome extends StatelessWidget {
             detail: subtitle,
             leading: Icon(icon),
             showChevron: false,
+            outlined: true,
             onTap: action);
     return LayoutBuilder(builder: (context, bounds) {
       final columns = bounds.maxWidth >= _threeColumnWidth
@@ -137,6 +138,7 @@ class WorkspaceHome extends StatelessWidget {
                                 child: ConsoleButton(
                                     label: 'Diagnostics',
                                     variant: ConsoleButtonVariant.quiet,
+                                    accent: palette.mutedText,
                                     onPressed: () =>
                                         onNavigate(MixerDestination.debug)))),
                         if (onLeaveServer != null)

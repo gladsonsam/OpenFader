@@ -400,11 +400,11 @@ class _FxCard extends StatelessWidget {
                                 style: TextStyle(
                                     fontSize: AppDesign.minorText, color: palette.text7))),
                         Text(status,
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: status == 'On' || status == 'Live'
-                                    ? palette.meterGreen
-                                    : palette.meterAmber)),
+                            style: consoleTextStyle(context, ConsoleTextRole.micro)
+                                .copyWith(
+                                    color: status == 'On' || status == 'Live'
+                                        ? palette.meterGreen
+                                        : palette.meterAmber)),
                       ]),
                       const SizedBox(height: 5),
                       Expanded(
@@ -420,8 +420,8 @@ class _FxCard extends StatelessWidget {
                       if (slot != null) ...[
                         Text(slot.ret,
                             maxLines: 1,
-                            style:
-                                TextStyle(fontSize: 10, color: palette.text7)),
+                            style: consoleTextStyle(context, ConsoleTextRole.micro)
+                                .copyWith(color: palette.text7)),
                         const SizedBox(height: AppDesign.spaceXs),
                         ValueListenableBuilder<double>(
                             valueListenable: store.meterOf(slot.slot),

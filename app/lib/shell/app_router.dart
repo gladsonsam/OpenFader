@@ -842,6 +842,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   : ConsoleButton(
                       label: _mixer.connectionDisplayName,
                       variant: ConsoleButtonVariant.quiet,
+                      size: compact
+                          ? ConsoleButtonSize.dense
+                          : ConsoleButtonSize.compact,
+                      accent: ConsolePalette.of(context).mutedText,
+                      alignment: MainAxisAlignment.end,
+                      padding: ConsoleButtonPadding.none,
                       onPressed: () => _go(AppTab.connect)));
         }
         return MixerToolbar(
