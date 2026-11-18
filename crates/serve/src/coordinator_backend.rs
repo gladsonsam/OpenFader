@@ -107,14 +107,13 @@ async fn read_profile(
         device.output_channels >= profile.output_channels,
         "Insufficient playback outputs"
     );
-    let descriptor = session.recorder_descriptor().await?.ok_or_else(|| {
-        anyhow::anyhow!(
-            "The connected provider has no audio interface association; use manual playback"
-        )
-    })?;
+    let descriptor = session
+        .recorder_descriptor()
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("The connected mixer has no audio interface association"))?;
     anyhow::ensure!(
         crate::recorder::recorder_device_matches(&descriptor, device),
-        "The selected interface does not match the connected mixer; use manual playback"
+        "The selected interface does not match the connected mixer"
     );
     Ok(profile)
 }
@@ -277,8 +276,7 @@ impl CoordinatorBackend {
                     self.mapping_profile = None;
                     self.profile_result = Some(Err(match result {
                         Ok(Err(error)) => format!("{error:#}"),
-                        _ => "Mixer routing check timed out; manual playback remains available"
-                            .into(),
+                        _ => "Mixer routing check timed out".into(),
                     }));
                 }
             }

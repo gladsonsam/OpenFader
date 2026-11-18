@@ -16,14 +16,10 @@ class RecorderArrangement extends StatefulWidget {
     this.takeName,
     this.loopStartFrame,
     this.loopEndFrame,
-    this.onNewTake,
-    this.onAudioSetup,
   });
   final void Function(int start, int end, int total) onLoopSelection;
   final String? takeName;
   final int? loopStartFrame, loopEndFrame;
-  final VoidCallback? onNewTake;
-  final VoidCallback? onAudioSetup;
   final RecorderStore store;
   final String? previewTakeId;
   @override
@@ -36,6 +32,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
   double? _loopStart;
   double? _loopEnd;
   static const laneHeight = 62.0;
+  static const rulerHeight = 36.0;
   final _horizontal = ScrollController(keepScrollOffset: false);
   final _vertical = ScrollController(keepScrollOffset: false);
   String? _requestKey;
@@ -339,7 +336,8 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
     final meters = s['live_peaks'] is List ? s['live_peaks'] as List : const [];
     return LayoutBuilder(
       builder: (context, arrangementConstraints) {
-        final labelWidth = arrangementConstraints.maxWidth < AppDesign.narrowBreakpoint
+        final labelWidth =
+            arrangementConstraints.maxWidth < AppDesign.narrowBreakpoint
             ? 120.0
             : 220.0;
         return Container(
@@ -446,33 +444,11 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                           const SizedBox(height: 8),
                           Text(
                             take == null
-                                ? 'Set up an audio interface and start a take to see its tracks here.'
+                                ? 'Tracks will appear when recording starts.'
                                 : 'This take does not have a usable track layout.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: p.mutedText),
                           ),
-                          if (widget.onNewTake != null ||
-                              widget.onAudioSetup != null) ...[
-                            const SizedBox(height: 12),
-                            Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 8,
-                              children: [
-                                if (widget.onNewTake != null)
-                                  ConsoleButton(
-                                    variant: ConsoleButtonVariant.quiet,
-                                    onPressed: widget.onNewTake,
-                                    label: 'New take',
-                                  ),
-                                if (widget.onAudioSetup != null)
-                                  ConsoleButton(
-                                    variant: ConsoleButtonVariant.quiet,
-                                    onPressed: widget.onAudioSetup,
-                                    label: 'Audio setup',
-                                  ),
-                              ],
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -542,7 +518,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                   child: Column(
                                     children: [
                                       SizedBox(
-                                        height: 56,
+                                        height: rulerHeight,
                                         child: Center(
                                           child: ConsoleText(
                                             'Tracks',
@@ -684,7 +660,9 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                         scrollDirection: Axis.horizontal,
                                         child: SizedBox(
                                           width: width,
-                                          height: 56 + laneHeight * laneCount,
+                                          height:
+                                              rulerHeight +
+                                              laneHeight * laneCount,
                                           child: GestureDetector(
                                             behavior: HitTestBehavior.opaque,
                                             onDoubleTap: () {
@@ -832,7 +810,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                             left: 0,
                             top: 0,
                             width: labelWidth,
-                            height: 56,
+                            height: rulerHeight,
                             child: IgnorePointer(
                               child: ColoredBox(
                                 color: p.panel,
@@ -849,7 +827,7 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                             left: labelWidth,
                             top: 0,
                             right: 0,
-                            height: 56,
+                            height: rulerHeight,
                             child: IgnorePointer(
                               child: ClipRect(
                                 child: CustomPaint(
@@ -977,7 +955,7 @@ class _StickyRulerPainter extends CustomPainter {
       names: const {},
       takeName: null,
       colors: const [],
-    ).paint(canvas, Size(timelineWidth, 56));
+    ).paint(canvas, Size(timelineWidth, _RecorderArrangementState.rulerHeight));
     canvas.restore();
   }
 
@@ -1019,7 +997,9 @@ class _TimelinePainter extends CustomPainter {
     final background = Paint()..color = palette.well;
     canvas.drawRect(Offset.zero & size, background);
     for (var i = 0; i < colors.length; i++) {
-      final y = 56.0 + i * _RecorderArrangementState.laneHeight;
+      final y =
+          _RecorderArrangementState.rulerHeight +
+          i * _RecorderArrangementState.laneHeight;
       canvas.drawRect(
         Rect.fromLTWH(0, y, size.width, 62),
         Paint()
@@ -1043,9 +1023,9 @@ class _TimelinePainter extends CustomPainter {
       canvas.drawRect(
         Rect.fromLTRB(
           math.min(loopStart!, loopEnd!) * size.width,
-          44,
+          _RecorderArrangementState.rulerHeight - 12,
           math.max(loopStart!, loopEnd!) * size.width,
-          56,
+          _RecorderArrangementState.rulerHeight,
         ),
         Paint()..color = palette.accent,
       );
@@ -1063,7 +1043,9 @@ class _TimelinePainter extends CustomPainter {
       ..color = palette.line
       ..strokeWidth = 1;
     for (var i = 0; i <= colors.length; i++) {
-      final y = 56.0 + i * _RecorderArrangementState.laneHeight;
+      final y =
+          _RecorderArrangementState.rulerHeight +
+          i * _RecorderArrangementState.laneHeight;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
     }
     final duration = frames / rate;
@@ -1132,7 +1114,7 @@ class _TimelinePainter extends CustomPainter {
           final frame = start + (end - start) * (i + .5) / values.length;
           final x = frame / frames * size.width;
           final y =
-              56 +
+              _RecorderArrangementState.rulerHeight +
               channel * _RecorderArrangementState.laneHeight +
               _RecorderArrangementState.laneHeight / 2;
           final top = y - (pair[1] as num).toDouble().clamp(-1, 1) * 16;

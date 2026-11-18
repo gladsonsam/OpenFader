@@ -86,8 +86,209 @@ Map<int, String> recorderChannelNames(Map source) {
   };
 }
 
-/// Below this width the transport header stacks.
-const _transportNarrowWidth = 650.0;
+/// Track-to-destination mapping; conflicts are shown on the affected rows.
+class _TrackMappingDialog extends StatefulWidget {
+  const _TrackMappingDialog({
+    required this.title,
+    required this.trackNames,
+    required this.options,
+    required this.mapping,
+    required this.confirmLabel,
+    required this.destination,
+    this.header = const [],
+    this.confirmation,
+  });
+
+  final String title, confirmLabel;
+
+  /// Singular noun for a mapping target, such as "output".
+  final String destination;
+  final List<Widget> header;
+  final String? confirmation;
+  final Map<int, String> trackNames;
+  final List<(int, String)> options;
+  final List<int?> mapping;
+
+  @override
+  State<_TrackMappingDialog> createState() => _TrackMappingDialogState();
+}
+
+class _TrackMappingDialogState extends State<_TrackMappingDialog> {
+  late final _mapping = List<int?>.of(widget.mapping);
+  late final _options = [(-1, 'Unassigned'), ...widget.options];
+  bool _submitted = false;
+
+  String _track(int track) => widget.trackNames[track] == null
+      ? 'Track ${track + 1}'
+      : '${track + 1} · ${widget.trackNames[track]}';
+
+  String _option(int value) =>
+      _options.where((o) => o.$1 == value).firstOrNull?.$2 ?? '$value';
+
+  @override
+  Widget build(BuildContext context) {
+    final assigned = _mapping.whereType<int>().toList();
+    final shared = <int, List<int>>{};
+    for (var track = 0; track < _mapping.length; track++) {
+      final value = _mapping[track];
+      if (value != null) (shared[value] ??= []).add(track);
+    }
+    shared.removeWhere((_, tracks) => tracks.length < 2);
+    final conflicts = shared.values.fold(0, (n, tracks) => n + tracks.length);
+    final error = assigned.isEmpty
+        ? 'Assign at least one track.'
+        : conflicts > 0
+        ? 'Give each track its own ${widget.destination}.'
+        : null;
+    return ConsoleDialog(
+      title: widget.title,
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (index, line) in widget.header.indexed) ...[
+              if (index > 0) const SizedBox(height: AppDesign.spaceXs),
+              line,
+            ],
+            if (widget.header.isNotEmpty)
+              const SizedBox(height: AppDesign.spaceMd),
+            Text.rich(
+              TextSpan(
+                text:
+                    '${assigned.length} of ${_mapping.length} tracks assigned',
+                children: [
+                  if (conflicts > 0)
+                    TextSpan(
+                      text: ' · $conflicts in conflict',
+                      style: TextStyle(
+                        color: consoleTextColor(
+                          context,
+                          ConsoleTextTone.warning,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              style: consoleTextStyle(
+                context,
+                ConsoleTextRole.controlLabel,
+              ).copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: AppDesign.spaceSm),
+            for (var track = 0; track < _mapping.length; track++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppDesign.spaceXs),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ConsoleText(
+                            _track(track),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: AppDesign.spaceSm),
+                        Expanded(
+                          child: ConsoleSelect<int>(
+                            label: 'Destination for ${_track(track)}',
+                            value: _mapping[track] ?? -1,
+                            options: _options,
+                            onChanged: (value) => setState(
+                              () => _mapping[track] = value < 0 ? null : value,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (shared[_mapping[track]] case final tracks?)
+                      Semantics(
+                        liveRegion: true,
+                        child: ConsoleText(
+                          '${_option(_mapping[track]!)} is also used by '
+                          '${tracks.where((t) => t != track).map(_track).join(', ')}',
+                          role: ConsoleTextRole.caption,
+                          tone: ConsoleTextTone.warning,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            if (_submitted && error != null)
+              Semantics(
+                liveRegion: true,
+                child: ConsoleText(
+                  error,
+                  role: ConsoleTextRole.caption,
+                  tone: ConsoleTextTone.warning,
+                ),
+              ),
+            if (widget.confirmation case final text?) ...[
+              const SizedBox(height: AppDesign.spaceSm),
+              ConsoleText(text, weight: FontWeight.w600),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        ConsoleButton(
+          label: 'Cancel',
+          size: ConsoleButtonSize.regular,
+          variant: ConsoleButtonVariant.quiet,
+          onPressed: () => Navigator.pop(context),
+        ),
+        ConsoleButton(
+          label: widget.confirmLabel,
+          size: ConsoleButtonSize.regular,
+          variant: ConsoleButtonVariant.primary,
+          onPressed: () {
+            if (error == null) {
+              Navigator.pop(context, List<int?>.of(_mapping));
+            } else {
+              setState(() => _submitted = true);
+            }
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Parses seconds or m:ss(.fff); null when the text is not a time.
+double? _parseTime(String value) {
+  final parts = value.trim().split(':');
+  if (parts.length == 1) {
+    final seconds = double.tryParse(parts[0]);
+    return seconds != null && seconds.isFinite ? seconds : null;
+  }
+  if (parts.length != 2 || !RegExp(r'^\d+$').hasMatch(parts[0])) return null;
+  final minutes = int.tryParse(parts[0]);
+  final seconds = double.tryParse(parts[1]);
+  if (minutes == null || seconds == null || seconds < 0 || seconds >= 60) {
+    return null;
+  }
+  return minutes * 60 + seconds;
+}
+
+/// Formats seconds as m:ss with up to [decimals] fractional digits.
+String _formatTime(double seconds, {int decimals = 2}) {
+  final scale = pow(10, decimals).toInt();
+  final units = (seconds * scale).round();
+  final minutes = units ~/ (60 * scale);
+  final rest = units - minutes * 60 * scale;
+  final fraction = (rest % scale)
+      .toString()
+      .padLeft(decimals, '0')
+      .replaceFirst(RegExp(r'0+$'), '');
+  return '$minutes:${(rest ~/ scale).toString().padLeft(2, '0')}'
+      '${fraction.isEmpty ? '' : '.$fraction'}';
+}
+
+const _timeFormatHint = 'Use seconds or m:ss, for example 0:12.5.';
 
 class _GoToTimeDialog extends StatefulWidget {
   const _GoToTimeDialog({required this.duration, required this.rate});
@@ -106,28 +307,16 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
     super.dispose();
   }
 
+  String get _length => _formatTime(widget.duration / widget.rate);
+
   void submit() {
-    final parts = controller.text.trim().split(':');
-    double? seconds;
-    if (parts.length == 1) {
-      seconds = double.tryParse(parts[0]);
-    } else if (parts.length == 2 && RegExp(r'^\d+$').hasMatch(parts[0])) {
-      final minutes = int.tryParse(parts[0]);
-      final remainder = double.tryParse(parts[1]);
-      if (minutes != null &&
-          remainder != null &&
-          remainder >= 0 &&
-          remainder < 60) {
-        seconds = minutes * 60 + remainder;
-      }
+    final seconds = _parseTime(controller.text);
+    if (seconds == null) {
+      setState(() => error = _timeFormatHint);
+      return;
     }
-    if (seconds == null ||
-        !seconds.isFinite ||
-        seconds < 0 ||
-        seconds * widget.rate > widget.duration) {
-      setState(
-        () => error = 'Enter a time within the take (seconds or mm:ss).',
-      );
+    if (seconds < 0 || seconds * widget.rate > widget.duration) {
+      setState(() => error = 'Enter a time from 0:00 to $_length.');
       return;
     }
     Navigator.pop(context, (seconds * widget.rate).round());
@@ -138,16 +327,24 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
     final p = ConsolePalette.of(context);
     return ConsoleDialog(
       title: 'Go to time',
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        style: TextStyle(color: p.text),
-        decoration: InputDecoration(
-          labelText: 'Seconds or mm:ss',
-          labelStyle: TextStyle(color: p.mutedText),
-          errorText: error,
+      content: SizedBox(
+        width: 280,
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: p.text),
+          decoration: InputDecoration(
+            labelText: 'Position',
+            hintText: 'm:ss or seconds',
+            helperText: 'Take length $_length',
+            errorText: error,
+            errorMaxLines: 2,
+          ),
+          onChanged: (_) {
+            if (error != null) setState(() => error = null);
+          },
+          onSubmitted: (_) => submit(),
         ),
-        onSubmitted: (_) => submit(),
       ),
       actions: [
         ConsoleButton(
@@ -183,16 +380,18 @@ class _LoopDialog extends StatefulWidget {
 
 class _LoopDialogState extends State<_LoopDialog> {
   late final TextEditingController start, end;
-  String? error;
+  late final String _initialStart, _initialEnd;
+  String? startError, endError;
   @override
   void initState() {
     super.initState();
-    start = TextEditingController(
-      text: ((widget.start ?? 0) / widget.rate).toStringAsFixed(3),
+    _initialStart = _formatTime((widget.start ?? 0) / widget.rate, decimals: 3);
+    _initialEnd = _formatTime(
+      (widget.end ?? widget.frames) / widget.rate,
+      decimals: 3,
     );
-    end = TextEditingController(
-      text: ((widget.end ?? widget.frames) / widget.rate).toStringAsFixed(3),
-    );
+    start = TextEditingController(text: _initialStart);
+    end = TextEditingController(text: _initialEnd);
   }
 
   @override
@@ -202,63 +401,78 @@ class _LoopDialogState extends State<_LoopDialog> {
     super.dispose();
   }
 
-  double? parse(String value) {
-    final parts = value.trim().split(':');
-    if (parts.length == 1) return double.tryParse(parts[0]);
-    if (parts.length != 2 || !RegExp(r'^\d+$').hasMatch(parts[0])) return null;
-    final minutes = int.tryParse(parts[0]);
-    final seconds = double.tryParse(parts[1]);
-    if (minutes == null || seconds == null || seconds < 0 || seconds >= 60) {
-      return null;
-    }
-    return minutes * 60 + seconds;
+  String get _length => _formatTime(widget.frames / widget.rate);
+
+  /// Unedited fields keep their exact frame; edited ones are parsed.
+  int? _frame(TextEditingController field, String initial, int? exact) {
+    if (field.text.trim() == initial && exact != null) return exact;
+    final seconds = _parseTime(field.text);
+    return seconds == null ? null : (seconds * widget.rate).round();
   }
 
   void submit() {
-    final a = parse(start.text), b = parse(end.text);
-    if (a == null ||
-        b == null ||
-        !a.isFinite ||
-        !b.isFinite ||
-        a < 0 ||
-        a >= b ||
-        b * widget.rate > widget.frames ||
-        (a * widget.rate).round() >= (b * widget.rate).round()) {
-      setState(() => error = 'Enter a valid range within the take.');
+    final a = _frame(start, _initialStart, widget.start ?? 0);
+    final b = _frame(end, _initialEnd, widget.end ?? widget.frames);
+    String? range(int? frame) => frame == null
+        ? _timeFormatHint
+        : frame < 0 || frame > widget.frames
+        ? 'Enter a time from 0:00 to $_length.'
+        : null;
+    var startMessage = range(a), endMessage = range(b);
+    if (startMessage == null && endMessage == null && a! >= b!) {
+      endMessage = 'End must be after the start.';
+    }
+    if (startMessage != null || endMessage != null) {
+      setState(() {
+        startError = startMessage;
+        endError = endMessage;
+      });
       return;
     }
-    Navigator.pop(context, [
-      (a * widget.rate).round(),
-      (b * widget.rate).round(),
-    ]);
+    Navigator.pop(context, [a!, b!]);
   }
 
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
+    InputDecoration field(String label, String? error) => InputDecoration(
+      labelText: label,
+      hintText: 'm:ss or seconds',
+      errorText: error,
+      errorMaxLines: 2,
+    );
     return ConsoleDialog(
       title: 'Loop range',
       content: SizedBox(
         width: 280,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ConsoleText(
+              'Take length $_length',
+              role: ConsoleTextRole.caption,
+              tone: ConsoleTextTone.muted,
+            ),
+            const SizedBox(height: AppDesign.spaceMd),
             TextField(
               controller: start,
               autofocus: true,
               style: TextStyle(color: p.text),
-              decoration: InputDecoration(
-                labelText: 'Start (seconds or mm:ss)',
-                errorText: error,
-              ),
+              decoration: field('Start', startError),
+              onChanged: (_) {
+                if (startError != null) setState(() => startError = null);
+              },
               onSubmitted: (_) => submit(),
             ),
+            const SizedBox(height: AppDesign.spaceSm),
             TextField(
               controller: end,
               style: TextStyle(color: p.text),
-              decoration: const InputDecoration(
-                labelText: 'End (seconds or mm:ss)',
-              ),
+              decoration: field('End', endError),
+              onChanged: (_) {
+                if (endError != null) setState(() => endError = null);
+              },
               onSubmitted: (_) => submit(),
             ),
           ],
@@ -275,7 +489,7 @@ class _LoopDialogState extends State<_LoopDialog> {
           variant: ConsoleButtonVariant.primary,
           size: ConsoleButtonSize.regular,
           onPressed: submit,
-          label: 'Apply',
+          label: 'Set loop',
         ),
       ],
     );
@@ -304,6 +518,7 @@ class RecorderPage extends StatefulWidget {
 
 class _RecorderPageState extends State<RecorderPage> {
   final _feedback = InlineFeedbackController();
+  final _problem = InlineFeedbackController();
   String? _capturePreviewId;
   RecorderStore get store => widget.store;
   String? _draftId, _draftName, _draftDeviceId;
@@ -343,6 +558,7 @@ class _RecorderPageState extends State<RecorderPage> {
   void dispose() {
     store.removeListener(_observeCapture);
     _feedback.dispose();
+    _problem.dispose();
     super.dispose();
   }
 
@@ -361,7 +577,7 @@ class _RecorderPageState extends State<RecorderPage> {
         );
       }
     } catch (_) {
-      _snapshotMessage('Could not read imported take names on this device.');
+      _fail('Could not read imported take names on this device.');
     }
   }
 
@@ -388,9 +604,7 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       _snapshotMessage('Imported "$name". Ready to play.');
     } catch (_) {
-      _snapshotMessage(
-        'Take imported and selected. Could not save its name on this device.',
-      );
+      _fail('Take imported. Its name could not be saved on this device.');
     }
   }
 
@@ -402,13 +616,22 @@ class _RecorderPageState extends State<RecorderPage> {
         setState(() => _snapshotLinks = Map<String, dynamic>.from(value));
       }
     } catch (_) {
-      _snapshotMessage('Could not read snapshot links on this device.');
+      _fail('Could not read snapshot links on this device.');
     }
   }
 
   void _snapshotMessage(String text) {
     if (mounted) {
+      _problem.clear();
       _feedback.show(text);
+    }
+  }
+
+  /// Shows a failure beside the transport, where the action started.
+  void _fail(String text) {
+    if (mounted) {
+      _feedback.clear();
+      _problem.show(text);
     }
   }
 
@@ -424,7 +647,7 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       if (mounted) setState(() => _snapshotLinks = updated);
     } catch (e) {
-      _snapshotMessage('Could not remove the snapshot link: $e');
+      _fail('Could not remove the snapshot link: $e');
     }
   }
 
@@ -433,8 +656,7 @@ class _RecorderPageState extends State<RecorderPage> {
     return showConsoleConfirmation(
       context,
       title: 'Linked snapshot unavailable',
-      message:
-          'The linked mixer snapshot cannot be verified. Continue without recalling it, or cancel to reconnect and inspect the mixer.',
+      message: 'The linked snapshot cannot be verified on the connected mixer.',
       confirmLabel: 'Continue without snapshot',
     );
   }
@@ -442,8 +664,8 @@ class _RecorderPageState extends State<RecorderPage> {
   Future<void> _linkSnapshot(String takeId) async {
     final native = widget.nativeStore;
     if (!store.canAdminRemote || native.nativeBusy || !native.nativeWritable) {
-      _snapshotMessage(
-        'Connect to a local recorder and writable mixer provider, then inspect its snapshots.',
+      _fail(
+        'Linking snapshots needs the local recorder and a writable mixer connection.',
       );
       return;
     }
@@ -451,9 +673,8 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted) return;
     final view = native.nativeLibrary;
     if (view == null || !view.connected || !view.supports('recall')) {
-      _snapshotMessage(
-        native.nativeStatus ??
-            'Native snapshot recall is unavailable for this provider.',
+      _fail(
+        native.nativeStatus ?? 'This mixer does not support snapshot recall.',
       );
       return;
     }
@@ -461,8 +682,7 @@ class _RecorderPageState extends State<RecorderPage> {
     final selected = await showConsoleSelection<Map<String, dynamic>>(
       context,
       title: 'Link native mixer snapshot',
-      message:
-          'A device-local reference, separate from OpenFader scenes. Create or manage native snapshots in Scenes, then inspect here. Verify the mixer before recall.',
+      message: 'Stored on the mixer, separate from OpenFader scenes. Manage them in Scenes.',
       options: [
         for (final slot in view.slots)
           ConsoleSelectionOption(
@@ -481,9 +701,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (native.nativeContext != captured ||
         !native.nativeWritable ||
         !_takeAvailable(takeId)) {
-      _snapshotMessage(
-        'The provider or take changed. Inspect and select again.',
-      );
+      _fail('The mixer or take changed. Choose the snapshot again.');
       return;
     }
     final updated = Map<String, dynamic>.from(_snapshotLinks);
@@ -502,9 +720,7 @@ class _RecorderPageState extends State<RecorderPage> {
       if (native.nativeContext != captured ||
           !native.nativeWritable ||
           !_takeAvailable(takeId)) {
-        _snapshotMessage(
-          'The provider or take changed. Inspect and select again.',
-        );
+        _fail('The mixer or take changed. Choose the snapshot again.');
         return;
       }
       if (!await prefs.setString(_snapshotKey, jsonEncode(updated))) {
@@ -512,7 +728,7 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       if (mounted) setState(() => _snapshotLinks = updated);
     } catch (e) {
-      _snapshotMessage('Could not save the snapshot link: $e');
+      _fail('Could not save the snapshot link: $e');
     }
   }
 
@@ -553,7 +769,8 @@ class _RecorderPageState extends State<RecorderPage> {
       context,
       title: 'Recall linked mixer snapshot?',
       message:
-          'Slot ${link['slot']} “${link['name']}” in ${link['label']}. Recall may change mixer settings. The provider name does not identify a particular physical mixer. Return to live restores routing only.',
+          'Slot ${link['slot']} “${link['name']}” on ${link['label']}. Recall '
+          'changes mixer settings; check this is the right mixer.',
       actions: [
         const ConsoleDialogAction(
           label: 'Continue without recall',
@@ -572,7 +789,7 @@ class _RecorderPageState extends State<RecorderPage> {
         !native.nativeWritable ||
         !matches() ||
         !_takeAvailable(takeId)) {
-      _snapshotMessage('The provider or take changed. Inspect and try again.');
+      _fail('The mixer or take changed. Try the recall again.');
       return false;
     }
     if (!recall) return true;
@@ -580,7 +797,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted) return false;
     final status = native.nativeStatus;
     _snapshotMessage(
-      status ?? 'Snapshot recall result unavailable. Inspect the mixer before continuing.',
+      status ?? 'Recall not confirmed. Check the mixer before continuing.',
     );
     return native.nativeLastConfirmed &&
         _safeToRecall &&
@@ -601,7 +818,7 @@ class _RecorderPageState extends State<RecorderPage> {
       if (await FileSystemEntity.type(current, followLinks: false) ==
           FileSystemEntityType.link) {
         throw StateError(
-          'Symbolic links cannot be used for take transfers: $current',
+          'Choose a location without symbolic links ($current).',
         );
       }
       final parent = path.dirname(current);
@@ -615,12 +832,14 @@ class _RecorderPageState extends State<RecorderPage> {
     if (type == FileSystemEntityType.link ||
         type == FileSystemEntityType.notFound) {
       throw StateError(
-        'Symbolic links and missing files cannot be transferred.',
+        type == FileSystemEntityType.link
+            ? 'Symbolic links cannot be transferred ($source).'
+            : 'The file or folder is missing ($source).',
       );
     }
     if (await FileSystemEntity.type(destination, followLinks: false) !=
         FileSystemEntityType.notFound) {
-      throw StateError('Destination already exists: $destination');
+      throw StateError('$destination already exists. Choose another folder.');
     }
     if (type == FileSystemEntityType.file) {
       final target = File(destination);
@@ -650,7 +869,7 @@ class _RecorderPageState extends State<RecorderPage> {
         rethrow;
       }
     } else {
-      throw StateError('Unsupported file type: $source');
+      throw StateError('Only files and folders can be transferred ($source).');
     }
   }
 
@@ -658,26 +877,16 @@ class _RecorderPageState extends State<RecorderPage> {
     if (_transferBusy || store.pending) return;
     if (store.state['input_mode'] != 'live' ||
         store.state['transport'] != 'stopped') {
-      _snapshotMessage(
-        'Stop playback and return to live before transferring a take.',
-      );
+      _fail('Stop playback and return to live before transferring a take.');
       return;
     }
     if (!_localTransferAvailable) {
-      _snapshotMessage(
-        'Take transfer is available only on a local desktop recorder host.',
-      );
+      _fail('Import and export are available only on the recorder computer.');
       return;
     }
     final format = await showConsoleSelection<String>(
       context,
       title: importing ? 'Import take' : 'Export take',
-      message: importing
-          ? null
-          : 'Stereo mix combines all tracks at equal level, centered, '
-                'and reduces the level if needed to prevent clipping. '
-                'Mixer processing is not included.\n\n'
-                'Files over 4 GiB use RF64 WAV.',
       options: importing
           ? const [
               ConsoleSelectionOption(
@@ -689,19 +898,19 @@ class _RecorderPageState extends State<RecorderPage> {
                 value: 'native',
               ),
               ConsoleSelectionOption(
-                label: 'Mono WAV tracks folder (OpenFader export)',
+                label: 'Folder of mono WAV tracks',
                 value: 'tracks',
               ),
             ]
           : const [
               ConsoleSelectionOption(
-                label: 'Multitrack',
-                detail: 'One WAV per recorded track. For editing.',
+                label: 'Separate tracks',
+                detail: 'One WAV file per track.',
                 value: 'tracks',
               ),
               ConsoleSelectionOption(
                 label: 'Stereo mix',
-                detail: 'All tracks combined into one stereo WAV.',
+                detail: 'All tracks at equal level, without mixer processing.',
                 value: 'mix',
               ),
             ],
@@ -732,7 +941,7 @@ class _RecorderPageState extends State<RecorderPage> {
       final hostRoot = store.state['transfer_directory'];
       if (hostRoot is! String || !path.isAbsolute(hostRoot)) {
         throw StateError(
-          'Recorder transfer directory is unavailable. Restart the recorder host.',
+          'The recorder has no transfer folder. Restart the recorder host.',
         );
       }
       final root = hostRoot;
@@ -752,14 +961,16 @@ class _RecorderPageState extends State<RecorderPage> {
             ) !=
             FileSystemEntityType.notFound) {
           throw StateError(
-            'An export named "$filename" already exists. Choose another folder.',
+            '"$filename" already exists in that folder. Choose another folder.',
           );
         }
       }
       await Directory(root).create(recursive: true);
       if (await FileSystemEntity.type(root, followLinks: false) !=
           FileSystemEntityType.directory) {
-        throw StateError('Recorder staging directory is not a directory.');
+        throw StateError(
+          'The recorder transfer folder is not a folder ($root).',
+        );
       }
       final nonce = List.generate(
         16,
@@ -775,13 +986,15 @@ class _RecorderPageState extends State<RecorderPage> {
           ? 'take-${DateTime.now().toUtc().microsecondsSinceEpoch}-$nonce'
           : takeId!;
       if (!importing && !_takeAvailable(id)) {
-        throw StateError('Take is no longer available.');
+        throw StateError('The take is no longer on the recorder.');
       }
       if (store.pending ||
           !store.connected ||
           store.state['transport'] != 'stopped') {
         throw StateError(
-          'Stop the recorder and connect to the host before transferring.',
+          store.connected
+              ? 'Stop the recorder, then try again.'
+              : 'The recorder host disconnected. Reconnect, then try again.',
         );
       }
       safeToClean = false;
@@ -790,7 +1003,9 @@ class _RecorderPageState extends State<RecorderPage> {
         'transfer_name': name,
         'format': format,
       });
-      if (store.error != null) throw StateError(store.error!);
+      if (store.error != null) {
+        throw StateError('The recorder reported: ${store.error}');
+      }
       // The host acknowledged the transfer. A failed destination copy can
       // discard staging; the source take and import source remain intact.
       safeToClean = true;
@@ -806,7 +1021,14 @@ class _RecorderPageState extends State<RecorderPage> {
       }
     } catch (e) {
       debugPrint('Take transfer failed: $e; staging: $staged');
-      _snapshotMessage('Transfer failed: ${e is StateError ? e.message : e}');
+      final reason = switch (e) {
+        StateError(:final message) => message,
+        FileSystemException(:final path?, :final osError?) =>
+          '${osError.message} ($path).',
+        FileSystemException(:final message) => message,
+        _ => '$e',
+      };
+      _fail('${importing ? 'Import' : 'Export'} failed. $reason');
     } finally {
       if (safeToClean && staged != null) {
         try {
@@ -819,7 +1041,7 @@ class _RecorderPageState extends State<RecorderPage> {
           }
           if (entity == FileSystemEntityType.file) await File(staged).delete();
         } catch (e) {
-          _snapshotMessage('Could not remove staging data at $staged: $e');
+          _fail('Transfer finished, but temporary files remain at $staged.');
         }
       }
       if (mounted) {
@@ -842,7 +1064,9 @@ class _RecorderPageState extends State<RecorderPage> {
     if (rawSources is! List ||
         rawOutputs is! List ||
         rawSources.length != rawOutputs.length) {
-      _feedback.show('Mixer routing is being checked. Try Play again shortly.');
+      _fail(
+        'Mixer routing is still being checked. Press Play again in a moment.',
+      );
       return null;
     }
     final sources = rawSources.map((source) => '$source').toList();
@@ -851,7 +1075,7 @@ class _RecorderPageState extends State<RecorderPage> {
         if (sources[lane].isNotEmpty && rawOutputs[lane] is int) lane,
     ];
     if (available.isEmpty) {
-      _feedback.show('No mixer inputs are available for automatic playback.');
+      _fail('The mixer reports no inputs that can play back the take.');
       return null;
     }
     final manifest = take['manifest'];
@@ -899,97 +1123,31 @@ class _RecorderPageState extends State<RecorderPage> {
     if (!mounted) return null;
     final confirmed = await showConsoleDialog<List<int?>>(
       context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => ConsoleDialog(
-          title: 'Map tracks to mixer inputs',
-          scrollable: false,
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Choose the input source for each track. OpenFader remembers this mapping, switches the mixer for playback, and restores its routing when you return live.',
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Unassigned tracks are silent. Use each source once.',
-                ),
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: channels,
-                    itemBuilder: (context, track) => Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            names[track] ?? 'Track ${track + 1}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Flexible(
-                          child: DropdownButton<int>(
-                            isExpanded: true,
-                            value: mapping[track] ?? -1,
-                            items: [
-                              const DropdownMenuItem(
-                                value: -1,
-                                child: Text('Unassigned'),
-                              ),
-                              for (final lane in available)
-                                DropdownMenuItem(
-                                  value: lane,
-                                  child: Text(
-                                    sourceNames is List &&
-                                            lane < sourceNames.length &&
-                                            '${sourceNames[lane]}'
-                                                .trim()
-                                                .isNotEmpty
-                                        ? '${sourceNames[lane]}'
-                                        : 'USB return ${(rawOutputs[lane] as int) + 1}',
-                                  ),
-                                ),
-                            ],
-                            onChanged: (value) => update(
-                              () => mapping[track] = value == null || value < 0
-                                  ? null
-                                  : value,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+      builder: (_) => _TrackMappingDialog(
+        title: 'Map tracks to mixer inputs',
+        header: const [
+          ConsoleText(
+            'OpenFader switches these inputs for playback and restores them '
+            'when you return live. Unassigned tracks are silent.',
+            role: ConsoleTextRole.caption,
+            tone: ConsoleTextTone.muted,
           ),
-          actions: [
-            ConsoleButton(
-              variant: ConsoleButtonVariant.quiet,
-              size: ConsoleButtonSize.regular,
-              onPressed: () => Navigator.pop(context),
-              label: 'Cancel',
+        ],
+        trackNames: names,
+        options: [
+          for (final lane in available)
+            (
+              lane,
+              sourceNames is List &&
+                      lane < sourceNames.length &&
+                      '${sourceNames[lane]}'.trim().isNotEmpty
+                  ? '${sourceNames[lane]}'
+                  : 'USB return ${(rawOutputs[lane] as int) + 1}',
             ),
-            ConsoleButton(
-              variant: ConsoleButtonVariant.primary,
-              size: ConsoleButtonSize.regular,
-              onPressed: () {
-                final assigned = mapping.whereType<int>().toList();
-                if (assigned.isEmpty ||
-                    assigned.toSet().length != assigned.length) {
-                  _feedback.show(
-                    'Assign at least one track and use each source once.',
-                  );
-                  return;
-                }
-                Navigator.pop(context, List<int?>.of(mapping));
-              },
-              label: 'Save mapping and play',
-            ),
-          ],
-        ),
+        ],
+        mapping: mapping,
+        confirmLabel: 'Save mapping and play',
+        destination: 'input',
       ),
     );
     if (confirmed == null ||
@@ -1011,11 +1169,8 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<void> _playSelected(String? takeId) async {
     if (_startingPlay || store.pending) return;
-    void message(String text) {
-      if (mounted) {
-        _feedback.show(text);
-      }
-    }
+    void message(String text) => _fail(text);
+    _problem.clear();
 
     final mode = '${store.state['input_mode']}';
     if (mode == 'soundcheck') {
@@ -1032,9 +1187,7 @@ class _RecorderPageState extends State<RecorderPage> {
     final takeChannels = recorderChannelCount(take);
     final takeNames = recorderChannelNames(take ?? {});
     if (takeChannels < 1 || takeChannels > 64) {
-      message(
-        'This take has an unsupported channel layout (maximum 64 tracks).',
-      );
+      message('This take has $takeChannels tracks. Playback supports 1 to 64.');
       return;
     }
     setState(() => _startingPlay = true);
@@ -1050,46 +1203,59 @@ class _RecorderPageState extends State<RecorderPage> {
           .toList();
       if (devices.isEmpty) {
         message(
-          'No supported playback interface found. Connect an interface and refresh devices.',
+          'No playback interface found. Connect one to the recorder computer, '
+          'then press Play again.',
+        );
+        return;
+      }
+      final takeRate = take?['sample_rate'];
+      bool matchesRate(Map<String, dynamic> device) =>
+          device['sample_rate'] == takeRate;
+      if (!devices.any(matchesRate)) {
+        message(
+          'No interface is set to $takeRate Hz, the take’s rate. Change the '
+          'interface rate in the system audio settings, then press Play again.',
         );
         return;
       }
       var deviceId = store.state['selected_device_id'] as String?;
-      if (!devices.any((d) => d['id'] == deviceId)) {
+      if (!devices.any((d) => d['id'] == deviceId && matchesRate(d))) {
         deviceId = await showConsoleSelection<String>(
           context,
           title: 'Choose playback interface',
+          message: 'The take is $takeRate Hz.',
           options: [
             for (final d in devices)
               ConsoleSelectionOption(
                 label: '${d['name']}',
-                detail:
-                    '${d['output_channels']} outputs · ${d['sample_rate']} Hz',
+                detail: matchesRate(d)
+                    ? '${d['output_channels']} outputs · ${d['sample_rate']} Hz'
+                    : '${d['sample_rate']} Hz · set it to $takeRate Hz to use it',
                 value: '${d['id']}',
+                enabled: matchesRate(d),
               ),
           ],
         );
-        if (deviceId == null || !mounted) return;
+        if (deviceId == null ||
+            !mounted ||
+            !_canPrepare ||
+            !_takeAvailable(takeId)) {
+          return;
+        }
         await store.command('select_device', {'device_id': deviceId});
         if (store.error != null) {
-          message(store.error!);
+          message('Could not select the interface: ${store.error}');
           return;
         }
       }
       if (!mounted) return;
-      final selected = devices.where((d) => d['id'] == deviceId).firstOrNull;
-      if (selected == null) {
-        message('The selected interface is unavailable.');
-        return;
-      }
+      final selected = devices.firstWhere((d) => d['id'] == deviceId);
       final outputs = (selected['output_channels'] as num).toInt();
-      if (take?['sample_rate'] != selected['sample_rate']) {
-        message('The take and interface sample rates must match.');
-        return;
-      }
       await store.command('prepare_soundcheck');
       if (!mounted || store.error != null) {
-        if (store.error != null) message(store.error!);
+        if (store.error != null) {
+          message('Playback setup failed: ${store.error}');
+        }
         return;
       }
       final caps = store.state['capabilities'] as Map? ?? {};
@@ -1128,108 +1294,37 @@ class _RecorderPageState extends State<RecorderPage> {
             }
           }
         } catch (_) {
-          message(
-            'Could not read the previous mapping. Review the outputs before playing.',
-          );
+          message('The saved mapping could not be read. Check each output.');
         }
         if (!mounted) return;
         final chosen = await showConsoleDialog<List<int?>>(
           context,
-          builder: (context) => StatefulBuilder(
-            builder: (context, update) => ConsoleDialog(
-              title: 'Prepare manual playback',
-              scrollable: false,
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${selected['name']} · ${selected['sample_rate']} Hz · $outputs outputs',
-                    ),
-                    if (caps['soundcheck'] != true)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'Automatic routing unavailable: ${store.state['soundcheck_reason'] ?? 'no verified mixer profile'}',
-                        ),
-                      ),
-                    const Text(
-                      'Route the mixer inputs to these interface returns and set safe output levels before playing. OpenFader will not change mixer routing. Restore live inputs yourself afterwards.',
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Unassigned tracks are silent. Each assigned output must be unique.',
-                    ),
-                    Flexible(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: takeChannels,
-                        itemBuilder: (context, i) => Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                takeNames[i] == null
-                                    ? 'Track ${i + 1}'
-                                    : '${i + 1} · ${takeNames[i]}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            DropdownButton<int>(
-                              value: mapping[i] ?? -1,
-                              items: [
-                                const DropdownMenuItem<int>(
-                                  value: -1,
-                                  child: Text('Unassigned'),
-                                ),
-                                for (var n = 0; n < outputs; n++)
-                                  DropdownMenuItem<int>(
-                                    value: n,
-                                    child: Text('Output ${n + 1}'),
-                                  ),
-                              ],
-                              onChanged: (v) => update(
-                                () =>
-                                    mapping[i] = v == null || v < 0 ? null : v,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+          builder: (_) => _TrackMappingDialog(
+            title: 'Manual playback',
+            header: [
+              ConsoleText(
+                '${selected['name']} · $takeRate Hz · $outputs outputs',
+                weight: FontWeight.w600,
               ),
-              actions: [
-                ConsoleButton(
-                  variant: ConsoleButtonVariant.quiet,
-                  size: ConsoleButtonSize.regular,
-                  onPressed: () => Navigator.pop(context),
-                  label: 'Cancel',
-                ),
-                ConsoleButton(
-                  variant: ConsoleButtonVariant.primary,
-                  size: ConsoleButtonSize.regular,
-                  onPressed: () {
-                    final assigned = mapping.whereType<int>().toList();
-                    if (assigned.isEmpty ||
-                        assigned.toSet().length != assigned.length) {
-                      message(
-                        'Assign at least one track and use each output only once.',
-                      );
-                      return;
-                    }
-                    Navigator.pop(context, mapping);
-                  },
-                  label: 'Routing is ready · play',
-                ),
-              ],
-            ),
+              ConsoleText(
+                'Automatic routing unavailable: '
+                '${'${store.state['soundcheck_reason'] ?? 'no verified mixer routing profile'}'.replaceFirst(RegExp(r'\.$'), '')}.',
+                role: ConsoleTextRole.caption,
+                tone: ConsoleTextTone.muted,
+              ),
+            ],
+            trackNames: takeNames,
+            options: [for (var n = 0; n < outputs; n++) (n, 'Output ${n + 1}')],
+            mapping: mapping,
+            confirmation:
+                'Playing confirms output levels are safe and the mixer is '
+                'routed to these outputs.',
+            confirmLabel: 'Play with this mapping',
+            destination: 'output',
           ),
         );
-        if (chosen == null || !mounted) return;
-        if (!mounted ||
+        if (chosen == null ||
+            !mounted ||
             store.pending ||
             !store.connected ||
             !_takeAvailable(takeId) ||
@@ -1252,13 +1347,15 @@ class _RecorderPageState extends State<RecorderPage> {
               throw StateError('Preferences write failed');
             }
           } catch (_) {
-            message('Could not remember this output mapping on this device.');
+            message('Playing. This mapping could not be saved on this device.');
           }
         }
       }
-      if (store.error != null) message(store.error!);
+      if (store.error != null) {
+        message('Playback could not start: ${store.error}');
+      }
     } catch (error) {
-      message('Could not prepare playback: $error');
+      message('Playback could not start: $error');
     } finally {
       if (mounted) setState(() => _startingPlay = false);
     }
@@ -1268,7 +1365,9 @@ class _RecorderPageState extends State<RecorderPage> {
     if (store.pending) return;
     await store.command('stop_manual_output');
     if (store.error != null || !mounted) {
-      if (store.error != null) _snapshotMessage(store.error!);
+      if (store.error != null) {
+        _fail('Could not stop playback output: ${store.error}');
+      }
       return;
     }
     if (!mounted || store.pending) return;
@@ -1277,7 +1376,8 @@ class _RecorderPageState extends State<RecorderPage> {
       builder: (context) => ConsoleDialog(
         title: 'Restore live inputs',
         message:
-            'Playback output is stopped. Restore the mixer’s physical live input routing yourself, then confirm below. OpenFader does not change the mixer in manual mode.',
+            'Playback has stopped. Switch the mixer back to its live '
+            'inputs, then confirm.',
         actions: [
           ConsoleButton(
             variant: ConsoleButtonVariant.quiet,
@@ -1289,13 +1389,16 @@ class _RecorderPageState extends State<RecorderPage> {
             variant: ConsoleButtonVariant.primary,
             size: ConsoleButtonSize.regular,
             onPressed: () => Navigator.pop(context, true),
-            label: 'Live routing restored',
+            label: 'Live inputs restored',
           ),
         ],
       ),
     );
     if (restored == true && mounted) {
       await store.command('return_manual_live', {'routing_restored': true});
+      if (mounted && store.error != null) {
+        _fail('Could not return to live: ${store.error}');
+      }
     }
   }
 
@@ -1372,12 +1475,12 @@ class _RecorderPageState extends State<RecorderPage> {
     final deviceId = store.state['selected_device_id'] as String?;
     if (deviceId == null) {
       _showSetup(context, store);
-      _snapshotMessage('Choose your audio interface once, then press Record.');
+      _snapshotMessage('Choose an audio interface, then press Record.');
       return;
     }
     if (_draftId != null && _draftDeviceId != deviceId) {
-      _snapshotMessage(
-        'The interface changed. Review or create your named take again.',
+      _fail(
+        'The interface changed. Create the named take again from New take.',
       );
       return;
     }
@@ -1404,7 +1507,9 @@ class _RecorderPageState extends State<RecorderPage> {
       return;
     }
     await store.command('return_live');
-    if (mounted && store.error == null && store.state['input_mode'] == 'live') {
+    if (mounted && store.error != null) {
+      _fail('Could not return to live: ${store.error}');
+    } else if (mounted && store.state['input_mode'] == 'live') {
       _snapshotMessage(
         'Live inputs restored. Your mixer adjustments are kept.',
       );
@@ -1509,7 +1614,7 @@ class _RecorderPageState extends State<RecorderPage> {
         ),
       );
     } catch (e) {
-      _snapshotMessage('Inspection failed: $e');
+      _fail('Could not read take details: $e');
     }
   }
 
@@ -1527,11 +1632,37 @@ class _RecorderPageState extends State<RecorderPage> {
   }
 
   @override
-  Widget build(BuildContext context) => InlineFeedbackScope(
-    controller: _feedback,
-    expand: true,
-    builder: _workspace,
-  );
+  Widget build(BuildContext context) => _workspace(context);
+
+  /// Feedback for the last action, shown under the transport that started it.
+  Widget _notice(InlineFeedbackController controller, ConsoleTextTone tone) =>
+      ValueListenableBuilder<String?>(
+        valueListenable: controller,
+        builder: (context, message, _) => message == null
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.only(left: AppDesign.spaceLg),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Semantics(
+                        liveRegion: true,
+                        child: ConsoleText(
+                          message,
+                          role: ConsoleTextRole.caption,
+                          tone: tone,
+                        ),
+                      ),
+                    ),
+                    ConsoleIconButton(
+                      label: 'Dismiss message',
+                      onPressed: controller.clear,
+                      child: const Icon(Icons.close, size: 18),
+                    ),
+                  ],
+                ),
+              ),
+      );
 
   Widget _workspace(BuildContext context) => ListenableBuilder(
     listenable: store,
@@ -1542,6 +1673,8 @@ class _RecorderPageState extends State<RecorderPage> {
       final mode = '${s['input_mode'] ?? 'live'}';
       final soundcheck = mode == 'soundcheck';
       final recovery = mode.toLowerCase().contains('recovery');
+      // The restore panel owns the only return action while manual routing is out.
+      final manualRestore = recovery && s['manual_routing'] == true;
       final recording = transport == 'recording';
       final selectedTake = s['selected_take_id'];
       if (recording && selectedTake is String) {
@@ -1605,150 +1738,162 @@ class _RecorderPageState extends State<RecorderPage> {
         color: p.panel,
         child: child,
       );
-      final narrow = MediaQuery.sizeOf(context).width < _transportNarrowWidth;
-      Widget header = SizedBox(
-        height: 48,
-        child: Row(
-          children: [
-            ConsoleIconButton(
-              label: 'Adjust mix',
-              onPressed: widget.onMixer,
-              child: const Icon(Icons.equalizer),
+      final empty =
+          take == null &&
+          _draftId == null &&
+          !recording &&
+          !soundcheck &&
+          !recovery;
+      final canExport = take?['complete'] == true && _localTransferAvailable;
+      final liveStopped = s['input_mode'] == 'live' && transport == 'stopped';
+      final headerActions = Wrap(
+        spacing: AppDesign.spaceSm,
+        runSpacing: AppDesign.spaceXs,
+        children: [
+          ConsoleButton(
+            label: 'Browse takes',
+            icon: Icons.folder_open_outlined,
+            onPressed: store.pending ? null : () => _browseTakes(previewId),
+          ),
+          ConsoleButton(
+            label: 'Audio setup',
+            icon: Icons.usb,
+            onPressed: () => _showSetup(context, store),
+          ),
+          if (canExport)
+            ConsoleButton(
+              label: 'Export',
+              icon: Icons.file_download_outlined,
+              onPressed:
+                  store.connected &&
+                      liveStopped &&
+                      !store.pending &&
+                      !_transferBusy
+                  ? () => _transferTake(
+                      importing: false,
+                      takeId: take!['id'] as String,
+                    )
+                  : null,
             ),
-            Expanded(
-              child: InkWell(
-                onTap: store.pending ? null : _browseTakes,
-                child: SizedBox(
-                  height: 48,
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: ConsoleText(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          role: ConsoleTextRole.sectionTitle,
-                        ),
+        ],
+      );
+      final header = LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < AppDesign.narrowBreakpoint;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  ConsoleIconButton(
+                    label: 'Mixer',
+                    onPressed: widget.onMixer,
+                    child: const Icon(Icons.equalizer),
+                  ),
+                  Expanded(
+                    child: ConsoleText(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      role: ConsoleTextRole.sectionTitle,
+                    ),
+                  ),
+                  if (!narrow) headerActions,
+                  PopupMenuButton<String>(
+                    tooltip: 'Recorder actions',
+                    onSelected: (action) {
+                      switch (action) {
+                        case 'new':
+                          _newTake();
+                        case 'clear_loop':
+                          if (take != null && prepared && enabled) {
+                            _clearLoop(take);
+                          }
+                        case 'delete':
+                          if (take != null) {
+                            _deleteTake(
+                              store,
+                              take['id'] as String,
+                              _takeName(take),
+                            );
+                          }
+                        case 'details':
+                          if (take != null) _inspectTake(take);
+                        case 'snapshot':
+                          if (take != null) _linkSnapshot(take['id'] as String);
+                        case 'recall':
+                          if (take != null && _safeToRecall) {
+                            _offerSnapshotRecall(take['id'] as String);
+                          }
+                        case 'unlink':
+                          if (take != null) {
+                            _unlinkSnapshot(take['id'] as String);
+                          }
+                        case 'fx':
+                          widget.onFx();
+                        case 'settings':
+                          widget.onSettings();
+                        case 'tools':
+                          widget.onTools();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'new',
+                        enabled: _canPrepare,
+                        child: const Text('New take'),
                       ),
-                      const Icon(Icons.expand_more, size: 18),
+                      if (prepared &&
+                          caps['loop'] == true &&
+                          (s['loop_enabled'] == true ||
+                              (_loopTake == previewId && _loopStart != null)))
+                        PopupMenuItem(
+                          value: 'clear_loop',
+                          enabled: enabled,
+                          child: const Text('Clear loop'),
+                        ),
+                      if (take != null)
+                        PopupMenuItem(
+                          value: 'delete',
+                          enabled: _canPrepare && !_transferBusy,
+                          child: const Text('Delete take…'),
+                        ),
+                      if (take?['complete'] == true) ...[
+                        const PopupMenuItem(
+                          value: 'details',
+                          child: Text('Take details'),
+                        ),
+                        PopupMenuItem(
+                          value: 'snapshot',
+                          enabled: enabled && !recording && !soundcheck,
+                          child: const Text('Link mixer snapshot'),
+                        ),
+                        if (_snapshotLinks.containsKey(take?['id'])) ...[
+                          PopupMenuItem(
+                            value: 'recall',
+                            enabled: _safeToRecall,
+                            child: const Text('Recall linked snapshot…'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'unlink',
+                            child: Text('Remove snapshot link'),
+                          ),
+                        ],
+                      ],
                     ],
                   ),
-                ),
-              ),
-            ),
-            if (take?['complete'] == true && _localTransferAvailable)
-              ConsoleButton(
-                variant: ConsoleButtonVariant.quiet,
-                onPressed:
-                    store.connected &&
-                        !store.pending &&
-                        !_transferBusy &&
-                        s['input_mode'] == 'live' &&
-                        s['transport'] == 'stopped'
-                    ? () => _transferTake(
-                        importing: false,
-                        takeId: take!['id'] as String,
-                      )
-                    : null,
-                icon: Icons.file_download_outlined,
-                label: 'Export',
-              ),
-            ConsoleIconButton(
-              label: 'Audio setup',
-              onPressed: () => _showSetup(context, store),
-              child: const Icon(Icons.usb, size: 20),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Recorder actions',
-              onSelected: (action) {
-                switch (action) {
-                  case 'browse':
-                    _browseTakes();
-                  case 'new':
-                    _newTake();
-                  case 'loop':
-                    if (take != null && prepared && enabled) _setLoop(take);
-                  case 'clear_loop':
-                    if (take != null && prepared && enabled) {
-                      _clearLoop(take);
-                    }
-                  case 'delete':
-                    if (take != null) {
-                      _deleteTake(store, take['id'] as String, _takeName(take));
-                    }
-                  case 'details':
-                    if (take != null) _inspectTake(take);
-                  case 'snapshot':
-                    if (take != null) _linkSnapshot(take['id'] as String);
-                  case 'recall':
-                    if (take != null && _safeToRecall) {
-                      _offerSnapshotRecall(take['id'] as String);
-                    }
-                  case 'unlink':
-                    if (take != null) _unlinkSnapshot(take['id'] as String);
-                  case 'fx':
-                    widget.onFx();
-                  case 'settings':
-                    widget.onSettings();
-                  case 'tools':
-                    widget.onTools();
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'browse',
-                  child: Text('Browse takes'),
-                ),
-                PopupMenuItem(
-                  value: 'new',
-                  enabled: _canPrepare,
-                  child: const Text('New take'),
-                ),
-                if (prepared && caps['loop'] == true) ...[
-                  PopupMenuItem(
-                    value: 'loop',
-                    enabled: enabled,
-                    child: const Text('Loop range…'),
-                  ),
-                  if (_loopStart != null || s['loop_enabled'] == true)
-                    PopupMenuItem(
-                      value: 'clear_loop',
-                      enabled: enabled,
-                      child: const Text('Clear loop'),
-                    ),
                 ],
-                if (take != null)
-                  PopupMenuItem(
-                    value: 'delete',
-                    enabled: _canPrepare && !_transferBusy,
-                    child: const Text('Delete take…'),
+              ),
+              if (narrow)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDesign.spaceSm,
                   ),
-                if (take?['complete'] == true) ...[
-                  const PopupMenuItem(
-                    value: 'details',
-                    child: Text('Take details'),
-                  ),
-                  PopupMenuItem(
-                    value: 'snapshot',
-                    enabled: enabled && !recording && !soundcheck,
-                    child: const Text('Link mixer snapshot'),
-                  ),
-                  if (_snapshotLinks.containsKey(take?['id'])) ...[
-                    PopupMenuItem(
-                      value: 'recall',
-                      enabled: _safeToRecall,
-                      child: const Text('Recall linked snapshot…'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'unlink',
-                      child: Text('Remove snapshot link'),
-                    ),
-                  ],
-                ],
-              ],
-            ),
-          ],
-        ),
+                  child: headerActions,
+                ),
+            ],
+          );
+        },
       );
       final canRecord =
           _canPrepare &&
@@ -1761,93 +1906,126 @@ class _RecorderPageState extends State<RecorderPage> {
           !recording &&
           !recovery &&
           !_startingPlay &&
+          !_transferBusy &&
           (take?['complete'] == true || soundcheck);
       final canSeek =
           enabled && prepared && caps['seek'] == true && take != null;
-      final clock = Text(
-        _clock(
-          recording
-              ? s['recorded_frames']
-              : prepared
-              ? s['position_frames']
-              : 0,
-          rate,
-        ),
-        style: TextStyle(
-          color: recording ? p.meterRed : p.text,
-          fontFamily: 'Barlow Condensed',
-          fontSize: narrow ? 28 : 30,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
+      final canLoop =
+          enabled && prepared && caps['loop'] == true && take != null;
+      final position = _clock(
+        recording
+            ? s['recorded_frames']
+            : prepared
+            ? s['position_frames']
+            : 0,
+        rate,
       );
-      Widget transportControls = Row(
+      final transportLabel = recording
+          ? 'Recording'
+          : soundcheck
+          ? switch (transport) {
+              'playing' => 'Playing',
+              'paused' => 'Paused',
+              _ => 'Stopped',
+            }
+          : null;
+      final recordAction = ConsoleButton(
+        label: recording ? 'Stop recording' : 'Record',
+        icon: recording ? Icons.stop : Icons.fiber_manual_record,
+        variant: recording
+            ? ConsoleButtonVariant.danger
+            : ConsoleButtonVariant.secondary,
+        onPressed: recording
+            ? (store.pending ? null : () => store.command('stop'))
+            : canRecord
+            ? _record
+            : null,
+      );
+      final transportControls = Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppDesign.spaceMd,
+        runSpacing: AppDesign.spaceSm,
         children: [
-          if (!soundcheck && !recovery)
-            Builder(
-              builder: (context) {
-                final VoidCallback? onRecord = recording
-                    ? (store.pending ? null : () => store.command('stop'))
-                    : canRecord
-                    ? _record
-                    : null;
-                return ConsoleIconButton(
-                  label: recording ? 'Stop recording' : 'Record',
-                  onPressed: onRecord,
-                  child: Icon(
-                    recording ? Icons.stop : Icons.fiber_manual_record,
-                    color: onRecord == null ? p.mutedText : p.meterRed,
-                  ),
-                );
-              },
-            ),
-          if (!recording)
-            ConsoleIconButton(
-              label: _startingPlay
-                  ? 'Preparing playback'
-                  : transport == 'playing'
-                  ? 'Pause'
-                  : 'Play',
-              onPressed: canPlay ? () => _playSelected(previewId) : null,
-              child: _startingPlay
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      transport == 'playing' ? Icons.pause : Icons.play_arrow,
-                      color: canPlay ? p.accent : p.mutedText,
+          if (!recovery)
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppDesign.spaceSm,
+              runSpacing: AppDesign.spaceXs,
+              children: [
+                if (!recording)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 110),
+                    child: ConsoleButton(
+                      label: _startingPlay
+                          ? 'Preparing…'
+                          : transport == 'playing'
+                          ? 'Pause'
+                          : transport == 'paused'
+                          ? 'Resume'
+                          : soundcheck
+                          ? 'Play'
+                          : 'Play take',
+                      icon: transport == 'playing'
+                          ? Icons.pause
+                          : Icons.play_arrow,
+                      variant: ConsoleButtonVariant.primary,
+                      onPressed: canPlay
+                          ? () => _playSelected(previewId)
+                          : null,
                     ),
-            ),
-          if (soundcheck)
-            ConsoleIconButton(
-              label: 'Stop playback',
-              onPressed: enabled ? () => store.command('stop') : null,
-              child: const Icon(Icons.stop),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Align(
-              widthFactor: 1,
-              alignment: Alignment.centerLeft,
-              child: canSeek
-                  ? Tooltip(
-                      message: 'Go to time',
-                      child: InkWell(
-                        onTap: () => _goToTime(take),
-                        child: clock,
+                  ),
+                if (soundcheck)
+                  ConsoleIconButton(
+                    label: 'Stop playback',
+                    onPressed: enabled ? () => store.command('stop') : null,
+                    child: const Icon(Icons.stop),
+                  ),
+                if (!soundcheck) recordAction,
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      position,
+                      style: TextStyle(
+                        color: recording ? p.meterRed : p.text,
+                        fontFamily: 'Barlow Condensed',
+                        fontSize: AppDesign.entryValue,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
-                    )
-                  : clock,
+                    ),
+                    if (transportLabel != null)
+                      ConsoleText(
+                        transportLabel,
+                        role: ConsoleTextRole.caption,
+                        tone: ConsoleTextTone.muted,
+                      ),
+                  ],
+                ),
+              ],
             ),
-          ),
-          if (soundcheck || recovery) const SizedBox(width: 12),
-          if (soundcheck || recovery)
-            ConsoleIconButton(
-              label: 'Return to live inputs',
-              filled: true,
-              onPressed: enabled ? _returnLive : null,
-              child: const Icon(Icons.input),
+          if (soundcheck || recovery && !manualRestore)
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppDesign.spaceSm,
+              runSpacing: AppDesign.spaceXs,
+              children: [
+                if (prepared) ...[
+                  ConsoleButton(
+                    label: 'Go to time',
+                    onPressed: canSeek ? () => _goToTime(take) : null,
+                  ),
+                  ConsoleButton(
+                    icon: Icons.repeat,
+                    label: 'Loop range',
+                    onPressed: canLoop ? () => _setLoop(take) : null,
+                  ),
+                ],
+                ConsoleButton(
+                  label: 'Return to live',
+                  onPressed: enabled ? _returnLive : null,
+                ),
+              ],
             ),
         ],
       );
@@ -1859,11 +2037,17 @@ class _RecorderPageState extends State<RecorderPage> {
             padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
             child: header,
           ),
-          Container(
-            color: p.recorderBar,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: transportControls,
-          ),
+          if (!empty && !manualRestore)
+            Container(
+              color: p.recorderBar,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDesign.spaceLg,
+                vertical: AppDesign.spaceSm,
+              ),
+              child: transportControls,
+            ),
+          _notice(_problem, ConsoleTextTone.warning),
+          _notice(_feedback, ConsoleTextTone.normal),
           if (_transferBusy)
             Padding(
               padding: const EdgeInsets.all(16),
@@ -1880,18 +2064,36 @@ class _RecorderPageState extends State<RecorderPage> {
               ),
             ),
           if (recordReason != null &&
+              !empty &&
               !soundcheck &&
               !recording &&
+              !recovery &&
+              store.connected &&
               !store.pending)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Text(
-                recordReason,
+                'Recording · $recordReason',
                 style: consoleTextStyle(
                   context,
                   ConsoleTextRole.caption,
                   tone: ConsoleTextTone.muted,
                 ),
+              ),
+            ),
+          if (prepared && (caps['seek'] != true || caps['loop'] != true))
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDesign.spaceLg,
+              ),
+              child: ConsoleText(
+                caps['seek'] != true && caps['loop'] != true
+                    ? 'Seeking and looping are unavailable for this playback session.'
+                    : caps['seek'] != true
+                    ? 'Seeking is unavailable for this playback session.'
+                    : 'Looping is unavailable for this playback session.',
+                role: ConsoleTextRole.caption,
+                tone: ConsoleTextTone.muted,
               ),
             ),
           if ((s['xruns'] as num? ?? 0) > 0)
@@ -1910,35 +2112,55 @@ class _RecorderPageState extends State<RecorderPage> {
               store.error != null ||
               s['error'] != null ||
               s['capture_error'] != null)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                store.error ??
-                    '${s['capture_error'] ?? s['error'] ?? 'Recorder host is unavailable.'}',
-                style: TextStyle(color: p.amber),
-              ),
+            ValueListenableBuilder<String?>(
+              valueListenable: _problem,
+              builder: (context, shown, _) {
+                final hostError = !store.connected
+                    ? 'Recorder host unavailable. Check that it is running on '
+                          'the recorder computer.'
+                    : store.error ??
+                          (s['capture_error'] != null
+                              ? 'Recording problem: ${s['capture_error']}'
+                              : 'Recorder host error: ${s['error']}');
+                // Action failures already quote the host error beside the action.
+                if (store.error != null &&
+                    shown?.contains(store.error!) == true) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDesign.spaceLg,
+                    vertical: AppDesign.spaceXs,
+                  ),
+                  child: ConsoleText(
+                    hostError,
+                    role: ConsoleTextRole.caption,
+                    tone: ConsoleTextTone.warning,
+                  ),
+                );
+              },
             ),
-          if (recovery && s['manual_routing'] == true)
+          if (manualRestore)
             panel(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Manual routing needs attention',
-                    style: TextStyle(
-                      color: p.amber,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const ConsoleText(
+                    'Restore live inputs on the mixer',
+                    tone: ConsoleTextTone.warning,
+                    weight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Restore the mixer’s live inputs yourself. Playback remains unavailable until you confirm.',
-                    style: TextStyle(color: p.text),
+                  const SizedBox(height: AppDesign.spaceXs),
+                  const ConsoleText(
+                    'Playback and recording stay blocked until you confirm.',
+                    role: ConsoleTextRole.caption,
+                    tone: ConsoleTextTone.muted,
                   ),
+                  const SizedBox(height: AppDesign.spaceSm),
                   ConsoleButton(
                     variant: ConsoleButtonVariant.primary,
                     onPressed: enabled ? _returnManualLive : null,
-                    label: 'Restore live inputs',
+                    label: 'Confirm live inputs',
                   ),
                 ],
               ),
@@ -1961,14 +2183,9 @@ class _RecorderPageState extends State<RecorderPage> {
                               weight: FontWeight.bold,
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              'A routing journal is pending. Recording remains blocked until recovery completes. The host does not display the journal details or independently identify the physical mixer.',
-                              style: TextStyle(color: p.text),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Rebind checks a fresh routing snapshot against the journal. It does not change mixer routing. Return to live is a separate step.',
-                              style: TextStyle(color: p.text),
+                            const ConsoleText(
+                              'Mixer routing changed for playback was not confirmed '
+                              'as restored. Recording is blocked until recovery completes.',
                             ),
                             const SizedBox(height: 12),
                             ConsoleButton(
@@ -1980,12 +2197,18 @@ class _RecorderPageState extends State<RecorderPage> {
                                             context,
                                             title: 'Rebind recovery?',
                                             message:
-                                                'Confirm that the connected mixer is the same physical mixer used for this journal. The app cannot establish physical identity. A fresh routing snapshot will be validated against the journal before rebinding; no routing will be changed by this step.',
+                                                'Confirm this is the same physical mixer. Its current '
+                                                'routing is checked against the journal; nothing is changed.',
                                             confirmLabel:
                                                 'Confirm mixer and rebind',
                                           );
                                       if (confirmed) {
                                         await store.command('rebind_recovery');
+                                        if (mounted && store.error != null) {
+                                          _fail(
+                                            'Rebind failed: ${store.error}',
+                                          );
+                                        }
                                       }
                                     }
                                   : null,
@@ -2000,7 +2223,9 @@ class _RecorderPageState extends State<RecorderPage> {
                                             context,
                                             title: 'Keep current routing?',
                                             message:
-                                                'Use this after the mixer has already been restored. The host will verify every recorded selector matches its original value, stop playback, and archive the recovery journal. No mixer routing will be changed. Any routing missing from an older journal is accepted as it is now.',
+                                                'Use after restoring the mixer yourself. The host checks '
+                                                'routing matches the original, then archives the journal. '
+                                                'Nothing is changed.',
                                             confirmLabel:
                                                 'Keep routing and archive',
                                           );
@@ -2009,6 +2234,11 @@ class _RecorderPageState extends State<RecorderPage> {
                                           'accept_current_routing',
                                           {'accept_current': true},
                                         );
+                                        if (mounted && store.error != null) {
+                                          _fail(
+                                            'Routing does not match yet: ${store.error}',
+                                          );
+                                        }
                                       }
                                     }
                                   : null,
@@ -2024,24 +2254,75 @@ class _RecorderPageState extends State<RecorderPage> {
               ),
             ),
           Expanded(
-            child: RecorderArrangement(
-              store: store,
-              previewTakeId: previewId,
-              takeName: _draftName ?? (take != null ? _takeName(take) : null),
-              loopStartFrame: _loopTake == previewId ? _loopStart : null,
-              loopEndFrame: _loopTake == previewId ? _loopEnd : null,
-              onNewTake: _canPrepare ? _newTake : null,
-              onAudioSetup: () => _showSetup(context, store),
-              onLoopSelection: (start, end, total) => setState(() {
-                _loopStart = start;
-                _loopEnd = end;
-                _loopTake = store.state['selected_take_id'];
-              }),
-            ),
+            child: empty
+                ? _emptyWorkspace(recordReason, recordAction)
+                : RecorderArrangement(
+                    store: store,
+                    previewTakeId: previewId,
+                    takeName:
+                        _draftName ?? (take != null ? _takeName(take) : null),
+                    loopStartFrame: _loopTake == previewId ? _loopStart : null,
+                    loopEndFrame: _loopTake == previewId ? _loopEnd : null,
+                    onLoopSelection: (start, end, total) => setState(() {
+                      _loopStart = start;
+                      _loopEnd = end;
+                      _loopTake = store.state['selected_take_id'];
+                    }),
+                  ),
           ),
         ],
       );
     },
+  );
+
+  Widget _emptyWorkspace(String? recordReason, Widget recordAction) => Align(
+    alignment: const Alignment(0, -.35),
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(AppDesign.spaceXl),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppDesign.dialogMaxWidth),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ConsoleText('No take open', role: ConsoleTextRole.sheetTitle),
+            const SizedBox(height: AppDesign.spaceSm),
+            ConsoleText(
+              _localTransferAvailable
+                  ? 'Import audio for playback or record a new take.'
+                  : 'Choose a saved take in Browse takes. Import is available on the recorder computer.',
+              tone: ConsoleTextTone.muted,
+            ),
+            const SizedBox(height: AppDesign.spaceLg),
+            Wrap(
+              spacing: AppDesign.spaceSm,
+              runSpacing: AppDesign.spaceXs,
+              children: [
+                if (_localTransferAvailable)
+                  ConsoleButton(
+                    label: 'Import take',
+                    icon: Icons.file_upload_outlined,
+                    size: ConsoleButtonSize.regular,
+                    variant: ConsoleButtonVariant.primary,
+                    onPressed: _canPrepare
+                        ? () => _transferTake(importing: true)
+                        : null,
+                  ),
+                recordAction,
+              ],
+            ),
+            if (recordReason != null && store.connected) ...[
+              const SizedBox(height: AppDesign.spaceSm),
+              ConsoleText(
+                'Recording · $recordReason',
+                role: ConsoleTextRole.caption,
+                tone: ConsoleTextTone.muted,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
   );
 
   Future<void> _recoverTake(String id) async {
@@ -2049,7 +2330,7 @@ class _RecorderPageState extends State<RecorderPage> {
       context,
       title: 'Recover take?',
       message:
-          'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop recording and playback before continuing.',
+          'Keeps audio up to the last saved checkpoint and discards the rest.',
       confirmLabel: 'Recover take',
     );
     if (confirmed) {
@@ -2080,7 +2361,7 @@ class _RecorderPageState extends State<RecorderPage> {
     });
   }
 
-  Future<void> _browseTakes() async {
+  Future<void> _browseTakes(String? previewTakeId) async {
     if (store.pending) return;
     final id = await showModalBottomSheet<String>(
       context: context,
@@ -2089,6 +2370,7 @@ class _RecorderPageState extends State<RecorderPage> {
       constraints: const BoxConstraints(maxWidth: 880),
       builder: (context) => _TakeBrowser(
         store: store,
+        previewTakeId: previewTakeId,
         nameOf: _takeName,
         dateOf: (take) => _takeDate(take['id']).replaceFirst(' · ', ''),
         durationOf: (take) =>
@@ -2113,7 +2395,7 @@ class _RecorderPageState extends State<RecorderPage> {
     if (store.state['input_mode'] != 'live' ||
         store.state['transport'] != 'stopped' ||
         store.pending) {
-      _snapshotMessage('Return to live inputs before opening another take.');
+      _fail('Return to live inputs before opening another take.');
       return;
     }
     setState(() {
@@ -2144,10 +2426,45 @@ class _RecorderPageState extends State<RecorderPage> {
           final soundcheck = '${s['input_mode']}'.toLowerCase().contains(
             'soundcheck',
           );
-          Widget label(String text) => Text(
-            text.toUpperCase(),
-            style: TextStyle(color: p.mutedText, fontWeight: FontWeight.bold),
-          );
+          final device = store.devices
+              .where((d) => d['id'] == selectedDevice)
+              .firstOrNull;
+          final canSelect =
+              enabled &&
+              !recording &&
+              !soundcheck &&
+              s['input_mode'] == 'live' &&
+              s['transport'] == 'stopped';
+          Future<void> chooseInterface() async {
+            final id = await showConsoleSelection<String>(
+              context,
+              title: 'Choose audio interface',
+              selected: device?['id'] as String?,
+              options: [
+                for (final item in store.devices)
+                  ConsoleSelectionOption(
+                    value: '${item['id']}',
+                    label: '${item['name']}',
+                    detail:
+                        '${item['input_channels']} inputs · '
+                        '${item['output_channels']} outputs · ${item['sample_rate']} Hz',
+                  ),
+              ],
+            );
+            if (id == null ||
+                id == selectedDevice ||
+                !context.mounted ||
+                !store.connected ||
+                store.pending ||
+                store.state['available'] != true ||
+                store.state['input_mode'] != 'live' ||
+                store.state['transport'] != 'stopped' ||
+                !store.devices.any((d) => d['id'] == id)) {
+              return;
+            }
+            await store.command('select_device', {'device_id': id});
+          }
+
           Widget panel({required Widget child}) => Container(
             padding: const EdgeInsets.all(12),
             color: p.panel,
@@ -2181,7 +2498,12 @@ class _RecorderPageState extends State<RecorderPage> {
                       children: [
                         Row(
                           children: [
-                            Expanded(child: label('Audio interface')),
+                            const Expanded(
+                              child: ConsoleText(
+                                'Audio interface',
+                                role: ConsoleTextRole.sectionTitle,
+                              ),
+                            ),
                             ConsoleButton(
                               variant: ConsoleButtonVariant.quiet,
                               onPressed:
@@ -2190,49 +2512,58 @@ class _RecorderPageState extends State<RecorderPage> {
                                       s['device_scan_pending'] == true
                                   ? null
                                   : store.refreshDevices,
-                              label: 'Refresh devices',
+                              label: 'Refresh',
+                              icon: Icons.refresh,
                             ),
                           ],
                         ),
                         const SizedBox(height: 10),
                         if (store.devices.isEmpty)
-                          Text(
+                          ConsoleText(
                             s['device_scan_error'] != null
-                                ? 'Audio device scan failed: ${s['device_scan_error']}'
+                                ? 'Interface scan failed: ${s['device_scan_error']}. '
+                                      'Press Refresh to try again.'
                                 : s['device_scan_pending'] == true
                                 ? 'Scanning audio interfaces…'
-                                : 'No recording devices available',
-                            style: TextStyle(color: p.mutedText),
+                                : 'Connect an audio interface to the recorder computer, then refresh.',
+                            tone: s['device_scan_error'] != null
+                                ? ConsoleTextTone.warning
+                                : ConsoleTextTone.muted,
                           )
-                        else
-                          DropdownButton<String>(
-                            isExpanded: true,
-                            value:
-                                store.devices.any(
-                                  (d) => d['id'] == selectedDevice,
-                                )
-                                ? '$selectedDevice'
-                                : null,
-                            hint: const Text('Select an interface'),
-                            items: store.devices
-                                .map(
-                                  (d) => DropdownMenuItem(
-                                    value: '${d['id']}',
-                                    child: Text(
-                                      '${d['name']}  ·  ${d['input_channels']} in / ${d['output_channels']} out',
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: enabled && !recording && !soundcheck
-                                ? (id) {
-                                    if (id != null) {
-                                      store.command('select_device', {
-                                        'device_id': id,
-                                      });
-                                    }
-                                  }
-                                : null,
+                        else ...[
+                          if (device != null) ...[
+                            ConsoleText(
+                              '${device['name']}',
+                              weight: FontWeight.w600,
+                            ),
+                            ConsoleText(
+                              '${device['input_channels']} inputs · '
+                              '${device['output_channels']} outputs · ${device['sample_rate']} Hz'
+                              '${s['disk_free_bytes'] is num ? ' · ${((s['disk_free_bytes'] as num) / 1073741824).toStringAsFixed(1)} GB free' : ''}',
+                              tone: ConsoleTextTone.muted,
+                            ),
+                            const SizedBox(height: AppDesign.spaceSm),
+                          ],
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: ConsoleButton(
+                              label: device == null
+                                  ? 'Choose interface'
+                                  : 'Change interface',
+                              onPressed: canSelect ? chooseInterface : null,
+                            ),
+                          ),
+                          if (recording || soundcheck)
+                            const ConsoleText(
+                              'Stop recording or return to live to change the interface.',
+                              role: ConsoleTextRole.caption,
+                              tone: ConsoleTextTone.muted,
+                            ),
+                        ],
+                        if (store.error != null)
+                          ConsoleText(
+                            store.error!,
+                            tone: ConsoleTextTone.warning,
                           ),
                       ],
                     ),
@@ -2248,35 +2579,29 @@ class _RecorderPageState extends State<RecorderPage> {
                             )
                           : null,
                       icon: Icons.account_tree_outlined,
-                      label: 'Input names and mixer mapping',
+                      label: 'Recording input names',
                     ),
-                    Text(
-                      s['capture_names_automatic'] == true
-                          ? 'Track names follow the mixer’s reported USB patch automatically when available. Review or override them here.'
-                          : 'Custom track names are active. Use Auto from USB patch to follow the mixer again.',
-                      style: TextStyle(color: p.mutedText),
+                    // One line: the host's reason when automatic names are
+                    // unavailable, otherwise the current naming source.
+                    ConsoleText(
+                      s['capture_names_automatic'] != true
+                          ? 'Custom names are in use.'
+                          : s['channel_names_reason'] is String
+                          ? s['channel_names_reason'] as String
+                          : s['device_match_reason'] is String
+                          ? s['device_match_reason'] as String
+                          : 'Names follow the mixer’s USB patch.',
+                      role: ConsoleTextRole.caption,
+                      tone: ConsoleTextTone.muted,
                     ),
                   ],
-                  if (s['device_restore_reason'] != null)
-                    Text(
+                  if (s['device_restore_reason'] != null) ...[
+                    const SizedBox(height: AppDesign.spaceSm),
+                    ConsoleText(
                       '${s['device_restore_reason']}',
-                      style: TextStyle(color: p.amber),
+                      tone: ConsoleTextTone.warning,
                     ),
-                  if (s['device_match_reason'] is String)
-                    Text(
-                      s['device_match_reason'] as String,
-                      style: TextStyle(color: p.mutedText),
-                    ),
-                  if (s['channel_names_reason'] is String)
-                    Text(
-                      s['channel_names_reason'] as String,
-                      style: TextStyle(color: p.mutedText),
-                    ),
-                  if (s['disk_free_bytes'] is num)
-                    Text(
-                      'Available storage: ${((s['disk_free_bytes'] as num) / 1073741824).toStringAsFixed(1)} GB',
-                      style: TextStyle(color: p.mutedText),
-                    ),
+                  ],
                   if (store.canAdminRemote) ...[
                     const SizedBox(height: 24),
                     panel(child: _RemoteAdminPanel(store: store)),
@@ -2363,7 +2688,8 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
         store.state['transport'] != 'stopped' ||
         store.state['input_mode'] != 'live') {
       setState(
-        () => _error = 'The interface or routing changed. Close this dialog and review setup again.',
+        () =>
+            _error = 'The interface changed. Close and open input names again.',
       );
       return;
     }
@@ -2375,7 +2701,9 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
           name.runes.any((c) => c < 32 || c >= 127 && c <= 159),
     )) {
       setState(
-        () => _error = 'Use a name of 1–120 characters for each input, without control characters.',
+        () => _error = names.any((name) => name.isEmpty)
+            ? 'Input ${names.indexWhere((name) => name.isEmpty) + 1} needs a name.'
+            : 'Use up to 120 characters, without control characters.',
       );
       return;
     }
@@ -2404,7 +2732,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
         ).contains(false)) {
       setState(() {
         _saving = false;
-        _error = 'The recorder has not confirmed these names. Refresh setup before retrying.';
+        _error = 'The recorder did not confirm these names. Try saving again.';
       });
       return;
     }
@@ -2428,7 +2756,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
         _saving = false;
         _error =
             widget.store.error ??
-            'Automatic names were not confirmed by the recorder.';
+            'The recorder did not confirm automatic names. Try again.';
       });
       return;
     }
@@ -2522,7 +2850,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Auto reads the mixer’s USB patch and follows its channel names. You can also choose an input channel or type a custom track name. This does not change mixer routing.',
+              'Auto follows the mixer’s USB patch. Names do not change routing.',
               style: TextStyle(color: p.mutedText),
             ),
             const SizedBox(height: 12),
@@ -2633,8 +2961,9 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
         utf8.encode(name).length > 512 ||
         name.runes.any((c) => c < 32 || (c >= 127 && c <= 159))) {
       setState(
-        () => _error =
-            'Enter a take name of 1–120 characters without control characters.',
+        () => _error = name.isEmpty
+            ? 'Enter a take name.'
+            : 'Use up to 120 characters, without control characters.',
       );
       return;
     }
@@ -2657,7 +2986,11 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
         (device['input_channels'] as num? ?? 0) <= 0) {
       setState(() {
         _preparing = false;
-        _error = store.error ?? 'The recorder is not ready. Check the interface and return to live inputs.';
+        _error = store.error != null
+            ? 'Could not select the interface: ${store.error}'
+            : device == null || (device['input_channels'] as num? ?? 0) <= 0
+            ? 'This interface has no inputs. Choose another.'
+            : 'Return to live inputs and stop playback first.';
       });
       return;
     }
@@ -2728,7 +3061,7 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
-                      '${device['input_channels']} available inputs · ${device['sample_rate']} Hz\nAll available capture inputs will be recorded.',
+                      'Records all ${device['input_channels']} inputs · ${device['sample_rate']} Hz',
                       style: TextStyle(color: p.mutedText),
                     ),
                   ),
@@ -2755,9 +3088,9 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Prepare the take here, then press Record in the timeline. Audio files are created when recording starts.',
-                  style: TextStyle(color: p.mutedText),
+                ConsoleText(
+                  'Recording starts when you press Record.',
+                  tone: ConsoleTextTone.muted,
                 ),
               ],
             ),
@@ -2788,6 +3121,7 @@ class _TakeBrowser extends StatefulWidget {
   const _TakeBrowser({
     required this.store,
     required this.nameOf,
+    required this.previewTakeId,
     required this.dateOf,
     required this.durationOf,
     this.onImport,
@@ -2795,6 +3129,7 @@ class _TakeBrowser extends StatefulWidget {
     this.onExport,
   });
   final RecorderStore store;
+  final String? previewTakeId;
   final String Function(Map<String, dynamic>) nameOf, dateOf, durationOf;
   final Future<void> Function()? onImport;
   final Future<void> Function(String)? onRecover;
@@ -2899,10 +3234,10 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                     ),
                     const SizedBox(width: 12),
                     if (canTransfer)
-                      ConsoleIconButton(
+                      ConsoleButton(
                         label: 'Import take',
+                        icon: Icons.file_upload_outlined,
                         onPressed: canOpen ? widget.onImport : null,
-                        child: const Icon(Icons.file_upload_outlined),
                       ),
                   ],
                 ),
@@ -2924,7 +3259,9 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                       ? Center(
                           child: Text(
                             _query.isEmpty
-                                ? 'No takes yet. Press Record to start.'
+                                ? canTransfer
+                                      ? 'No saved takes. Import a take to play it here.'
+                                      : 'No saved takes on the recorder computer.'
                                 : 'No takes match your search.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: p.mutedText),
@@ -2951,7 +3288,7 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                               ),
                               title: Text(
                                 widget.nameOf(take),
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: p.text,
@@ -2960,9 +3297,10 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                               ),
                               subtitle: Text(
                                 '${widget.durationOf(take)} · ${recorderChannelCount(take)} tracks${date.isEmpty ? '' : ' · $date'}${complete ? '' : ' · Recovery needed'}',
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              selected: take['id'] == widget.previewTakeId,
                               onTap: complete && canOpen
                                   ? () => Navigator.pop(
                                       context,
@@ -2970,13 +3308,10 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                     )
                                   : null,
                               trailing: complete
-                                  ? Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (canTransfer)
-                                          ConsoleButton(
-                                            variant:
-                                                ConsoleButtonVariant.quiet,
+                                  ? (canTransfer
+                                        ? ConsoleIconButton(
+                                            label:
+                                                'Export ${widget.nameOf(take)}',
                                             onPressed:
                                                 canOpen &&
                                                     widget.onExport != null
@@ -2984,15 +3319,14 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                                     take['id'] as String,
                                                   )
                                                 : null,
-                                            icon: Icons.file_download_outlined,
-                                            label: 'Export',
-                                          ),
-                                        Icon(
-                                          Icons.chevron_right,
-                                          color: p.mutedText,
-                                        ),
-                                      ],
-                                    )
+                                            child: const Icon(
+                                              Icons.file_download_outlined,
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.chevron_right,
+                                            color: p.mutedText,
+                                          ))
                                   : widget.onRecover != null
                                   ? ConsoleButton(
                                       variant: ConsoleButtonVariant.quiet,
@@ -3048,7 +3382,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Connect from another OpenFader app using this computer’s LAN IP address or hostname and port ${store.remoteStatus['port'] ?? 8845}.',
+          'Other OpenFader apps connect to this computer’s address, port ${store.remoteStatus['port'] ?? 8845}.',
           style: TextStyle(color: p.mutedText),
         ),
         const SizedBox(height: 8),
@@ -3073,7 +3407,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
         ),
         const SizedBox(height: 8),
         Text(
-          'App and browser connections use this same optional password. Changing it disconnects existing clients.',
+          'Also used for browser access. Changing it disconnects clients.',
           style: TextStyle(color: p.mutedText),
         ),
         const SizedBox(height: 12),
@@ -3130,13 +3464,13 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
             ),
           ],
         ),
+        if (store.remoteError != null)
+          ConsoleText(store.remoteError!, tone: ConsoleTextTone.warning),
         const SizedBox(height: 16),
         Divider(color: p.linePanel),
         const SizedBox(height: 8),
         _WebHostingSettings(store: store),
         const SizedBox(height: 16),
-        if (store.remoteError != null)
-          Text(store.remoteError!, style: TextStyle(color: p.amber)),
         Text(
           'Authorized clients',
           style: TextStyle(color: p.text, fontWeight: FontWeight.bold),
@@ -3246,7 +3580,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
         ),
         const SizedBox(height: 12),
         Text(
-          'Uses the optional server password above.',
+          'Uses the server password above.',
           style: TextStyle(color: palette.mutedText),
         ),
         if (reason is String && reason.isNotEmpty) ...[
@@ -3260,7 +3594,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
         ] else if (!available) ...[
           const SizedBox(height: 8),
           Text(
-            'The browser app is not available on this host. Install a desktop build that includes the web app.',
+            'This host build does not include the browser app.',
             style: TextStyle(color: palette.amber),
           ),
         ],

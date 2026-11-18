@@ -9,6 +9,7 @@
     "crates/serve/src/recorder.rs",
     "crates/serve/src/soundcheck.rs",
     "app/lib/screens/recorder.dart",
+    "app/lib/screens/recorder_arrangement.dart",
     "app/lib/shell/recorder_store.dart",
     "crates/audio/src/capture_mapping.rs",
     "crates/audio/src/service.rs",
@@ -52,7 +53,7 @@
     },
     "take_browser": {
       "state": "implemented",
-      "reason": "Recorder implementation is present in the host coordinator, audio engine and recorder UI. OS/audio-device verification is separate.",
+      "reason": "The recorder workspace exposes take browsing and local import. The browser identifies the open take and shows a separate export action. OS/audio-device verification is separate.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -96,12 +97,13 @@
     },
     "manual_soundcheck": {
       "state": "implemented",
-      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
+      "reason": "The recorder exposes rate-compatible output selection, explicit track assignment with inline feedback, and visible transport and return-to-live actions. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
         "crates/serve/src/soundcheck.rs",
         "app/lib/screens/recorder.dart",
+        "app/lib/screens/recorder_arrangement.dart",
         "app/lib/shell/recorder_store.dart"
       ]
     },

@@ -824,7 +824,7 @@
       "engine_contracts": [],
       "required_hooks": [],
       "acceptance": {
-        "takes": "Browse complete and recoverable takes, visible export actions, clear transfer progress, safe cancellation and actionable errors."
+        "takes": "Expose import from an empty local workspace, distinguish the open take and export action when browsing complete and recoverable takes, show transfer progress, and handle cancellation and errors."
       },
       "required_evidence": [
         "unit",
@@ -908,12 +908,13 @@
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
         "app/lib/screens/recorder.dart",
+        "app/lib/screens/recorder_arrangement.dart",
         "app/lib/shell/recorder_store.dart"
       ],
       "engine_contracts": [],
       "required_hooks": [],
       "acceptance": {
-        "manual": "Play through an actual OS output mapping independently of mixer capabilities; require explicit manual routing confirmation and safe return to live.",
+        "manual": "Play through an actual OS output mapping independently of mixer capabilities; explain output compatibility and invalid assignments in place, and require explicit manual routing confirmation and safe return to live.",
         "transport": "Prepare silently and retain the output stream through pause, resume, seek and loop edits. Silence stale buffered generations, fade boundaries, and expose actual underruns/errors. Manual assignments obey masks and actual interface limits."
       },
       "required_evidence": [
