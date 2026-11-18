@@ -39,7 +39,7 @@ class MixerTypeField extends StatelessWidget {
       initialValue: value,
       isExpanded: true,
       dropdownColor: palette.chip,
-      style: TextStyle(fontSize: 17, color: palette.text),
+      style: TextStyle(fontSize: AppDesign.rowLabel, color: palette.text),
       decoration: InputDecoration(
         labelText: 'Mixer type',
         labelStyle: TextStyle(color: palette.mutedText),
@@ -169,7 +169,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                   const SizedBox(height: AppDesign.spaceLg),
                   Text('CONNECT A MIXER',
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
                           color: palette.text4)),
                   const SizedBox(height: AppDesign.spaceXs),
@@ -177,7 +177,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                     store.isOffline
                         ? 'Find a mixer on this network or connect directly by IP.'
                         : 'Find a mixer on this network, or continue without hardware.',
-                    style: TextStyle(fontSize: 12, color: palette.text7),
+                    style: TextStyle(fontSize: AppDesign.caption, color: palette.text7),
                   ),
                   const SizedBox(height: AppDesign.spaceMd),
                   Row(
@@ -215,21 +215,21 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                     Padding(
                       padding: const EdgeInsets.only(top: AppDesign.spaceXs),
                       child: Text('Last search: ${store.lastScan}',
-                          style: TextStyle(fontSize: 11, color: palette.text7)),
+                          style: TextStyle(fontSize: AppDesign.minorText, color: palette.text7)),
                     ),
                   if (store.scanning)
                     Padding(
                       padding: EdgeInsets.only(top: 4),
                       child: Text('Waiting for mixers to reply…',
                           style: TextStyle(
-                              fontSize: 12,
+                              fontSize: AppDesign.caption,
                               color: ConsolePalette.of(context).text4)),
                     ),
                   if (store.scanError != null) _ErrorBanner(store: store),
                   const SizedBox(height: AppDesign.spaceLg),
                   Text('AVAILABLE MIXERS',
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
                           color: ConsolePalette.of(context).text4)),
                   const SizedBox(height: 6),
@@ -238,7 +238,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       store.emptyText ??
                           'Scan this network to find available mixers.',
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppDesign.caption,
                           color: ConsolePalette.of(context).text7),
                     )
                   else
@@ -250,7 +250,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                   const SizedBox(height: AppDesign.spaceLg),
                   Text('CONNECT MANUALLY',
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
                           color: ConsolePalette.of(context).text4)),
                   const SizedBox(height: 6),
@@ -276,7 +276,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                             controller: _ipCtl,
                             keyboardType: TextInputType.text,
                             style: TextStyle(
-                                fontSize: 13,
+                                fontSize: AppDesign.smallLabel,
                                 color: ConsolePalette.of(context).text1),
                             decoration: InputDecoration(
                               isDense: true,
@@ -322,7 +322,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(store.connectionProgress,
                           style: TextStyle(
-                              fontSize: 12,
+                              fontSize: AppDesign.caption,
                               color: ConsolePalette.of(context).text4)),
                     ),
                   const SizedBox(height: AppDesign.spaceLg),
@@ -367,13 +367,13 @@ class _ErrorBanner extends StatelessWidget {
         children: [
           Text('DESK LINK FAILED',
               style: TextStyle(
-                  fontSize: 11,
+                  fontSize: AppDesign.minorText,
                   fontWeight: FontWeight.w700,
                   color: ConsolePalette.of(context).onErrorContainer)),
           const SizedBox(height: AppDesign.spaceXs),
           Text(err,
               style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppDesign.caption,
                   color: ConsolePalette.of(context).onErrorContainer)),
           const SizedBox(height: AppDesign.spaceSm),
           ConsoleActionGroup(children: [
@@ -428,7 +428,7 @@ class _StatusCard extends StatelessWidget {
               children: [
                 Text(store.title,
                     style: TextStyle(
-                        fontSize: 15,
+                        fontSize: AppDesign.body,
                         fontWeight: FontWeight.w700,
                         color: ConsolePalette.of(context).text1)),
                 Text(
@@ -438,7 +438,7 @@ class _StatusCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12, color: ConsolePalette.of(context).text7)),
+                        fontSize: AppDesign.caption, color: ConsolePalette.of(context).text7)),
               ],
             ),
           ),
@@ -477,14 +477,14 @@ class _DeviceRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 14,
+                        fontSize: AppDesign.body,
                         fontWeight: FontWeight.w700,
                         color: ConsolePalette.of(context).text1)),
                 Text(device.sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 11, color: ConsolePalette.of(context).text7)),
+                        fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text7)),
               ],
             ),
           ),
@@ -498,7 +498,7 @@ class _DeviceRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: AppDesign.minorText,
               fontWeight: FontWeight.w700,
               color: device.connected
                   ? ConsolePalette.of(context).meterGreen
@@ -521,7 +521,7 @@ class _DeviceRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12,
+                        fontSize: AppDesign.caption,
                         fontWeight: FontWeight.w700,
                         color: ConsolePalette.of(context).onAccent)),
               ),
@@ -558,7 +558,7 @@ class _InfoCard extends StatelessWidget {
             onTap: store.requestInfo,
             child: Text('REFRESH DESK INFO',
                 style: TextStyle(
-                    fontSize: 11,
+                    fontSize: AppDesign.minorText,
                     fontWeight: FontWeight.w700,
                     color: ConsolePalette.of(context).cyan)),
           ),
@@ -568,7 +568,7 @@ class _InfoCard extends StatelessWidget {
               onTap: onOpenDebug,
               child: Text('OPEN DEBUG LOG',
                   style: TextStyle(
-                      fontSize: 11,
+                      fontSize: AppDesign.minorText,
                       fontWeight: FontWeight.w700,
                       color: ConsolePalette.of(context).cyan)),
             ),
@@ -588,12 +588,12 @@ class _InfoCard extends StatelessWidget {
             width: 56,
             child: Text(k,
                 style: TextStyle(
-                    fontSize: 11, color: ConsolePalette.of(context).text7)),
+                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text7)),
           ),
           Expanded(
             child: Text(v.isEmpty ? '-' : v,
                 style: TextStyle(
-                    fontSize: 11, color: ConsolePalette.of(context).text4)),
+                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text4)),
           ),
         ],
       ),

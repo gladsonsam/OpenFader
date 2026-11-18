@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/destination_controls.dart';
+import '../design.dart';
 import '../palette.dart';
 
 /// Plots reported engineering values. PEQ shows band positions rather than
@@ -239,7 +240,7 @@ class _GraphPainter extends CustomPainter {
         final text = TextPainter(
           text: TextSpan(
             text: band.id,
-            style: TextStyle(color: palette.text, fontSize: 12),
+            style: TextStyle(color: palette.text, fontSize: AppDesign.caption),
           ),
           textDirection: TextDirection.ltr,
         )..layout();

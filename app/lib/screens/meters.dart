@@ -130,12 +130,12 @@ class _U4MetersPageState extends State<U4MetersPage> {
   Future<void> _editFocus(DestinationControlVm row) async {
     final store = widget.store;
     var value = row.value!;
-    final selected = await showDialog<double>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
+    final selected = await showConsoleDialog<double>(
+      context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => ConsoleAlertDialog(
-          title: Text(row.label),
+        builder: (dialogContext, setDialogState) => ConsoleDialog(
+          title: row.label,
+          scrollable: false,
           content: Slider(
             value: value.clamp(row.min!, row.max!),
             min: row.min!,
@@ -144,13 +144,17 @@ class _U4MetersPageState extends State<U4MetersPage> {
             onChanged: (next) => setDialogState(() => value = next),
           ),
           actions: [
-            TextButton(
+            ConsoleButton(
+              variant: ConsoleButtonVariant.quiet,
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            TextButton(
+            ConsoleButton(
+              variant: ConsoleButtonVariant.primary,
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(dialogContext, value),
-              child: const Text('Apply'),
+              label: 'Apply',
             ),
           ],
         ),
@@ -242,12 +246,11 @@ class _U4MetersPageState extends State<U4MetersPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: TextButton(
+                        child: ConsoleButton(
+                          variant: ConsoleButtonVariant.quiet,
                           onPressed: () => _editFocus(focused),
-                          child: Text(
-                            '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          label:
+                              '${focused.label}: ${focused.valueLabel}${focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
                         ),
                       ),
                     ),
@@ -310,7 +313,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
                               title: const Text(
                                 'Monitor controls',
                                 style: TextStyle(
-                                  fontSize: 15,
+                                  fontSize: AppDesign.body,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -810,7 +813,7 @@ class _MonitorControls extends StatelessWidget {
             'Monitor',
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: 16,
+              fontSize: AppDesign.controlLabel,
               color: palette.text1,
             ),
           ),

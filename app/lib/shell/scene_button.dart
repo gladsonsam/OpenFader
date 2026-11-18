@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
 import '../theme.dart';
+import '../design.dart';
 
 class U4SceneButton extends StatelessWidget {
   final String num;
@@ -62,13 +63,13 @@ class U4SceneButton extends StatelessWidget {
                       TextSpan(
                         text: num.isEmpty ? '' : '$num  ',
                         style: TextStyle(
-                            fontSize: 15,
+                            fontSize: AppDesign.body,
                             color: ConsolePalette.of(context).text10),
                       ),
                       TextSpan(
                         text: name,
                         style: TextStyle(
-                            fontSize: 15,
+                            fontSize: AppDesign.body,
                             fontWeight: FontWeight.w600,
                             color: ConsolePalette.of(context).text1),
                       ),

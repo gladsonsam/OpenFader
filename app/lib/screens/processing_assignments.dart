@@ -1,5 +1,8 @@
 part of 'channel.dart';
 
+/// Pane width at which automix settings use four columns instead of two.
+const _wideAssignmentsBreakpoint = 640.0;
+
 class _InputAssignments extends StatelessWidget {
   final ChannelStore store;
   final bool wide;
@@ -109,7 +112,7 @@ class _InputAssignments extends StatelessWidget {
           Text(entry.key,
               textAlign: TextAlign.center,
               style:
-                  AppDesign.type(16, color: ConsolePalette.of(context).text7)),
+                  consoleTextStyle(context, ConsoleTextRole.controlLabel, tone: ConsoleTextTone.muted)),
           const SizedBox(height: 8),
           for (final button in entry.value)
             Padding(padding: const EdgeInsets.only(bottom: 8), child: button),
@@ -142,15 +145,14 @@ class _InputAssignments extends StatelessWidget {
                   const RoundedRectangleBorder(borderRadius: U4.rBtn),
               title: Row(children: [
                 Text('Groups',
-                    style: AppDesign.type(16, weight: FontWeight.w600)),
+                    style: AppDesign.type(AppDesign.controlLabel, weight: FontWeight.w600)),
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(selected,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.right,
-                        style: AppDesign.type(12,
-                            color: ConsolePalette.of(context).text7))),
+                        style: consoleTextStyle(context, ConsoleTextRole.caption, tone: ConsoleTextTone.muted))),
               ]),
               children: [
                 LayoutBuilder(builder: (context, box) {
@@ -168,24 +170,23 @@ class _InputAssignments extends StatelessWidget {
       if (store.automixSettings.isNotEmpty) ...[
         const SizedBox(height: 12),
         Text('Automix settings',
-            style: AppDesign.type(14, color: ConsolePalette.of(context).text7)),
+            style: consoleTextStyle(context, ConsoleTextRole.body, tone: ConsoleTextTone.muted)),
         const SizedBox(height: 8),
         LayoutBuilder(builder: (context, box) {
-          final count = box.maxWidth >= 640 ? 4 : 2;
+          final count = box.maxWidth >= _wideAssignmentsBreakpoint ? 4 : 2;
           final width = (box.maxWidth - 8 * (count - 1)) / count;
           return Wrap(spacing: 8, runSpacing: 8, children: [
             for (final control in store.automixSettings)
               SizedBox(
                   width: width,
                   child: _ProcessingButton(
-                      fontSize: 14,
+                      fontSize: AppDesign.body,
                       label: control.label,
                       detail: control.valueLabel,
                       onTap: control.available &&
                               store.destinationControlIsCurrent(control)
-                          ? () => showDialog<void>(
-                              animationStyle: AnimationStyle.noAnimation,
-                              context: context,
+                          ? () => showConsoleDialog<void>(
+                              context,
                               builder: (_) => DestinationControlEditor(
                                   changes: store,
                                   accessEpoch: () => store.controlAccessEpoch,
@@ -479,11 +480,10 @@ class _ProcessingSend extends StatelessWidget {
                 detail: 'All inputs feeding ${control.destinationName}',
                 semanticsLabel: '${control.destinationName} ${control.label}, '
                     '${control.valueLabel ?? 'unavailable'}, shared by all inputs',
-                fontSize: 12,
+                fontSize: AppDesign.caption,
                 onTap: store.destinationControlIsCurrent(control)
-                    ? () => showDialog<void>(
-                        animationStyle: AnimationStyle.noAnimation,
-                        context: context,
+                    ? () => showConsoleDialog<void>(
+                        context,
                         barrierDismissible: false,
                         builder: (_) => DestinationControlEditor(
                             accessEpoch: () => store.controlAccessEpoch,
@@ -564,13 +564,13 @@ class _AutomixGainMeter extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
                 Text('Automix gain',
-                    style: AppDesign.type(14, color: palette.text7)),
+                    style: consoleTextStyle(context, ConsoleTextRole.body, tone: ConsoleTextTone.muted)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: !active() || value == null
                         ? Text(readout(),
                             textAlign: TextAlign.right,
-                            style: AppDesign.type(12, color: palette.text7))
+                            style: consoleTextStyle(context, ConsoleTextRole.caption, tone: ConsoleTextTone.muted))
                         : LinearProgressIndicator(
                             minHeight: 10,
                             value: math

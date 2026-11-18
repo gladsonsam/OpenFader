@@ -194,25 +194,12 @@ class _PresetsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
+    return ConsoleButton(
       onPressed: () {
         final target = store.capturePresetTarget(kind);
         showProcessorPresetLibrary(context, store, kind, target);
       },
-      style: TextButton.styleFrom(
-          foregroundColor: ConsolePalette.of(context).text1,
-          backgroundColor: ConsolePalette.of(context).control,
-          minimumSize: const Size(64, 44),
-          padding: AppDesign.controlPadding,
-          shape: RoundedRectangleBorder(borderRadius: U4.rBtn),
-          textStyle: TextStyle(
-              fontFamily: U4.font,
-              fontSize: AppDesign.body,
-              fontWeight: FontWeight.w600)),
-      child: const Row(children: [
-        Expanded(child: Text('Presets')),
-        Icon(Icons.arrow_drop_down, size: 20)
-      ]),
+      label: 'Presets',
     );
   }
 }

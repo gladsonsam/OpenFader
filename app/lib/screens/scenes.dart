@@ -133,9 +133,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   Row(children: [
                     const Expanded(child: _SectionTitle('Shows')),
                     if (store.shows.isNotEmpty)
-                      TextButton(
+                      ConsoleButton(
+                          variant: ConsoleButtonVariant.quiet,
                           onPressed: store.busy ? null : store.beginShow,
-                          child: const Text('New show')),
+                          label: 'New show'),
                   ]),
                   const SizedBox(height: AppDesign.spaceSm),
                   _NameRow(
@@ -150,27 +151,27 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   if (store.shows.isEmpty)
                     Text('no shows yet',
                         style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppDesign.caption,
                             color: ConsolePalette.of(context).text7))
                   else ...[
                     ConsoleActionGroup(children: [
                       for (final show in store.shows)
-                        OutlinedButton(
+                        ConsoleButton(
                             onPressed: store.busy
                                 ? null
                                 : () => store.selectShow(show),
-                            style: OutlinedButton.styleFrom(
-                                foregroundColor: show == store.show
-                                    ? ConsolePalette.of(context).cyan
-                                    : ConsolePalette.of(context).text1),
-                            child: Text(show)),
+                            selected: show == store.show,
+                            accent: ConsolePalette.of(context).cyan,
+                            label: show),
                     ]),
                     for (final scene in store.showScenes)
                       Row(children: [
                         Expanded(
                             child: Text(scene,
                                 maxLines: 1, overflow: TextOverflow.ellipsis)),
-                        TextButton(
+                        ConsoleButton(
+                            variant: ConsoleButtonVariant.quiet,
+                            label: 'Recall',
                             onPressed: store.busy
                                 ? null
                                 : () => _confirm(
@@ -181,10 +182,11 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         'and mixer value verification are '
                                         'unavailable here.',
                                     label: 'Recall',
-                                    action: () => store.recallShow(scene)),
-                            child: const Text('Recall')),
+                                    action: () => store.recallShow(scene))),
                         const SizedBox(width: AppDesign.spaceSm),
-                        TextButton(
+                        ConsoleButton(
+                            variant: ConsoleButtonVariant.danger,
+                            label: 'Delete',
                             onPressed: store.busy
                                 ? null
                                 : () => _confirm(
@@ -192,8 +194,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     body: 'Delete “$scene” from OpenFader show '
                                         '“${store.show}”? This cannot be undone.',
                                     label: 'Delete',
-                                    action: () => store.deleteShow(scene)),
-                            child: const Text('Delete')),
+                                    action: () => store.deleteShow(scene))),
                       ]),
                   ],
                   const SizedBox(height: 14),
@@ -230,7 +231,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: AppDesign.caption,
                                     fontWeight: FontWeight.w700,
                                     color: ConsolePalette.of(context).text1)),
                           ),
@@ -257,7 +258,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   if (store.entries.isEmpty)
                     Text('no snapshots saved',
                         style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppDesign.caption,
                             color: ConsolePalette.of(context).text7))
                   else
                     GridView.builder(
@@ -296,7 +297,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         controller: _renameCtl,
                                         autofocus: true,
                                         style: TextStyle(
-                                            fontSize: 13,
+                                            fontSize: AppDesign.smallLabel,
                                             color: ConsolePalette.of(context)
                                                 .text1),
                                         decoration: InputDecoration(
@@ -321,10 +322,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    IconButton(
-                                      tooltip: 'Save snapshot name',
+                                    ConsoleIconButton(
+                                      label: 'Save snapshot name',
                                       onPressed: _submitRename,
-                                      icon: Icon(Icons.check,
+                                      child: Icon(Icons.check,
                                           size: 18,
                                           color: ConsolePalette.of(context)
                                               .meterGreen),
@@ -340,7 +341,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         Text(
                                           e.number.toString().padLeft(3, '0'),
                                           style: TextStyle(
-                                              fontSize: 11,
+                                              fontSize: AppDesign.minorText,
                                               fontWeight: FontWeight.w700,
                                               color: ConsolePalette.of(context)
                                                   .text7),
@@ -368,7 +369,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                              fontSize: 14,
+                                              fontSize: AppDesign.body,
                                               fontWeight: FontWeight.w600,
                                               color: ConsolePalette.of(context)
                                                   .text1),
@@ -377,19 +378,15 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     ),
                                     ConsoleActionGroup(
                                       children: [
-                                        TextButton(
+                                        ConsoleButton(
+                                          label: 'RECALL',
                                           onPressed: store.busy
                                               ? null
                                               : () => _recallSnapshot(e),
-                                          child: Text('RECALL',
-                                              style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color:
-                                                      ConsolePalette.of(context)
-                                                          .meterGreen)),
                                         ),
-                                        TextButton(
+                                        ConsoleButton(
+                                          variant: ConsoleButtonVariant.quiet,
+                                          label: 'RENAME',
                                           onPressed: store.busy
                                               ? null
                                               : () {
@@ -399,14 +396,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                                   setState(() =>
                                                       _renaming = e.number);
                                                 },
-                                          child: Text('RENAME',
-                                              style: TextStyle(
-                                                  fontSize: 11,
-                                                  color:
-                                                      ConsolePalette.of(context)
-                                                          .text7)),
                                         ),
-                                        TextButton(
+                                        ConsoleButton(
+                                          variant: ConsoleButtonVariant.danger,
+                                          label: 'DELETE',
                                           onPressed: store.busy
                                               ? null
                                               : () => _confirm(
@@ -419,12 +412,6 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                                   label: 'Delete',
                                                   action: () =>
                                                       store.remove(e.number)),
-                                          child: Text('DELETE',
-                                              style: TextStyle(
-                                                  fontSize: 11,
-                                                  color:
-                                                      ConsolePalette.of(context)
-                                                          .mute)),
                                         ),
                                       ],
                                     ),
@@ -478,7 +465,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
         children: [
           const _SectionTitle('Mixer snapshots'),
           Text(view.error ?? message,
-              style: TextStyle(fontSize: 12, color: palette.text7)),
+              style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
             const SizedBox(height: AppDesign.spaceSm),
             Text(
@@ -487,13 +474,13 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     : 'Last reported slot ${view.current}'
                         '${reportedName == null ? '' : ' · $reportedName'}',
                 style: TextStyle(
-                    fontSize: 13,
+                    fontSize: AppDesign.smallLabel,
                     fontWeight: FontWeight.w600,
                     color: palette.text1)),
             const SizedBox(height: AppDesign.spaceSm),
             if (view.slots.isEmpty)
               Text('No slot names reported yet.',
-                  style: TextStyle(fontSize: 12, color: palette.text7)),
+                  style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
             for (final slot in view.slots)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -501,7 +488,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Slot ${slot.slot}',
-                          style: TextStyle(fontSize: 12, color: palette.text4)),
+                          style: TextStyle(fontSize: AppDesign.caption, color: palette.text4)),
                       const SizedBox(width: AppDesign.spaceMd),
                       Expanded(
                         child: Text(
@@ -509,7 +496,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                                 ? 'Name not reported'
                                 : slot.name,
                             style:
-                                TextStyle(fontSize: 13, color: palette.text1)),
+                                TextStyle(fontSize: AppDesign.smallLabel, color: palette.text1)),
                       ),
                     ]),
               ),
@@ -530,7 +517,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(text,
           style: TextStyle(
-              fontSize: 12,
+              fontSize: AppDesign.caption,
               fontWeight: FontWeight.w700,
               color: ConsolePalette.of(context).text4)),
     );
@@ -565,7 +552,7 @@ class _NameRow extends StatelessWidget {
             child: TextField(
               controller: controller,
               style: TextStyle(
-                  fontSize: 13, color: ConsolePalette.of(context).text1),
+                  fontSize: AppDesign.smallLabel, color: ConsolePalette.of(context).text1),
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,

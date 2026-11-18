@@ -36,11 +36,11 @@ class _MixerSetupDetail extends StatelessWidget {
                     trailing: surface == 'bus_link_state' ||
                             surface == 'link_policy_state'
                         ? _ValueText(control.valueLabel ?? 'Unavailable')
-                        : OutlinedButton(
+                        : ConsoleButton(
+                            label: control.valueLabel ?? 'Unavailable',
                             onPressed: store.mixerSetupControlIsCurrent(control)
-                                ? () => showDialog<void>(
-                                    animationStyle: AnimationStyle.noAnimation,
-                                    context: context,
+                                ? () => showConsoleDialog<void>(
+                                    context,
                                     builder: (_) => DestinationControlEditor(
                                         changes: store,
                                         accessEpoch: () =>
@@ -49,8 +49,7 @@ class _MixerSetupDetail extends StatelessWidget {
                                             store.mixerSetupControlIsCurrent,
                                         apply: store.setMixerSetupControl,
                                         control: control))
-                                : null,
-                            child: Text(control.valueLabel ?? 'Unavailable'))),
+                                : null)),
             ]),
         if (surface == 'clock_rate')
           const _Note(

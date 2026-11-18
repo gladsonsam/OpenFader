@@ -1,10 +1,9 @@
 import '../../widgets/inline_feedback.dart';
-import '../../palette.dart';
-import '../../design.dart';
 import '../../settings/prefs.dart';
 import '../../widgets/channel_name_editor.dart';
 import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
+import '../../ui/console.dart';
 import '../controller.dart';
 import '../geometry.dart';
 import '../strip_layout.dart';
@@ -309,7 +308,7 @@ class _MixerStripState extends State<MixerStrip> {
                                   if (ready & 1 == 0)
                                     Center(
                                         child: Text('-',
-                                            style: AppDesign.type(14,
+                                            style: AppDesign.type(AppDesign.body,
                                                 color:
                                                     ConsolePalette.of(context)
                                                         .mutedText))),
@@ -399,10 +398,11 @@ class _MixerStripState extends State<MixerStrip> {
                                         style: TextStyle(
                                             color: ConsolePalette.of(context)
                                                 .text1,
-                                            fontSize: 12))),
-                                TextButton(
-                                    onPressed: _feedback.clear,
-                                    child: const Text('Dismiss')),
+                                            fontSize: AppDesign.caption))),
+                                ConsoleButton(
+                                    label: 'Dismiss',
+                                    variant: ConsoleButtonVariant.quiet,
+                                    onPressed: _feedback.clear),
                               ])),
                       ]))
                     : content!);

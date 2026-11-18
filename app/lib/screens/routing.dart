@@ -141,18 +141,21 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       if (!valid)
                         const Text(
                             'Routing changed. Close and select the route again.'),
-                      FilledButton(
+                      ConsoleButton(
+                          variant: ConsoleButtonVariant.primary,
+                          size: ConsoleButtonSize.regular,
                           onPressed: valid
                               ? () {
                                   store.patch(tile);
                                   Navigator.pop(sheetContext);
                                 }
                               : null,
-                          child: Text(
-                              tile.mode ? 'Confirm mode' : 'Confirm route')),
-                      TextButton(
+                          label: tile.mode ? 'Confirm mode' : 'Confirm route'),
+                      ConsoleButton(
+                          variant: ConsoleButtonVariant.quiet,
+                          size: ConsoleButtonSize.regular,
                           onPressed: () => Navigator.pop(sheetContext),
-                          child: const Text('Cancel')),
+                          label: 'Cancel'),
                     ]);
               }),
         ),
@@ -275,36 +278,18 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 4),
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                      minimumSize: const Size(0, 48),
-                                      backgroundColor: strip.src == source.label
-                                          ? p.cyan
-                                          : p.well,
-                                      foregroundColor: strip.src == source.label
-                                          ? p.onAccent
-                                          : p.text4),
-                                  onPressed: () => _choose(strip, source),
-                                  child: Semantics(
+                                child: Semantics(
+                                    selected: strip.src == source.label,
+                                    label: '${strip.name}: ${source.label}',
+                                    child: ConsoleButton(
                                       selected: strip.src == source.label,
-                                      label: '${strip.name}: ${source.label}',
-                                      child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            if (strip.src == source.label)
-                                              const Padding(
-                                                  padding:
-                                                      EdgeInsets.only(right: 6),
-                                                  child: Icon(Icons.check,
-                                                      size: 18)),
-                                            Flexible(
-                                                child: Text(source.label,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis)),
-                                          ])),
-                                ))),
+                                      accent: p.cyan,
+                                      icon: strip.src == source.label
+                                          ? Icons.check
+                                          : null,
+                                      onPressed: () => _choose(strip, source),
+                                      label: source.label,
+                                    )))),
                     ]));
               })),
     ]);
@@ -315,18 +300,16 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
             ? null
             : () => _quickMap(anchor);
         if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
-          return TextButton(
+          return ConsoleButton(
+              variant: ConsoleButtonVariant.quiet,
               onPressed: action,
-              style: TextButton.styleFrom(
-                  minimumSize: const Size(52, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: 10)),
-              child: const Text('Map', style: TextStyle(fontSize: 13)));
+              label: 'Map');
         }
-        return TextButton.icon(
+        return ConsoleButton(
+            variant: ConsoleButtonVariant.quiet,
             onPressed: action,
-            icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
-            label: const Text('Map'),
-            style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
+            icon: Icons.auto_fix_high_outlined,
+            label: 'Map');
       });
 
   Future<void> _quickMap(BuildContext anchor) async {
@@ -448,7 +431,10 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                 if (!valid)
                                   const Text(
                                       'Routing changed. Close and review a fresh mapping.'),
-                                FilledButton(
+                                ConsoleButton(
+                                    variant: ConsoleButtonVariant.primary,
+                                    size: ConsoleButtonSize.regular,
+                                    label: 'Apply ${plan.length} changes',
                                     onPressed: valid
                                         ? () {
                                             final sent = store.applyPlan(plan);
@@ -458,13 +444,13 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                   '${plan.length} routing changes sent');
                                             }
                                           }
-                                        : null,
-                                    child:
-                                        Text('Apply ${plan.length} changes')),
-                                TextButton(
+                                        : null),
+                                ConsoleButton(
+                                    variant: ConsoleButtonVariant.quiet,
+                                    size: ConsoleButtonSize.regular,
                                     onPressed: () =>
                                         Navigator.pop(sheetContext),
-                                    child: const Text('Cancel')),
+                                    label: 'Cancel'),
                               ]);
                         })))));
     if (mounted) setState(() => _confirming = false);
@@ -513,16 +499,16 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                           child: Center(
                               child: Text('${index + 1}',
                                   style: TextStyle(
-                                      color: p.text7, fontSize: 12)))),
+                                      color: p.text7, fontSize: AppDesign.caption)))),
                       title: Text(strip.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600)),
+                              fontSize: AppDesign.controlLabel, fontWeight: FontWeight.w600)),
                       subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(strip.src,
-                              style: TextStyle(color: p.cyan, fontSize: 13))),
+                              style: TextStyle(color: p.cyan, fontSize: AppDesign.smallLabel))),
                       trailing: Icon(Icons.chevron_right, color: p.text7),
                       onTap: () => _pickSource(strip),
                     );
@@ -593,9 +579,9 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                     Text('Current · ${strip.src}',
                                         style: TextStyle(color: p.text7)),
                                   ])),
-                              IconButton(
-                                  tooltip: 'Close',
-                                  icon: const Icon(Icons.close),
+                              ConsoleIconButton(
+                                  label: 'Close',
+                                  child: const Icon(Icons.close),
                                   onPressed: () => Navigator.pop(sheetContext))
                             ])),
                         if (store.canClear || store.routingControls.isNotEmpty)
@@ -604,19 +590,21 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   const EdgeInsets.symmetric(horizontal: 12),
                               child: ConsoleActionGroup(children: [
                                 if (store.canClear)
-                                  TextButton(
+                                  ConsoleButton(
+                                      variant: ConsoleButtonVariant.quiet,
                                       onPressed: valid ? _confirmClear : null,
-                                      child: const Text('Unpatch')),
+                                      label: 'Unpatch'),
                                 for (final control in store.routingControls)
-                                  TextButton(
+                                  ConsoleButton(
+                                      variant: ConsoleButtonVariant.quiet,
+                                      label:
+                                          '${control.label}: ${control.valueLabel ?? 'Unavailable'}',
                                       onPressed: valid &&
                                               control.value != null &&
                                               store.routingControlIsCurrent(
                                                   control)
-                                          ? () => showDialog<void>(
-                                              animationStyle:
-                                                  AnimationStyle.noAnimation,
-                                              context: context,
+                                          ? () => showConsoleDialog<void>(
+                                              context,
                                               barrierDismissible: false,
                                               builder:
                                                   (_) => DestinationControlEditor(
@@ -628,9 +616,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                       apply: store
                                                           .setRoutingControl,
                                                       control: control))
-                                          : null,
-                                      child: Text(
-                                          '${control.label}: ${control.valueLabel ?? 'Unavailable'}')),
+                                          : null),
                               ])),
                         const SizedBox(height: AppDesign.spaceMd),
                         if (!valid)
@@ -730,8 +716,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                       maxLines:
                                                                           2,
                                                                       style: TextStyle(
-                                                                          fontSize:
-                                                                              13,
+                                                                          fontSize: AppDesign.smallLabel,
                                                                           fontWeight: FontWeight
                                                                               .w600,
                                                                           color: tile.current
@@ -832,7 +817,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                       Text('DESTINATION',
                                                           style: TextStyle(
                                                               color: p.text7,
-                                                              fontSize: 11)),
+                                                              fontSize: AppDesign.minorText)),
                                                       Icon(Icons.arrow_downward,
                                                           color: p.text7,
                                                           size: 12),
@@ -861,7 +846,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                           overflow: TextOverflow
                                                               .ellipsis,
                                                           style: const TextStyle(
-                                                              fontSize: 11,
+                                                              fontSize: AppDesign.minorText,
                                                               fontWeight:
                                                                   FontWeight.w600)))),
                                           ]),
@@ -1012,7 +997,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: AppDesign.minorText,
                                     color: ConsolePalette.of(context).text7)),
                           ])),
                 )),
@@ -1057,9 +1042,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
           !store.routingControlIsCurrent(current)) {
         return;
       }
-      await showDialog<void>(
-          context: context,
-          animationStyle: AnimationStyle.noAnimation,
+      await showConsoleDialog<void>(
+          context,
           barrierDismissible: false,
           builder: (_) => DestinationControlEditor(
               changes: store,

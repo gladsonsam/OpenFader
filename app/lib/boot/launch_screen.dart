@@ -2,7 +2,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 
 import 'app_logo.dart';
 import 'boot_controller.dart';
@@ -41,7 +41,7 @@ class LaunchScreen extends StatelessWidget {
                     Text('CONSOLE REMOTE',
                         style: TextStyle(
                             color: ConsolePalette.of(context).text7,
-                            fontSize: 12,
+                            fontSize: AppDesign.caption,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 3)),
                     const SizedBox(height: 28),
@@ -72,7 +72,7 @@ class LaunchScreen extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             color: ConsolePalette.of(context).text4,
-                            fontSize: 13)),
+                            fontSize: AppDesign.smallLabel)),
                     const SizedBox(height: 20),
                     _StepList(controller: controller),
                     if (controller.engineLabel != null && !failed) ...[
@@ -80,7 +80,7 @@ class LaunchScreen extends StatelessWidget {
                       Text('engine: ${controller.engineLabel}',
                           style: TextStyle(
                               color: ConsolePalette.of(context).text7,
-                              fontSize: 12)),
+                              fontSize: AppDesign.caption)),
                     ],
                     if (failed) ...[
                       const SizedBox(height: 12),
@@ -88,12 +88,13 @@ class LaunchScreen extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                               color: ConsolePalette.of(context).meterRed,
-                              fontSize: 12)),
+                              fontSize: AppDesign.caption)),
                       const SizedBox(height: 12),
-                      TextButton(
+                      ConsoleButton(
+                        label: controller.running ? 'Retrying…' : 'Retry',
+                        variant: ConsoleButtonVariant.quiet,
                         onPressed:
                             controller.running ? null : (onRetry ?? () {}),
-                        child: Text(controller.running ? 'Retrying…' : 'Retry'),
                       ),
                     ],
                   ],
@@ -182,7 +183,7 @@ class _StepRow extends StatelessWidget {
         children: [
           icon,
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: textColor, fontSize: 13)),
+          Text(label, style: TextStyle(color: textColor, fontSize: AppDesign.smallLabel)),
         ],
       ),
     );

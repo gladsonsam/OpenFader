@@ -170,9 +170,7 @@ class ChannelToolbar extends StatelessWidget {
                       label: 'Effects',
                       onPressed: () => onTool(ChannelTool.fx),
                       child: Text('FX',
-                          style: AppDesign.type(20,
-                              color: ConsolePalette.of(context).text7,
-                              weight: FontWeight.w600))),
+                          style: consoleTextStyle(context, ConsoleTextRole.dialogTitle, tone: ConsoleTextTone.muted))),
                   const SizedBox(width: AppDesign.spaceSm),
                   _ToolButton(
                       label: 'Settings',
@@ -192,29 +190,23 @@ class ChannelToolbar extends StatelessWidget {
                   SizedBox(
                       width: 88,
                       height: 44,
-                      child: TextButton(
+                      child: ConsoleButton(
                           onPressed: () => onTool(ChannelTool.scenes),
-                          style: TextButton.styleFrom(
-                              backgroundColor: ConsolePalette.of(context).chip,
-                              foregroundColor: ConsolePalette.of(context).text7,
-                              disabledForegroundColor:
-                                  ConsolePalette.of(context).text7),
-                          child: Text('Shows',
-                              style: AppDesign.type(18,
-                                  color: ConsolePalette.of(context).text7)))),
+                          size: ConsoleButtonSize.large,
+                          label: 'Shows')),
                 ] else
                   _ChannelMenuButton(onSelected: (action) => action(), items: [
                     for (final t in ChannelTool.values)
                       PopupMenuItem(
                           value: () => onTool(t),
                           child:
-                              Text(_toolLabel(t), style: AppDesign.type(16))),
+                              Text(_toolLabel(t), style: AppDesign.type(AppDesign.controlLabel))),
                     if (onLock != null)
                       PopupMenuItem(
                           value: onLock!,
                           child: Text(
                               store.locked ? 'Unlock channel' : 'Lock channel',
-                              style: AppDesign.type(16))),
+                              style: AppDesign.type(AppDesign.controlLabel))),
                   ]),
               ])),
         ]);

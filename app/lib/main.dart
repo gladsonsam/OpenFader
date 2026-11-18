@@ -13,6 +13,7 @@ import 'desktop/desktop_integration.dart';
 import 'settings/prefs.dart';
 import 'shell/app_router.dart';
 import 'theme.dart';
+import 'ui/console.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -173,9 +174,10 @@ class _BootGateState extends State<BootGate> {
             child: Material(
                 type: MaterialType.transparency,
                 child: SafeArea(
-                    child: TextButton(
-                        onPressed: () => widget.desktop!.requestQuit(),
-                        child: const Text('Quit OpenFader')))))
+                    child: ConsoleButton(
+                        label: 'Quit OpenFader',
+                        variant: ConsoleButtonVariant.quiet,
+                        onPressed: () => widget.desktop!.requestQuit()))))
     ]);
   }
 }

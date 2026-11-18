@@ -183,10 +183,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       return SizedBox(
           height: 52,
           child: Row(children: [
-            IconButton(
-                tooltip: 'Settings',
+            ConsoleIconButton(
+                label: 'Settings',
                 onPressed: () => setState(() => _page = null),
-                icon: const Icon(Icons.chevron_left)),
+                child: const Icon(Icons.chevron_left)),
             Expanded(
                 child: Text(title,
                     maxLines: 1,

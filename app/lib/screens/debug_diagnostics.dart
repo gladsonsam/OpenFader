@@ -19,7 +19,7 @@ class DebugDiagnostics extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     final style = TextStyle(
       fontFamily: 'monospace',
-      fontSize: 11,
+      fontSize: AppDesign.minorText,
       height: 1.45,
       color: palette.text1,
     );
@@ -28,7 +28,7 @@ class DebugDiagnostics extends StatelessWidget {
       children: [
         Text(
           'Provider diagnostics${data == null ? '' : ' · ${data.driver}'}',
-          style: style.copyWith(fontSize: 12, color: palette.cyan),
+          style: style.copyWith(fontSize: AppDesign.caption, color: palette.cyan),
         ),
         if (data == null)
           Text(

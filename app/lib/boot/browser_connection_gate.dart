@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../palette.dart';
+import '../ui/console.dart';
 import 'remote_host.dart';
 
 /// Browser entry connects only to the origin serving the real Flutter app.
@@ -103,7 +103,7 @@ class _BrowserConnectionGateState extends State<BrowserConnectionGate> {
                                     children: [
                                       const Text('OpenFader',
                                           style: TextStyle(
-                                              fontSize: 28,
+                                              fontSize: AppDesign.pageTitle,
                                               fontWeight: FontWeight.w600)),
                                       const SizedBox(height: 12),
                                       Text(_server?.passwordRequired == true
@@ -137,17 +137,20 @@ class _BrowserConnectionGateState extends State<BrowserConnectionGate> {
                                         const Center(
                                             child: CircularProgressIndicator())
                                       else
-                                        FilledButton(
+                                        ConsoleButton(
+                                            variant:
+                                                ConsoleButtonVariant.primary,
+                                            size: ConsoleButtonSize.regular,
                                             onPressed:
                                                 _server?.passwordRequired ==
                                                         true
                                                     ? _connect
                                                     : _inspect,
-                                            child: Text(
+                                            label:
                                                 _server?.passwordRequired ==
                                                         true
                                                     ? 'Connect'
-                                                    : 'Retry')),
+                                                    : 'Retry'),
                                     ]))))))));
   }
 }

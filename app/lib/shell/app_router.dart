@@ -9,18 +9,15 @@ import '../boot/host_transport.dart';
 import '../boot/browser_session.dart';
 import '../boot/remote_host.dart';
 import '../desktop/desktop_integration.dart';
-import '../ui/overlays/console_dialogs.dart';
+import '../ui/console.dart';
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../palette.dart';
 import '../mixer/geometry.dart';
 
-import '../design.dart';
-import '../ui/motion.dart';
 import '../engine.dart';
 import '../ffi_engine.dart';
 import '../mixer/components/meter.dart';
@@ -312,15 +309,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _desktopQuitting = false;
       _restartLoop();
       if (mounted) {
-        await showDialog<void>(
-            context: context,
-            builder: (context) => ConsoleAlertDialog(
-                  title: const Text('OpenFader is still running'),
-                  content: Text('$error'),
+        await showConsoleDialog<void>(context,
+            builder: (context) => ConsoleDialog(
+                  title: 'OpenFader is still running',
+                  message: '$error',
                   actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('OK'))
+                    ConsoleButton(
+                        label: 'OK',
+                        variant: ConsoleButtonVariant.primary,
+                        size: ConsoleButtonSize.regular,
+                        onPressed: () => Navigator.pop(context))
                   ],
                 ));
       }
@@ -490,19 +488,22 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           trustedFingerprint: prefs.getString(RemoteHost.pinKey(endpoint)));
       if (!mounted) return;
       if (server.identityChanged) {
-        final trust = await showDialog<bool>(
-            context: context,
-            builder: (context) => ConsoleAlertDialog(
-                  title: const Text('Server identity changed'),
+        final trust = await showConsoleDialog<bool>(context,
+            builder: (context) => ConsoleDialog(
+                  title: 'Server identity changed',
                   content: SelectableText(
                       'The server at ${server.endpoint.host} has a different TLS identity. Verify that you are connecting to the intended server before continuing.\n\nPrevious: ${server.previousFingerprint}\n\nCurrent: ${server.fingerprint}'),
                   actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel')),
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Trust this server')),
+                    ConsoleButton(
+                        label: 'Cancel',
+                        variant: ConsoleButtonVariant.quiet,
+                        size: ConsoleButtonSize.regular,
+                        onPressed: () => Navigator.pop(context, false)),
+                    ConsoleButton(
+                        label: 'Trust this server',
+                        variant: ConsoleButtonVariant.destructive,
+                        size: ConsoleButtonSize.regular,
+                        onPressed: () => Navigator.pop(context, true)),
                   ],
                 ));
         if (trust != true || !mounted) return;
@@ -562,8 +563,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     var pending = false;
     String? error;
     try {
-      return await showDialog<RemoteHost>(
-          context: context,
+      return await showConsoleDialog<RemoteHost>(context,
           barrierDismissible: false,
           builder: (dialogContext) =>
               StatefulBuilder(builder: (context, update) {
@@ -594,8 +594,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
                 return PopScope(
                     canPop: !pending,
-                    child: ConsoleAlertDialog(
-                      title: const Text('Server password'),
+                    child: ConsoleDialog(
+                      title: 'Server password',
                       content:
                           Column(mainAxisSize: MainAxisSize.min, children: [
                         Text('Enter the password for ${server.endpoint.host}.'),
@@ -612,14 +612,18 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                             onSubmitted: (_) => connect()),
                       ]),
                       actions: [
-                        TextButton(
+                        ConsoleButton(
+                            label: 'Cancel',
+                            variant: ConsoleButtonVariant.quiet,
+                            size: ConsoleButtonSize.regular,
                             onPressed: pending
                                 ? null
-                                : () => Navigator.pop(dialogContext),
-                            child: const Text('Cancel')),
-                        TextButton(
-                            onPressed: pending ? null : connect,
-                            child: Text(pending ? 'Connecting…' : 'Connect')),
+                                : () => Navigator.pop(dialogContext)),
+                        ConsoleButton(
+                            label: pending ? 'Connecting…' : 'Connect',
+                            variant: ConsoleButtonVariant.primary,
+                            size: ConsoleButtonSize.regular,
+                            onPressed: pending ? null : connect),
                       ],
                     ));
               }));
@@ -749,16 +753,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           const SizedBox(width: 8),
           Expanded(child: Text(recording ? 'Recording' : recovery ? 'Routing recovery' : 'Playback')),
           if (!recording)
-            IconButton(
-                tooltip: 'Return to live inputs',
+            ConsoleIconButton(
+                label: 'Return to live inputs',
                 onPressed: _recorder.pending ? null : state['manual_routing'] == true || recovery
                     ? () => _go(AppTab.recorder)
                     : () => _recorder.command('return_live'),
-                icon: const Icon(Icons.input)),
-          IconButton(
-              tooltip: 'Open recorder',
+                child: const Icon(Icons.input)),
+          ConsoleIconButton(
+              label: 'Open recorder',
               onPressed: () => _go(AppTab.recorder),
-              icon: const Icon(Icons.audio_file_outlined)),
+              child: const Icon(Icons.audio_file_outlined)),
         ]);
       });
 
@@ -835,18 +839,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               onLock: () => store.locked ? store.cmdUnlock() : store.cmdLock(),
               trailing: _mixer.demo
                   ? null
-                  : TextButton(
-                      style: TextButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          alignment: Alignment.centerRight,
-                          padding: EdgeInsets.zero),
-                      onPressed: () => _go(AppTab.connect),
-                      child: Text(_mixer.connectionDisplayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: compact ? 11 : 13,
-                              color: ConsolePalette.of(context).mutedText))));
+                  : ConsoleButton(
+                      label: _mixer.connectionDisplayName,
+                      variant: ConsoleButtonVariant.quiet,
+                      onPressed: () => _go(AppTab.connect)));
         }
         return MixerToolbar(
             controller: _mixer,
@@ -883,7 +879,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         child: Text(
             'Scenes and shows are unavailable while local access limits are active. Bulk recalls can change restricted controls.',
             style: TextStyle(
-                color: ConsolePalette.of(context).text1, fontSize: 18)),
+                color: ConsolePalette.of(context).text1, fontSize: AppDesign.sectionTitle)),
       ));
     }
     if (!store.engine.connected &&
@@ -894,10 +890,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text('Mixer disconnected',
             style: TextStyle(
-                color: ConsolePalette.of(context).text1, fontSize: 18)),
-        TextButton(
-            onPressed: () => _go(AppTab.connect),
-            child: const Text('Reconnect mixer')),
+                color: ConsolePalette.of(context).text1, fontSize: AppDesign.sectionTitle)),
+        ConsoleButton(
+            label: 'Reconnect mixer',
+            variant: ConsoleButtonVariant.quiet,
+            onPressed: () => _go(AppTab.connect)),
       ]));
     }
     return switch (t) {
@@ -982,7 +979,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Widget _processingMixerControls() => LayoutBuilder(builder: (context, box) {
-        final wide = MediaQuery.sizeOf(context).width >= 700;
+        final wide = MediaQuery.sizeOf(context).width >= AppDesign.phoneBreakpoint;
         return ListenableBuilder(
             listenable: _mixer,
             builder: (context, _) {
@@ -1072,7 +1069,7 @@ class _EngineTagBanner extends StatelessWidget {
                 color: isReal
                     ? ConsolePalette.of(context).onSuccessContainer
                     : ConsolePalette.of(context).onErrorContainer,
-                fontSize: 13,
+                fontSize: AppDesign.smallLabel,
                 fontWeight: FontWeight.w700),
           ),
           if (err != null && err.isNotEmpty)
@@ -1081,7 +1078,7 @@ class _EngineTagBanner extends StatelessWidget {
               child: Text('FFI: $err',
                   style: TextStyle(
                       color: ConsolePalette.of(context).onErrorContainer,
-                      fontSize: 11)),
+                      fontSize: AppDesign.minorText)),
             ),
         ],
       ),

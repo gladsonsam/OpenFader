@@ -56,8 +56,7 @@ class _ProcessingButton extends StatelessWidget {
                     if (detail != null) ...[
                       const SizedBox(height: 3),
                       Text(detail!,
-                          style: AppDesign.type(14,
-                              color: active
+                          style: AppDesign.type(AppDesign.body, color: active
                                   ? ConsolePalette.of(context).cyan
                                   : ConsolePalette.of(context).text7))
                     ]
@@ -244,8 +243,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                 child: InkWell(
                     onTap: widget.enabled ? _focusControl : null,
                     child: Text(widget.label,
-                        style: AppDesign.type(18,
-                            color: ConsolePalette.of(context).text7)))),
+                        style: consoleTextStyle(context, ConsoleTextRole.sectionTitle, tone: ConsoleTextTone.muted, weight: FontWeight.w400)))),
             const SizedBox(width: 10),
             Expanded(child: track),
           ]));

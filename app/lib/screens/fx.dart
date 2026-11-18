@@ -398,7 +398,7 @@ class _FxCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 11, color: palette.text7))),
+                                    fontSize: AppDesign.minorText, color: palette.text7))),
                         Text(status,
                             style: TextStyle(
                                 fontSize: 10,
@@ -414,7 +414,7 @@ class _FxCard extends StatelessWidget {
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                      fontSize: 16,
+                                      fontSize: AppDesign.controlLabel,
                                       fontWeight: FontWeight.w700,
                                       color: palette.text1)))),
                       if (slot != null) ...[
@@ -438,7 +438,7 @@ class _FxCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style:
-                                TextStyle(fontSize: 11, color: palette.text7)),
+                                TextStyle(fontSize: AppDesign.minorText, color: palette.text7)),
                     ]))));
   }
 }
@@ -507,15 +507,14 @@ class _NativeFxDetail extends StatelessWidget {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(controls.first.destinationName,
           style: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w600, color: palette.text1)),
+              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text1)),
       const SizedBox(height: AppDesign.spaceMd),
       if (selector != null) ...[
         Builder(
-          builder: (anchor) => OutlinedButton.icon(
-            icon: const Icon(Icons.expand_more),
-            label: Text(
-              '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
-            ),
+          builder: (anchor) => ConsoleButton(
+            icon: Icons.expand_more,
+            label:
+                '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
             onPressed: store.destinationControlIsCurrent(selector)
                 ? () => _choose(anchor, selector)
                 : null,
@@ -629,7 +628,7 @@ class _LegacyFxDetail extends StatelessWidget {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
           style: TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w600, color: palette.text1)),
+              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text1)),
       if (store.stateControlsSupported) ...[
         const SizedBox(height: 8),
         ConsoleActionGroup(children: [
@@ -647,9 +646,9 @@ class _LegacyFxDetail extends StatelessWidget {
       ],
       const SizedBox(height: AppDesign.spaceMd),
       if (store.typeOptions.isNotEmpty)
-        OutlinedButton.icon(
-          icon: const Icon(Icons.expand_more),
-          label: Text(store.typeLabel(slot.type)),
+        ConsoleButton(
+          icon: Icons.expand_more,
+          label: store.typeLabel(slot.type),
           onPressed: () async {
             final epoch = store.controlAccessEpoch;
             final session = store.controlSession;
@@ -727,20 +726,11 @@ class _FxToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
-    return TextButton(
+    return ConsoleButton(
         onPressed: onTap,
-        style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            backgroundColor:
-                active ? activeColor ?? palette.processingPurple : palette.well,
-            foregroundColor: active ? palette.onAccent : palette.text4,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(2),
-                side: BorderSide(color: palette.lineCtl))),
-        child: Text(label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)));
+        selected: active,
+        accent: activeColor ?? palette.processingPurple,
+        label: label);
   }
 }
 
@@ -859,14 +849,14 @@ class _FxRotaryState extends State<_FxRotary> {
                       const SizedBox(height: AppDesign.spaceSm),
                       Text(widget.label,
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12, color: palette.text7)),
+                          style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
                       const SizedBox(height: AppDesign.spaceXs),
                       Text(widget.text,
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 13,
+                              fontSize: AppDesign.smallLabel,
                               fontWeight: FontWeight.w600,
                               color: palette.text1)),
                     ]))));

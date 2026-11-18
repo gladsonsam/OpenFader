@@ -1,6 +1,6 @@
-import '../palette.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import '../ui/console.dart';
 import 'package:flutter/services.dart';
 import 'controller.dart';
 import 'design.dart';
@@ -67,7 +67,7 @@ class _MixerPageState extends State<MixerPage> {
           bottom: false,
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
-            final mobile = constraints.maxWidth < 600;
+            final mobile = constraints.maxWidth < AppDesign.narrowBreakpoint;
             final sideRail = !mobile;
             return ListenableBuilder(
                 // Rebuild on prefs too so large-targets/interface changes
@@ -169,7 +169,7 @@ class _MixerPageState extends State<MixerPage> {
                                   controller: controller,
                                   onNavigate: widget.onNavigate,
                                   onHome: widget.onHome,
-                                  compact: constraints.maxWidth < 800,
+                                  compact: constraints.maxWidth < AppDesign.compactToolbarBreakpoint,
                                   onOpenTools: widget.onHome),
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
@@ -276,7 +276,9 @@ class _MixerPageState extends State<MixerPage> {
                                                                               ConsolePalette.of(context).mutedText))),
                                                               const SizedBox(
                                                                   height: 12),
-                                                              OutlinedButton(
+                                                              ConsoleButton(
+                                                                label:
+                                                                    'Edit layer',
                                                                 onPressed: () =>
                                                                     showMixerLayerEditor(
                                                                   context,
@@ -286,8 +288,6 @@ class _MixerPageState extends State<MixerPage> {
                                                                       layerChannelOptionsOf(
                                                                           controller),
                                                                 ),
-                                                                child: const Text(
-                                                                    'Edit layer'),
                                                               ),
                                                             ])
                                                       : Text(

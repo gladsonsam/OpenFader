@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart' as tray;
 import 'package:window_manager/window_manager.dart';
 
-import '../ui/overlays/console_dialogs.dart';
+import '../ui/console.dart';
 
 /// Process-owned window/tray integration. Hiding never disposes the shell or
 /// changes its connection, recorder, or polling cadence.
@@ -299,15 +299,16 @@ class DesktopIntegration {
       }
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
-        await showDialog<void>(
-            context: context,
-            builder: (context) => ConsoleAlertDialog(
-                  title: const Text('Could not quit OpenFader'),
-                  content: Text('$error'),
+        await showConsoleDialog<void>(context,
+            builder: (context) => ConsoleDialog(
+                  title: 'Could not quit OpenFader',
+                  message: '$error',
                   actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('OK')),
+                    ConsoleButton(
+                        label: 'OK',
+                        variant: ConsoleButtonVariant.primary,
+                        size: ConsoleButtonSize.regular,
+                        onPressed: () => Navigator.pop(context)),
                   ],
                 ));
       }

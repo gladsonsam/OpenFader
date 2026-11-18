@@ -60,26 +60,13 @@ class MixerToolbar extends StatelessWidget {
                             Expanded(
                                 child: Align(
                                     alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                        style: TextButton.styleFrom(
-                                            alignment: Alignment.centerRight,
-                                            padding: EdgeInsets.zero,
-                                            backgroundColor:
-                                                Colors.transparent),
+                                    child: ConsoleButton(
+                                        variant: ConsoleButtonVariant.quiet,
                                         onPressed: () => onNavigate(
                                             MixerDestination.connect),
-                                        child: Text(
-                                            controller.connected
-                                                ? controller
-                                                    .connectionDisplayName
-                                                : 'Disconnected',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: mixerType(
-                                                context, compact ? 11 : 13,
-                                                color:
-                                                    ConsolePalette.of(context)
-                                                        .mutedText))))),
+                                        label: controller.connected
+                                            ? controller.connectionDisplayName
+                                            : 'Disconnected'))),
                         ])
                       : Row(children: [
                           // Equal constrained side lanes keep the numeric value centered
@@ -215,7 +202,7 @@ class MixerToolbar extends StatelessWidget {
                       padding:
                           compact ? EdgeInsets.zero : AppDesign.controlPadding),
                   child: Text(pageTitle == 'Tools' ? 'Mixer' : 'Tools',
-                      style: compact ? const TextStyle(fontSize: 12) : null))),
+                      style: compact ? const TextStyle(fontSize: AppDesign.caption) : null))),
         ]));
   }
 }

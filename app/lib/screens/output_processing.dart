@@ -118,23 +118,22 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                             backgroundColor: palette.panel,
                             leading: widget.embedded
                                 ? null
-                                : IconButton(
+                                : ConsoleIconButton(
                                     onPressed: widget.onClose,
-                                    tooltip: 'Mixer',
-                                    icon: const Icon(Icons.arrow_back),
+                                    label: 'Mixer',
+                                    child: const Icon(Icons.arrow_back),
                                   ),
                             title: focused == null
                                 ? const Text('Output processing')
-                                : TextButton(
+                                : ConsoleButton(
+                                    variant: ConsoleButtonVariant.quiet,
                                     onPressed: !_focusPending &&
                                             store.destinationControlIsCurrent(
                                                 focused)
                                         ? () {
                                             final captured = focused;
-                                            showDialog<void>(
-                                                animationStyle:
-                                                    AnimationStyle.noAnimation,
-                                                context: context,
+                                            showConsoleDialog<void>(
+                                                context,
                                                 builder: (_) =>
                                                     DestinationControlEditor(
                                                       accessEpoch: () => store
@@ -159,9 +158,8 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                                     ));
                                           }
                                         : null,
-                                    child: Text(
+                                    label:
                                         '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                                        overflow: TextOverflow.ellipsis),
                                   ),
                           ),
                     body: SafeArea(
@@ -458,9 +456,10 @@ class _ControlTileState extends State<_ControlTile> {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: TextButton(
+              child: ConsoleButton(
+                  variant: ConsoleButtonVariant.quiet,
                   onPressed: () => widget.onFocus(control, null, _pending),
-                  child: Text(control.label, textAlign: TextAlign.center)),
+                  label: control.label),
             ),
             Expanded(
               child: RotatedBox(
@@ -482,12 +481,11 @@ class _ControlTileState extends State<_ControlTile> {
             Row(
               children: [
                 Expanded(
-                    child: TextButton(
+                    child: ConsoleButton(
+                        variant: ConsoleButtonVariant.quiet,
                         onPressed: () =>
                             widget.onFocus(control, null, _pending),
-                        child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(control.label)))),
+                        label: control.label)),
               ],
             ),
             ?slider,

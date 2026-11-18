@@ -172,9 +172,7 @@ class _EqTabState extends State<_EqTab> {
       constraints: const BoxConstraints(minHeight: AppDesign.touchTarget),
       child: Center(
           child: Text('Band ${band.band}',
-              style: AppDesign.type(16,
-                  color: ConsolePalette.of(context).text7,
-                  weight: FontWeight.w600))),
+              style: consoleTextStyle(context, ConsoleTextRole.controlLabel, tone: ConsoleTextTone.muted, weight: FontWeight.w600))),
     );
   }
 
@@ -201,7 +199,7 @@ class _EqTabState extends State<_EqTab> {
   Widget build(BuildContext context) {
     final store = widget.store;
     final eq = store.eq;
-    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final wide = MediaQuery.sizeOf(context).width >= AppDesign.phoneBreakpoint;
     final selected =
         eq.bands.where((b) => b.band == eq.selectedBand).firstOrNull ??
             eq.bands.firstOrNull;
@@ -256,8 +254,7 @@ class _EqTabState extends State<_EqTab> {
               Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(eq.responseNote!,
-                      style: AppDesign.type(14,
-                          color: ConsolePalette.of(context).text7))),
+                      style: consoleTextStyle(context, ConsoleTextRole.body, tone: ConsoleTextTone.muted))),
           ]),
           graph: Opacity(
               opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
@@ -340,7 +337,7 @@ class _EqTabState extends State<_EqTab> {
                                                     : null,
                                                 borderRadius: U4.rBtn),
                                             child: Text(showMobileShapes ? '${band.band}' : 'Band ${band.band}',
-                                                style: AppDesign.type(15,
+                                                style: AppDesign.type(AppDesign.body,
                                                     color: eq.selectedBand ==
                                                             band.band
                                                         ? ConsolePalette.of(context).cyan
@@ -480,13 +477,13 @@ class _RtaSettings extends StatelessWidget {
                 ? null
                 : () async {
                     var value = row.value!;
-                    final selected = await showDialog<double>(
-                      animationStyle: AnimationStyle.noAnimation,
-                      context: context,
+                    final selected = await showConsoleDialog<double>(
+                      context,
                       builder: (dialogContext) => StatefulBuilder(
                           builder: (dialogContext, setState) =>
-                              ConsoleAlertDialog(
-                                title: Text('Shared RTA ${row.label}'),
+                              ConsoleDialog(
+                                title: 'Shared RTA ${row.label}',
+                                scrollable: false,
                                 content: Slider(
                                   value: value.clamp(row.min!, row.max!),
                                   min: row.min!,
@@ -496,14 +493,18 @@ class _RtaSettings extends StatelessWidget {
                                       setState(() => value = next),
                                 ),
                                 actions: [
-                                  TextButton(
+                                  ConsoleButton(
+                                      variant: ConsoleButtonVariant.quiet,
+                                      size: ConsoleButtonSize.regular,
                                       onPressed: () =>
                                           Navigator.pop(dialogContext),
-                                      child: const Text('Cancel')),
-                                  TextButton(
+                                      label: 'Cancel'),
+                                  ConsoleButton(
+                                      variant: ConsoleButtonVariant.primary,
+                                      size: ConsoleButtonSize.regular,
                                       onPressed: () =>
                                           Navigator.pop(dialogContext, value),
-                                      child: const Text('Apply')),
+                                      label: 'Apply'),
                                 ],
                               )),
                     );

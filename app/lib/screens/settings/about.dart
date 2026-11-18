@@ -94,24 +94,10 @@ class _AboutDetail extends StatelessWidget {
             _LinkRow(
               label: 'Licences & credits',
               icon: Icons.chevron_right,
-              onTap: () => showDialog<void>(
-                animationStyle: AnimationStyle.noAnimation,
-                context: context,
-                builder: (context) => ConsoleAlertDialog(
-                  backgroundColor: ConsolePalette.of(context).chip,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: ConsolePalette.of(context).lineCtl),
-                  ),
-                  title: Text(
-                    'Licences & credits',
-                    style: TextStyle(
-                      fontFamily: U4.font,
-                      fontSize: 23,
-                      fontWeight: FontWeight.w600,
-                      color: ConsolePalette.of(context).text1,
-                    ),
-                  ),
+              onTap: () => showConsoleDialog<void>(
+                context,
+                builder: (context) => ConsoleDialog(
+                  title: 'Licences & credits',
                   content: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,16 +138,11 @@ class _AboutDetail extends StatelessWidget {
                     ],
                   ),
                   actions: [
-                    TextButton(
+                    ConsoleButton(
+                      label: 'Close',
+                      variant: ConsoleButtonVariant.quiet,
+                      size: ConsoleButtonSize.regular,
                       onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'Close',
-                        style: TextStyle(
-                          fontFamily: U4.font,
-                          fontSize: AppDesign.rowLabel,
-                          color: ConsolePalette.of(context).text1,
-                        ),
-                      ),
                     ),
                   ],
                 ),

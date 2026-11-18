@@ -62,7 +62,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
                   Text('Diagnostics · tick ${store.tick}',
                       style: TextStyle(
                           fontFamily: 'monospace',
-                          fontSize: 15,
+                          fontSize: AppDesign.body,
                           fontWeight: FontWeight.w700,
                           color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 8),
@@ -79,7 +79,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
                   Text('meters',
                       style: TextStyle(
                           fontFamily: 'monospace',
-                          fontSize: 12,
+                          fontSize: AppDesign.caption,
                           color: ConsolePalette.of(context).cyan)),
                   const SizedBox(height: 4),
                   Container(
@@ -105,13 +105,13 @@ class _U4DebugPageState extends State<U4DebugPage> {
                     Text(s.title,
                         style: TextStyle(
                             fontFamily: 'monospace',
-                            fontSize: 12,
+                            fontSize: AppDesign.caption,
                             color: ConsolePalette.of(context).cyan)),
                     for (final l in s.lines)
                       Text(l,
                           style: TextStyle(
                               fontFamily: 'monospace',
-                              fontSize: 11,
+                              fontSize: AppDesign.minorText,
                               height: 1.45,
                               color: ConsolePalette.of(context).text1)),
                     const SizedBox(height: 8),

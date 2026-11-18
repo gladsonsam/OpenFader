@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
 import '../theme.dart';
+import '../ui/controls/console_icon_button.dart';
 import '../mixer/design.dart';
 
 // Console toolbar modes for the active tile state.
@@ -99,10 +100,10 @@ class U4ShellHeader extends StatelessWidget {
                   BorderSide(color: ConsolePalette.of(context).lineHeader))),
       child: Row(children: [
         if (showBack) ...[
-          IconButton(
-              tooltip: 'Back to mixer',
+          ConsoleIconButton(
+              label: 'Back to mixer',
               onPressed: onBack,
-              icon: Icon(Icons.chevron_left,
+              child: Icon(Icons.chevron_left,
                   color: ConsolePalette.of(context).text1)),
           const SizedBox(width: 6),
         ],
@@ -131,20 +132,20 @@ class U4ShellHeader extends StatelessWidget {
         )),
         const SizedBox(width: 4),
         if (isChannel && onPrevChannel != null && onNextChannel != null) ...[
-          IconButton(
-              tooltip: 'Previous channel',
+          ConsoleIconButton(
+              label: 'Previous channel',
               onPressed: onPrevChannel,
-              icon: const Icon(Icons.chevron_left)),
-          IconButton(
-              tooltip: 'Next channel',
+              child: const Icon(Icons.chevron_left)),
+          ConsoleIconButton(
+              label: 'Next channel',
               onPressed: onNextChannel,
-              icon: const Icon(Icons.chevron_right)),
+              child: const Icon(Icons.chevron_right)),
         ],
         if (locked)
-          IconButton(
-              tooltip: 'Unlock channel',
+          ConsoleIconButton(
+              label: 'Unlock channel',
               onPressed: onUnlock,
-              icon: Icon(Icons.lock_outline,
+              child: Icon(Icons.lock_outline,
                   color: ConsolePalette.of(context).meterAmber)),
         _HeaderTool(
             label: connAria,
@@ -194,15 +195,11 @@ class _HeaderTool extends StatelessWidget {
   Widget build(BuildContext context) => SizedBox(
       width: 44,
       height: 44,
-      child: IconButton(
-          tooltip: label,
+      child: ConsoleIconButton(
+          label: label,
           onPressed: onTap,
-          style: IconButton.styleFrom(
-              backgroundColor: active
-                  ? ConsolePalette.of(context).control
-                  : Colors.transparent,
-              shape: const RoundedRectangleBorder(borderRadius: U4.rBtn)),
-          icon: Stack(clipBehavior: Clip.none, children: [
+          selected: active,
+          child: Stack(clipBehavior: Clip.none, children: [
             if (artwork == 'meters')
               Icon(Icons.graphic_eq, color: ConsolePalette.of(context).text7)
             else if (artwork == 'FX')

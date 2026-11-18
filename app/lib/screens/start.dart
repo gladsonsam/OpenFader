@@ -244,7 +244,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide = MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Scaffold(
       backgroundColor: ConsolePalette.of(context).background,
       body: SafeArea(
@@ -315,10 +315,11 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                 Positioned(
                   top: wide ? 32 : 18,
                   left: wide ? 40 : 18,
-                  child: TextButton.icon(
+                  child: ConsoleButton(
+                    label: 'Mixer',
+                    icon: Icons.arrow_back,
+                    variant: ConsoleButtonVariant.quiet,
                     onPressed: widget.onBackToMixer,
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Mixer'),
                   ),
                 ),
               Positioned(
@@ -356,9 +357,8 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
 
   void _showManualAdd() {
     if (_store.probing) return;
-    showDialog<void>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
+    showConsoleDialog<void>(
+      context,
       builder: (context) => _ManualAddDialog(
         onConnectServer: widget.onConnectServer,
         onSubmit: (addr, name, mixerType) {
@@ -490,11 +490,11 @@ class _Box extends StatelessWidget {
                           style: AppDesign.type(wide ? 18 : 15,
                               color: ConsolePalette.of(context).mute)),
                       if (onRetry != null)
-                        TextButton(
+                        ConsoleButton(
+                          label: 'Retry connection',
+                          variant: ConsoleButtonVariant.quiet,
+                          accent: ConsolePalette.of(context).lime,
                           onPressed: onRetry,
-                          style: TextButton.styleFrom(
-                              foregroundColor: ConsolePalette.of(context).lime),
-                          child: const Text('Retry connection'),
                         ),
                     ],
                   ),
@@ -607,23 +607,13 @@ class _DeviceRow extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(
                 minHeight: wide ? 56 : 44, minWidth: wide ? 124 : 92),
-            child: ElevatedButton(
+            child: ConsoleButton(
+              label: label,
+              variant: primary
+                  ? ConsoleButtonVariant.primary
+                  : ConsoleButtonVariant.secondary,
+              size: ConsoleButtonSize.large,
               onPressed: busy || connecting ? null : onConnect,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: primary
-                      ? ConsolePalette.of(context).lime
-                      : ConsolePalette.of(context).control,
-                  foregroundColor: primary
-                      ? ConsolePalette.of(context).onAccent
-                      : ConsolePalette.of(context).text,
-                  disabledBackgroundColor: ConsolePalette.of(context).control,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6)),
-                  padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 14),
-                  textStyle: AppDesign.type(wide ? 24 : 18,
-                      weight: FontWeight.w600,
-                      color: ConsolePalette.of(context).text)),
-              child: Text(label),
             ),
           ),
         ],
@@ -728,7 +718,7 @@ class _WorkOffline extends StatelessWidget {
             minimumSize: const Size(200, 56),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             textStyle: AppDesign.type(
-                MediaQuery.sizeOf(context).width > 900 ? 26 : 20,
+                MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint ? 26 : 20,
                 weight: FontWeight.w400,
                 color: ConsolePalette.of(context).text)),
         child: const Row(
@@ -817,8 +807,8 @@ class _IconButton extends StatelessWidget {
         child: Tooltip(
           message: tooltip,
           child: SizedBox(
-            width: MediaQuery.sizeOf(context).width > 900 ? 50 : 44,
-            height: MediaQuery.sizeOf(context).width > 900 ? 50 : 44,
+            width: MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint ? 50 : 44,
+            height: MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint ? 50 : 44,
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: onTap,
@@ -852,7 +842,7 @@ class _Dialog extends StatelessWidget {
                   Row(children: [
                     Expanded(
                         child: Text(title,
-                            style: AppDesign.type(24,
+                            style: AppDesign.type(AppDesign.entryValue,
                                 weight: FontWeight.w600,
                                 color: ConsolePalette.of(context).text))),
                     _IconButton(
@@ -942,12 +932,12 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                   : _mixerType == MixerType.dl32s
                       ? 'Connects directly. Loading mixer state can take up to 90 seconds.'
                       : 'Automatically identifies supported mixers at this address.',
-              style: AppDesign.type(14,
+              style: AppDesign.type(AppDesign.body,
                   color: ConsolePalette.of(context).mutedText),
             ),
             const SizedBox(height: 14),
             Text('IP address or hostname',
-                style: AppDesign.type(18,
+                style: AppDesign.type(AppDesign.sectionTitle,
                     color: ConsolePalette.of(context).mutedText)),
             const SizedBox(height: 6),
             TextField(
@@ -955,7 +945,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
               maxLines: 1,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              style: AppDesign.type(19, color: ConsolePalette.of(context).text),
+              style: AppDesign.type(AppDesign.sectionTitle, color: ConsolePalette.of(context).text),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: ConsolePalette.of(context).well,
@@ -979,13 +969,13 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             const SizedBox(height: 14),
             if (_mixerType != MixerType.server) ...[
               Text('Name (optional)',
-                  style: AppDesign.type(18,
+                  style: AppDesign.type(AppDesign.sectionTitle,
                       color: ConsolePalette.of(context).mutedText)),
               const SizedBox(height: 6),
               TextField(
                 controller: _name,
                 style:
-                    AppDesign.type(19, color: ConsolePalette.of(context).text),
+                    AppDesign.type(AppDesign.sectionTitle, color: ConsolePalette.of(context).text),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: ConsolePalette.of(context).well,
@@ -1010,23 +1000,17 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!,
-                  style: AppDesign.type(17,
+                  style: AppDesign.type(AppDesign.rowLabel,
                       color: ConsolePalette.of(context).mute)),
             ],
             const SizedBox(height: 18),
             SizedBox(
               height: 52,
-              child: ElevatedButton(
+              child: ConsoleButton(
+                label: 'Add mixer',
+                variant: ConsoleButtonVariant.primary,
+                size: ConsoleButtonSize.large,
                 onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: ConsolePalette.of(context).lime,
-                    foregroundColor: ConsolePalette.of(context).onAccent,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6)),
-                    textStyle: AppDesign.type(19,
-                        weight: FontWeight.w600,
-                        color: ConsolePalette.of(context).text)),
-                child: const Text('Add mixer'),
               ),
             ),
           ],

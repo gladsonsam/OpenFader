@@ -1,183 +1,42 @@
 {
- "app/lib/boot/browser_connection_gate.dart": {
-  "numeric-font-size": 1,
-  "raw-button": 1
- },
  "app/lib/boot/launch_screen.dart": {
-  "numeric-font-size": 6,
-  "raw-button": 1
- },
- "app/lib/desktop/desktop_integration_native.dart": {
-  "raw-button": 1,
-  "raw-dialog": 2
- },
- "app/lib/main.dart": {
-  "raw-button": 1
+  "numeric-font-size": 1
  },
  "app/lib/mixer/components/banks.dart": {
-  "numeric-font-size": 1,
-  "raw-button": 6,
-  "raw-dialog": 3,
-  "raw-icon-button": 5
+  "raw-button": 1
  },
  "app/lib/mixer/components/fader.dart": {
   "numeric-breakpoint": 1
  },
- "app/lib/mixer/components/layers.dart": {
-  "raw-button": 4,
-  "raw-dialog": 4,
-  "raw-icon-button": 1
- },
  "app/lib/mixer/components/nameplate.dart": {
   "color-literal": 1
- },
- "app/lib/mixer/components/strip.dart": {
-  "numeric-font-size": 2,
-  "raw-button": 1
  },
  "app/lib/mixer/components/toggle.dart": {
   "raw-button": 1
  },
  "app/lib/mixer/components/toolbar.dart": {
-  "numeric-font-size": 1,
-  "raw-button": 2
+  "raw-button": 1
  },
  "app/lib/mixer/controller.dart": {
   "color-literal": 1
  },
- "app/lib/mixer/page.dart": {
-  "numeric-breakpoint": 2,
-  "raw-button": 1
- },
- "app/lib/screens/channel.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 4
- },
- "app/lib/screens/channel_controls.dart": {
-  "raw-button": 1
- },
- "app/lib/screens/channel_toolbar.dart": {
-  "numeric-font-size": 4,
-  "raw-button": 1
- },
- "app/lib/screens/connection.dart": {
-  "numeric-font-size": 22
- },
- "app/lib/screens/console_controls.dart": {
-  "raw-button": 1,
-  "raw-dialog": 4,
-  "raw-icon-button": 1
- },
- "app/lib/screens/debug.dart": {
-  "numeric-font-size": 4
- },
- "app/lib/screens/debug_diagnostics.dart": {
+ "app/lib/screens/fx.dart": {
   "numeric-font-size": 2
  },
- "app/lib/screens/fx.dart": {
-  "numeric-font-size": 10,
-  "raw-button": 3
- },
  "app/lib/screens/meters.dart": {
-  "numeric-font-size": 4,
-  "raw-button": 3,
-  "raw-dialog": 2
- },
- "app/lib/screens/output_processing.dart": {
-  "raw-button": 3,
-  "raw-dialog": 1,
-  "raw-icon-button": 1
- },
- "app/lib/screens/output_processing_graph.dart": {
-  "numeric-font-size": 1
- },
- "app/lib/screens/processing_assignments.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 8,
-  "raw-dialog": 2
- },
- "app/lib/screens/processing_dynamics.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 3
- },
- "app/lib/screens/processing_eq.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 3,
-  "raw-button": 2,
-  "raw-dialog": 2
- },
- "app/lib/screens/processing_input.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 11,
-  "raw-button": 6,
-  "raw-dialog": 9
- },
- "app/lib/screens/processing_workspace.dart": {
   "numeric-font-size": 2
  },
  "app/lib/screens/routing.dart": {
-  "numeric-font-size": 7,
-  "raw-button": 11,
-  "raw-dialog": 2,
-  "raw-icon-button": 1
+  "raw-button": 2
  },
  "app/lib/screens/scenes.dart": {
-  "numeric-font-size": 17,
-  "raw-button": 7,
-  "raw-icon-button": 1
- },
- "app/lib/screens/settings.dart": {
-  "raw-icon-button": 1
- },
- "app/lib/screens/settings/about.dart": {
-  "numeric-font-size": 1,
-  "raw-button": 1,
-  "raw-dialog": 2
- },
- "app/lib/screens/settings/layers.dart": {
-  "raw-button": 1
- },
- "app/lib/screens/settings/mixer_setup.dart": {
-  "raw-button": 1,
-  "raw-dialog": 1
- },
- "app/lib/screens/settings/strip_layout.dart": {
   "numeric-font-size": 1
  },
- "app/lib/screens/settings_access.dart": {
-  "numeric-font-size": 3,
-  "raw-button": 5
- },
- "app/lib/screens/settings_access_passcode.dart": {
-  "raw-button": 2,
-  "raw-dialog": 2
- },
  "app/lib/screens/start.dart": {
-  "numeric-breakpoint": 4,
-  "numeric-font-size": 8,
-  "raw-button": 7,
-  "raw-dialog": 1
- },
- "app/lib/shell/app_router.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 4,
-  "raw-button": 7,
-  "raw-dialog": 6,
-  "raw-icon-button": 2
+  "raw-button": 3
  },
  "app/lib/shell/bank_rail.dart": {
   "color-literal": 4
- },
- "app/lib/shell/header_bar.dart": {
-  "raw-icon-button": 5
- },
- "app/lib/shell/scene_button.dart": {
-  "numeric-font-size": 2
- },
- "app/lib/shell/workspace_home.dart": {
-  "numeric-breakpoint": 2,
-  "numeric-font-size": 2,
-  "raw-button": 5
  },
  "app/lib/widgets/channel/eq_graph.dart": {
   "numeric-breakpoint": 2

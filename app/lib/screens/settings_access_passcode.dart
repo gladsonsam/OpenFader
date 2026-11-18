@@ -12,9 +12,8 @@ Future<void> editAccessPasscode(
   AccessPasscodeAction action,
 ) async {
   final epoch = store.controlAccessEpoch;
-  final values = await showDialog<_Passcodes>(
-    animationStyle: AnimationStyle.noAnimation,
-    context: context,
+  final values = await showConsoleDialog<_Passcodes>(
+    context,
     builder: (_) => _AccessPasscodeDialog(action: action),
   );
   if (values == null) return;
@@ -68,10 +67,9 @@ class _AccessPasscodeDialogState extends State<_AccessPasscodeDialog> {
       AccessPasscodeAction.change => 'Change passcode',
       AccessPasscodeAction.remove => 'Remove passcode',
     };
-    final palette = ConsolePalette.of(context);
-    return ConsoleAlertDialog(
-      backgroundColor: palette.background,
-      title: Text(title),
+    return ConsoleDialog(
+      title: title,
+      scrollable: false,
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -116,17 +114,21 @@ class _AccessPasscodeDialogState extends State<_AccessPasscodeDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          label: 'Cancel',
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
         ),
-        TextButton(
+        ConsoleButton(
+          label: title,
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context, (
             current: current.text,
             next: next.text,
             confirmation: confirmation.text
           )),
-          child: Text(title),
         ),
       ],
     );

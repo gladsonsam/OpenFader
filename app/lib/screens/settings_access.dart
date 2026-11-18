@@ -46,13 +46,13 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
     final blocked = widget.store.blockedAccess;
     final titleStyle = TextStyle(
         fontFamily: U4.font,
-        fontSize: 18,
+        fontSize: AppDesign.sectionTitle,
         fontWeight: FontWeight.w600,
         color: palette.text1);
     final detailStyle = TextStyle(
-        fontFamily: U4.font, fontSize: 14, color: palette.text7, height: 1.4);
+        fontFamily: U4.font, fontSize: AppDesign.body, color: palette.text7, height: 1.4);
     return DefaultTextStyle(
-      style: TextStyle(fontFamily: U4.font, color: palette.text1, fontSize: 16),
+      style: TextStyle(fontFamily: U4.font, color: palette.text1, fontSize: AppDesign.controlLabel),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('Control what can be edited on this device.', style: detailStyle),
         const SizedBox(height: 24),
@@ -71,7 +71,8 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
               Expanded(
                   child: Text(locked ? 'Limits locked' : 'Limits unlocked',
                       style: titleStyle)),
-              OutlinedButton(
+              ConsoleButton(
+                label: locked ? 'Unlock' : 'Lock',
                 onPressed: _saving
                     ? null
                     : () {
@@ -83,7 +84,6 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
                           _passcode(AccessPasscodeAction.set);
                         }
                       },
-                child: Text(locked ? 'Unlock' : 'Lock'),
               ),
             ]),
             const SizedBox(height: 6),
@@ -92,16 +92,18 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
             if (!locked && widget.store.accessHasPasscode) ...[
               const SizedBox(height: 8),
               ConsoleActionGroup(children: [
-                TextButton(
+                ConsoleButton(
+                    label: 'Change passcode',
+                    variant: ConsoleButtonVariant.quiet,
                     onPressed: _saving
                         ? null
-                        : () => _passcode(AccessPasscodeAction.change),
-                    child: const Text('Change passcode')),
-                TextButton(
+                        : () => _passcode(AccessPasscodeAction.change)),
+                ConsoleButton(
+                    label: 'Remove passcode',
+                    variant: ConsoleButtonVariant.quiet,
                     onPressed: _saving
                         ? null
-                        : () => _passcode(AccessPasscodeAction.remove),
-                    child: const Text('Remove passcode')),
+                        : () => _passcode(AccessPasscodeAction.remove)),
               ]),
             ],
           ]),
@@ -115,18 +117,18 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
             children: [
               Text('Restrict controls', style: titleStyle),
               ConsoleActionGroup(children: [
-                OutlinedButton(
+                ConsoleButton(
+                    label: 'Restrict all',
                     onPressed: _saving || locked
                         ? null
                         : () =>
-                            _run(() => widget.store.setAllAccessBlocked(true)),
-                    child: const Text('Restrict all')),
-                OutlinedButton(
+                            _run(() => widget.store.setAllAccessBlocked(true))),
+                ConsoleButton(
+                    label: 'Clear all',
                     onPressed: _saving || locked
                         ? null
                         : () =>
-                            _run(() => widget.store.setAllAccessBlocked(false)),
-                    child: const Text('Clear all')),
+                            _run(() => widget.store.setAllAccessBlocked(false))),
               ]),
             ]),
         const SizedBox(height: 8),

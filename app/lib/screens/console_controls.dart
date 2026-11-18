@@ -4,6 +4,7 @@ import '../core/console_controls.dart';
 import '../design.dart';
 import '../palette.dart';
 import '../ui/controls/console_button.dart';
+import '../ui/controls/console_icon_button.dart';
 import '../ui/overlays/console_dialogs.dart';
 
 /// Browse only the controls and values reported by the connected provider.
@@ -108,16 +109,11 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
     var selectedNullAction = false;
     if (item.kind == ConsoleControlKind.bitset) {
       var draft = item.value! as int;
-      next = await showDialog<int>(
-        context: context,
+      next = await showConsoleDialog<int>(
+        context,
         builder: (context) => StatefulBuilder(
-          builder: (context, setState) => ConsoleAlertDialog(
-            backgroundColor: ConsolePalette.of(context).panel,
-            title: Text(
-              item.label,
-              style: AppDesign.type(AppDesign.dialogTitle),
-            ),
-            scrollable: true,
+          builder: (context, setState) => ConsoleDialog(
+            title: item.label,
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -154,12 +150,10 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
       next = !(item.value! as bool);
     } else if (item.kind == ConsoleControlKind.enumeration ||
         item.kind == ConsoleControlKind.action) {
-      final selected = await showDialog<ConsoleControlChoice>(
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          backgroundColor: ConsolePalette.of(context).panel,
-          title: Text(item.label, style: AppDesign.type(AppDesign.dialogTitle)),
-          scrollable: true,
+      final selected = await showConsoleDialog<ConsoleControlChoice>(
+        context,
+        builder: (context) => ConsoleDialog(
+          title: item.label,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -262,17 +256,18 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
                         spacing: AppDesign.spaceXs,
                         children: [
                           for (final crumb in store.breadcrumbs)
-                            TextButton(
+                            ConsoleButton(
+                              variant: ConsoleButtonVariant.quiet,
                               onPressed: () => store.open(crumb.path),
-                              child: Text(crumb.label),
+                              label: crumb.label,
                             ),
                         ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Refresh controls',
+                    ConsoleIconButton(
+                      label: 'Refresh controls',
                       onPressed: store.loading ? null : store.refresh,
-                      icon: const Icon(Icons.refresh),
+                      child: const Icon(Icons.refresh),
                     ),
                   ],
                 ),

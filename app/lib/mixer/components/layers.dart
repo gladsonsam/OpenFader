@@ -77,12 +77,10 @@ Future<void> shareMixerLayers(BuildContext context) async {
 /// show inline error feedback and change nothing.
 Future<void> showMixerLayerImport(BuildContext context) async {
   final editing = TextEditingController();
-  final pasted = await showDialog<String>(
-    animationStyle: AnimationStyle.noAnimation,
-    context: context,
-    builder: (context) => ConsoleAlertDialog(
-      backgroundColor: ConsolePalette.of(context).chip,
-      title: Text('Import layers', style: mixerType(context, 18)),
+  final pasted = await showConsoleDialog<String>(
+    context,
+    builder: (context) => ConsoleDialog(
+      title: 'Import layers',
       content: TextField(
         controller: editing,
         maxLines: 6,
@@ -92,13 +90,17 @@ Future<void> showMixerLayerImport(BuildContext context) async {
         ),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          label: 'Cancel',
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context),
-          child: Text('Cancel', style: mixerType(context, 16)),
         ),
-        TextButton(
+        ConsoleButton(
+          label: 'Import',
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context, editing.text),
-          child: Text('Import', style: mixerType(context, 16)),
         ),
       ],
     ),
@@ -119,12 +121,10 @@ Future<void> showMixerLayerImport(BuildContext context) async {
 Future<void> showMixerLayerRename(
     BuildContext context, MixerLayer layer) async {
   final editing = TextEditingController(text: layer.name);
-  final name = await showDialog<String>(
-    animationStyle: AnimationStyle.noAnimation,
-    context: context,
-    builder: (context) => ConsoleAlertDialog(
-      backgroundColor: ConsolePalette.of(context).chip,
-      title: Text('Rename layer', style: mixerType(context, 18)),
+  final name = await showConsoleDialog<String>(
+    context,
+    builder: (context) => ConsoleDialog(
+      title: 'Rename layer',
       content: TextField(
         controller: editing,
         autofocus: true,
@@ -133,13 +133,17 @@ Future<void> showMixerLayerRename(
         onSubmitted: (value) => Navigator.pop(context, value),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          label: 'Cancel',
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context),
-          child: Text('Cancel', style: mixerType(context, 16)),
         ),
-        TextButton(
+        ConsoleButton(
+          label: 'Save',
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context, editing.text),
-          child: Text('Save', style: mixerType(context, 16)),
         ),
       ],
     ),
@@ -541,9 +545,9 @@ class _LayerEditorState extends State<_LayerEditor> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            tooltip: 'Remove from layer',
-                            icon: const Icon(Icons.remove_circle_outline,
+                          ConsoleIconButton(
+                            label: 'Remove from layer',
+                            child: const Icon(Icons.remove_circle_outline,
                                 size: 20),
                             onPressed: () {
                               final keys = [...layer.channelKeys]..remove(key);

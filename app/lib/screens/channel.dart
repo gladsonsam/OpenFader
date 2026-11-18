@@ -424,7 +424,7 @@ class _ChannelPageState extends State<ChannelPage> {
           listenable: Listenable.merge([widget.store, PrefsService.instance]),
           builder: (context, _) {
             final store = widget.store;
-            final wide = MediaQuery.sizeOf(context).width >= 700;
+            final wide = MediaQuery.sizeOf(context).width >= AppDesign.phoneBreakpoint;
             final selectedTab = _availableTabs(store).contains(store.tab)
                 ? store.tab
                 : ChannelTab.input;
@@ -710,7 +710,7 @@ class _MenuRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 24,
+                        fontSize: AppDesign.entryValue,
                         fontWeight: FontWeight.w600,
                         color: active
                             ? ConsolePalette.of(context).cyan
@@ -723,7 +723,7 @@ class _MenuRow extends StatelessWidget {
                     child: Text(status ? 'On' : 'Off',
                         style: TextStyle(
                             fontFamily: U4.font,
-                            fontSize: 13,
+                            fontSize: AppDesign.smallLabel,
                             fontWeight: FontWeight.w600,
                             color: ConsolePalette.of(context).text7)),
                   ),
@@ -786,7 +786,7 @@ class _NavPreview extends StatelessWidget {
                   textAlign: TextAlign.right,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 12,
+                      fontSize: AppDesign.caption,
                       fontWeight: FontWeight.w700,
                       color: phantom
                           ? ConsolePalette.of(context).phantom
@@ -887,7 +887,7 @@ class _BottomCell extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 15,
+                      fontSize: AppDesign.body,
                       fontWeight: FontWeight.w600,
                       color: active
                           ? ConsolePalette.of(context).cyan

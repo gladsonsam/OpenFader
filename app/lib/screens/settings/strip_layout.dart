@@ -110,7 +110,7 @@ class _StripLayoutSection extends StatelessWidget {
                 'Strip order (top to bottom)',
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: 15,
+                  fontSize: AppDesign.body,
                   color: ConsolePalette.of(context).text7,
                 ),
               ),

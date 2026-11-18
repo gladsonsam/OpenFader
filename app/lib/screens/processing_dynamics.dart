@@ -302,7 +302,7 @@ class _AdvancedDynamics extends StatelessWidget {
           child: Row(children: [
             Expanded(
                 child: Text(label,
-                    style: AppDesign.type(14, color: palette.text1))),
+                    style: consoleTextStyle(context, ConsoleTextRole.body))),
             Switch(
                 value: value ?? false,
                 onChanged:
@@ -356,14 +356,14 @@ class _AdvancedDynamics extends StatelessWidget {
         child: ExpansionTile(
             key: PageStorageKey('advanced-dynamics-${store.stripKey}'),
             title: Text('Advanced',
-                style: AppDesign.type(14, color: palette.text7)),
+                style: consoleTextStyle(context, ConsoleTextRole.body, tone: ConsoleTextTone.muted)),
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),
             childrenPadding: const EdgeInsets.all(8),
             children: [
               LayoutBuilder(builder: (context, bounds) {
                 final columns = compact
                     ? 1
-                    : bounds.maxWidth >= 900
+                    : bounds.maxWidth >= AppDesign.settingsSidebarBreakpoint
                         ? 3
                         : 2;
                 const gap = 8.0;
@@ -433,7 +433,7 @@ class _ParameterChoices extends StatelessWidget {
               PopupMenuItem(
                   value: choice.value,
                   child: Text(choice.label,
-                      style: AppDesign.type(16, color: palette.text1))),
+                      style: consoleTextStyle(context, ConsoleTextRole.controlLabel))),
           ],
           child: Container(
               constraints: BoxConstraints(minHeight: !compact ? 64 : 44),

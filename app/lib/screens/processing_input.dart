@@ -43,31 +43,32 @@ class _InputTab extends StatelessWidget {
         sourceContext() == target &&
         store.supports('phantom') &&
         store.paramBool('phantom') == current;
-    final confirmed = await showDialog<bool>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    final confirmed = await showConsoleDialog<bool>(
+        context,
         builder: (dialogContext) => ListenableBuilder(
             listenable: store,
             builder: (context, _) {
-              final palette = ConsolePalette.of(context);
-              return ConsoleAlertDialog(
-                  backgroundColor: palette.panel,
-                  title: Text(current ? 'Turn off 48V?' : 'Turn on 48V?',
-                      style: AppDesign.type(18, color: palette.text1)),
-                  content: Text(
+              return ConsoleDialog(
+                  title: current ? 'Turn off 48V?' : 'Turn on 48V?',
+                  content: ConsoleText(
                       targetCurrent()
                           ? '${current ? 'Disable' : 'Enable'} phantom power for $name?'
                           : 'The channel, source, or connection changed. Reopen this confirmation.',
-                      style: AppDesign.type(16, color: palette.text7)),
+                      role: ConsoleTextRole.controlLabel,
+                      tone: ConsoleTextTone.muted),
                   actions: [
-                    TextButton(
+                    ConsoleButton(
+                        variant: ConsoleButtonVariant.quiet,
+                        size: ConsoleButtonSize.regular,
                         onPressed: () => Navigator.pop(dialogContext, false),
-                        child: const Text('Cancel')),
-                    TextButton(
+                        label: 'Cancel'),
+                    ConsoleButton(
+                        variant: ConsoleButtonVariant.primary,
+                        size: ConsoleButtonSize.regular,
                         onPressed: targetCurrent()
                             ? () => Navigator.pop(dialogContext, true)
                             : null,
-                        child: Text(current ? 'Turn off' : 'Turn on')),
+                        label: current ? 'Turn off' : 'Turn on'),
                   ]);
             }));
     if (confirmed == true && context.mounted && targetCurrent()) {
@@ -82,28 +83,24 @@ class _InputTab extends StatelessWidget {
     bool current() =>
         store.sourceMode?.context == snapshot.context &&
         store.sourceMode?.editable == true;
-    final result = await showDialog<int>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    final result = await showConsoleDialog<int>(
+        context,
         builder: (dialogContext) => StatefulBuilder(
             builder: (context, setLocalState) => ListenableBuilder(
                 listenable: store,
                 builder: (context, _) {
-                  final palette = ConsolePalette.of(context);
-                  return ConsoleAlertDialog(
-                      backgroundColor: palette.panel,
-                      title: Text('Source mode',
-                          style: AppDesign.type(18, color: palette.text1)),
+                  return ConsoleDialog(
+                      title: 'Source mode',
                       content: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(
+                            ConsoleText(
                                 current()
                                     ? '${snapshot.sourceLabel} is shared. This changes its mode for every channel using that source.'
                                     : 'The source, mode, or connection changed. Reopen this control.',
-                                style:
-                                    AppDesign.type(16, color: palette.text7)),
+                                role: ConsoleTextRole.controlLabel,
+                                tone: ConsoleTextTone.muted),
                             const SizedBox(height: 12),
                             for (final choice in snapshot.choices)
                               Padding(
@@ -117,14 +114,18 @@ class _InputTab extends StatelessWidget {
                                           : null)),
                           ]),
                       actions: [
-                        TextButton(
+                        ConsoleButton(
+                            variant: ConsoleButtonVariant.quiet,
+                            size: ConsoleButtonSize.regular,
                             onPressed: () => Navigator.pop(dialogContext),
-                            child: const Text('Cancel')),
-                        TextButton(
+                            label: 'Cancel'),
+                        ConsoleButton(
+                            variant: ConsoleButtonVariant.primary,
+                            size: ConsoleButtonSize.regular,
                             onPressed: current() && selected != snapshot.mode
                                 ? () => Navigator.pop(dialogContext, selected)
                                 : null,
-                            child: const Text('Apply')),
+                            label: 'Apply'),
                       ]);
                 })));
     if (result != null && context.mounted && current()) {
@@ -135,17 +136,15 @@ class _InputTab extends StatelessWidget {
   Future<void> _editInputSource(BuildContext context) async {
     final snapshot = store.inputSource;
     if (snapshot == null || !snapshot.editable) return;
-    final choice = await showDialog<ChannelInputSourceChoice>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    final choice = await showConsoleDialog<ChannelInputSourceChoice>(
+        context,
         builder: (dialogContext) => ListenableBuilder(
             listenable: store,
             builder: (context, _) {
               final current = store.inputSource?.context == snapshot.context &&
                   store.inputSource?.editable == true;
-              return ConsoleAlertDialog(
-                  title: const Text('Input patch'),
-                  scrollable: true,
+              return ConsoleDialog(
+                  title: 'Input patch',
                   content: SizedBox(
                       width: 420,
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -165,9 +164,11 @@ class _InputTab extends StatelessWidget {
                               'The source or connection changed. Reopen this control.'),
                       ])),
                   actions: [
-                    TextButton(
+                    ConsoleButton(
+                        variant: ConsoleButtonVariant.quiet,
+                        size: ConsoleButtonSize.regular,
                         onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text('Cancel')),
+                        label: 'Cancel'),
                   ]);
             }));
     if (choice != null && context.mounted) {
@@ -180,9 +181,8 @@ class _InputTab extends StatelessWidget {
     if (snapshot == null || !snapshot.editable) return;
     var sending = false;
     String? error;
-    await showDialog<void>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    await showConsoleDialog<void>(
+        context,
         builder: (dialogContext) => StatefulBuilder(
             builder: (context, setLocalState) => ListenableBuilder(
                 listenable: store,
@@ -190,9 +190,8 @@ class _InputTab extends StatelessWidget {
                   final current =
                       store.inputInsert?.context == snapshot.context &&
                           store.inputInsert?.editable == true;
-                  return ConsoleAlertDialog(
-                      title: const Text('Insert'),
-                      scrollable: true,
+                  return ConsoleDialog(
+                      title: 'Insert',
                       content: SizedBox(
                           width: 420,
                           child:
@@ -235,19 +234,20 @@ class _InputTab extends StatelessWidget {
                             ],
                           ])),
                       actions: [
-                        TextButton(
+                        ConsoleButton(
+                            variant: ConsoleButtonVariant.quiet,
+                            size: ConsoleButtonSize.regular,
                             onPressed: sending
                                 ? null
                                 : () => Navigator.pop(dialogContext),
-                            child: const Text('Cancel')),
+                            label: 'Cancel'),
                       ]);
                 })));
   }
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 700;
-    final palette = ConsolePalette.of(context);
+    final wide = MediaQuery.sizeOf(context).width >= AppDesign.phoneBreakpoint;
     final src = store.source;
     String sourceName(String leaf, int? value) => value == null
         ? '-'
@@ -476,9 +476,8 @@ class _InputTab extends StatelessWidget {
               detail: control.valueLabel,
               onTap: control.available &&
                       store.destinationControlIsCurrent(control)
-                  ? () => showDialog<void>(
-                      animationStyle: AnimationStyle.noAnimation,
-                      context: context,
+                  ? () => showConsoleDialog<void>(
+                      context,
                       builder: (_) => DestinationControlEditor(
                           changes: store,
                           accessEpoch: () => store.controlAccessEpoch,
@@ -523,7 +522,7 @@ class _InputTab extends StatelessWidget {
     final primary =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (!wide) ...[
-        Text('Input', style: AppDesign.type(20, weight: FontWeight.w600)),
+        Text('Input', style: AppDesign.type(AppDesign.dialogTitle, weight: FontWeight.w600)),
         const SizedBox(height: 12),
       ],
       if (hasSource) ...[
@@ -553,7 +552,7 @@ class _InputTab extends StatelessWidget {
             Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text('No sends available',
-                    style: AppDesign.type(14, color: palette.text7))),
+                    style: consoleTextStyle(context, ConsoleTextRole.body, tone: ConsoleTextTone.muted))),
           if (store.supports('provider:send_tap')) ...[
             _ParameterChoices(
                 store: store,
@@ -612,8 +611,7 @@ class _InputSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(title,
-                      style: AppDesign.type(16,
-                          color: palette.text1, weight: FontWeight.w600)),
+                      style: consoleTextStyle(context, ConsoleTextRole.controlLabel, weight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   child,
                 ])));
@@ -638,12 +636,12 @@ class _InputReadout extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: AppDesign.type(12, color: palette.text7)),
+              Text(label, style: consoleTextStyle(context, ConsoleTextRole.caption, tone: ConsoleTextTone.muted)),
               const SizedBox(height: 2),
               Text(value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppDesign.type(16, color: palette.text1)),
+                  style: consoleTextStyle(context, ConsoleTextRole.controlLabel)),
             ]));
   }
 }
@@ -662,17 +660,16 @@ class _InputToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ConsolePalette.of(context);
     return Row(children: [
       Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: AppDesign.type(14, color: palette.text1)),
+        Text(label, style: consoleTextStyle(context, ConsoleTextRole.body)),
         const SizedBox(height: 2),
         Text(value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppDesign.type(12, color: palette.text7)),
+            style: consoleTextStyle(context, ConsoleTextRole.caption, tone: ConsoleTextTone.muted)),
       ])),
       const SizedBox(width: 10),
       ConstrainedBox(

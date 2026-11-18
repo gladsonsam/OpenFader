@@ -87,20 +87,20 @@ class MixerBanks extends StatelessWidget {
   Widget _pager(BuildContext context) =>
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         Expanded(
-            child: IconButton(
-                tooltip: 'Previous channels',
+            child: ConsoleIconButton(
+                label: 'Previous channels',
                 onPressed:
                     controller.page > 0 ? () => controller.nextPage(-1) : null,
-                icon: const Icon(Icons.chevron_left))),
+                child: const Icon(Icons.chevron_left))),
         Text('${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
             style: mixerType(context, 11)),
         Expanded(
-            child: IconButton(
-                tooltip: 'Next channels',
+            child: ConsoleIconButton(
+                label: 'Next channels',
                 onPressed: controller.page + 1 < controller.pageCount
                     ? () => controller.nextPage(1)
                     : null,
-                icon: const Icon(Icons.chevron_right))),
+                child: const Icon(Icons.chevron_right))),
       ]);
   @override
   Widget build(BuildContext context) {
@@ -319,9 +319,9 @@ class MixerBanks extends StatelessWidget {
                                       })))),
                       SizedBox(width: 114, child: _pager(context)),
                       if (count > 0)
-                        IconButton(
-                            tooltip: 'Mute groups',
-                            icon:
+                        ConsoleIconButton(
+                            label: 'Mute groups',
+                            child:
                                 const Icon(Icons.volume_off_outlined, size: 20),
                             onPressed: () =>
                                 showMixerMuteGroups(context, controller)),
@@ -343,17 +343,18 @@ Future<void> showMixerMuteGroups(
                     padding: const EdgeInsets.all(16),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Text('Mute groups', style: mixerType(context, 20)),
-                      TextButton(
+                      ConsoleButton(
+                          label: 'Edit group members',
+                          variant: ConsoleButtonVariant.quiet,
                           onPressed: () =>
-                              showMixerGroupMembership(context, controller),
-                          child: const Text('Edit group members')),
+                              showMixerGroupMembership(context, controller)),
                       const SizedBox(height: 16),
                       ConsoleActionGroup(children: [
                         for (var g = 0; g < controller.muteGroupCount; g++)
                           SizedBox(
                               width: 140,
                               child: MixerToggle(
-                                  fontSize: 14,
+                                  fontSize: AppDesign.body,
                                   label: controller.muteGroupLabel(g),
                                   channelName: 'Mute group ${g + 1}',
                                   on: controller.store.engine.muteGroups[g] ??
@@ -382,22 +383,22 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
                             Expanded(
                                 child: Text('Channels & banks',
                                     style: mixerType(context, 20))),
-                            IconButton(
-                                tooltip: 'Previous channels',
+                            ConsoleIconButton(
+                                label: 'Previous channels',
                                 onPressed: controller.page > 0
                                     ? () => controller.nextPage(-1)
                                     : null,
-                                icon: const Icon(Icons.chevron_left)),
+                                child: const Icon(Icons.chevron_left)),
                             Text(
                                 '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
                                 style: mixerType(context, 13)),
-                            IconButton(
-                                tooltip: 'Next channels',
+                            ConsoleIconButton(
+                                label: 'Next channels',
                                 onPressed:
                                     controller.page + 1 < controller.pageCount
                                         ? () => controller.nextPage(1)
                                         : null,
-                                icon: const Icon(Icons.chevron_right)),
+                                child: const Icon(Icons.chevron_right)),
                           ])),
                       for (final bank in controller.store.banks)
                         ListTile(
@@ -463,9 +464,9 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
       animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) => ConsoleAlertDialog(
-                backgroundColor: ConsolePalette.of(context).background,
-                title: Text(existing == null ? 'Create view' : 'Edit view'),
+          builder: (context, setDialogState) => ConsoleDialog(
+                title: existing == null ? 'Create view' : 'Edit view',
+                scrollable: false,
                 content: SizedBox(
                     width: 480,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -494,19 +495,25 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
                     ])),
                 actions: [
                   if (existing != null)
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, 'delete'),
-                        child: const Text('Delete')),
-                  TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel')),
-                  TextButton(
+                    ConsoleButton(
+                        label: 'Delete',
+                        variant: ConsoleButtonVariant.danger,
+                        size: ConsoleButtonSize.regular,
+                        onPressed: () => Navigator.pop(context, 'delete')),
+                  ConsoleButton(
+                      label: 'Cancel',
+                      variant: ConsoleButtonVariant.quiet,
+                      size: ConsoleButtonSize.regular,
+                      onPressed: () => Navigator.pop(context)),
+                  ConsoleButton(
+                      label: 'Save',
+                      variant: ConsoleButtonVariant.primary,
+                      size: ConsoleButtonSize.regular,
                       onPressed: () {
                         if (name.text.trim().isNotEmpty) {
                           Navigator.pop(context, 'save');
                         }
-                      },
-                      child: const Text('Save')),
+                      }),
                 ],
               )));
   final result = await Navigator.of(context).push(route);
@@ -546,9 +553,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
 
 Future<void> showMixerGroupMembership(
         BuildContext context, MixerController controller) =>
-    showDialog<void>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    showConsoleDialog<void>(context,
         builder: (_) => _GroupMembership(controller));
 
 class _GroupMembership extends StatefulWidget {
@@ -594,9 +599,9 @@ class _GroupMembershipState extends State<_GroupMembership> {
               : choices.keys.firstOrNull;
           return PopScope(
               canPop: !pending,
-              child: ConsoleAlertDialog(
-                backgroundColor: ConsolePalette.of(context).panel,
-                title: const Text('Group members'),
+              child: ConsoleDialog(
+                title: 'Group members',
+                scrollable: false,
                 content: SizedBox(
                     width: 380,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -674,9 +679,11 @@ class _GroupMembershipState extends State<_GroupMembership> {
                         Text(pending ? 'Sending assignment…' : status!),
                     ])),
                 actions: [
-                  TextButton(
-                      onPressed: pending ? null : () => Navigator.pop(context),
-                      child: const Text('Close'))
+                  ConsoleButton(
+                      label: 'Close',
+                      variant: ConsoleButtonVariant.quiet,
+                      size: ConsoleButtonSize.regular,
+                      onPressed: pending ? null : () => Navigator.pop(context))
                 ],
               ));
         });

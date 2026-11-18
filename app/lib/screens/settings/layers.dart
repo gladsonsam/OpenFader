@@ -116,16 +116,10 @@ class _LayersSection extends StatelessWidget {
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.add, size: 20),
-                label: Text(
-                  'New layer',
-                  style: TextStyle(
-                    fontFamily: U4.font,
-                    fontSize: AppDesign.rowLabel,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
+              child: ConsoleButton(
+                icon: Icons.add,
+                label: 'New layer',
+                size: ConsoleButtonSize.regular,
                 onPressed: () => _runSettingsAction(context, () async {
                   final layer = MixerLayer(
                     id: MixerLayer.newId(),

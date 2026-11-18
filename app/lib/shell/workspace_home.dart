@@ -1,8 +1,10 @@
-import '../design.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../mixer/controller.dart';
-import '../palette.dart';
+import '../ui/console.dart';
+
+const _twoColumnWidth = 650.0;
+const _threeColumnWidth = 1000.0;
 
 /// Workspace tools have a stable home instead of competing with mixer controls.
 class WorkspaceHome extends StatelessWidget {
@@ -36,38 +38,16 @@ class WorkspaceHome extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     Widget tile(String title, String subtitle, IconData icon,
             VoidCallback action) =>
-        OutlinedButton(
-            onPressed: action,
-            style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                alignment: Alignment.centerLeft,
-                backgroundColor: palette.panel,
-                foregroundColor: palette.text1,
-                side: BorderSide(color: palette.linePanel),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10))),
-            child: Row(children: [
-              Icon(icon, size: 24, color: palette.mutedText),
-              const SizedBox(width: AppDesign.spaceLg),
-              Expanded(
-                  child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: AppDesign.spaceXs),
-                    Text(subtitle,
-                        style:
-                            TextStyle(fontSize: 13, color: palette.mutedText)),
-                  ])),
-            ]));
+        ConsoleNavigationTile(
+            label: title,
+            detail: subtitle,
+            leading: Icon(icon),
+            showChevron: false,
+            onTap: action);
     return LayoutBuilder(builder: (context, bounds) {
-      final columns = bounds.maxWidth >= 1000
+      final columns = bounds.maxWidth >= _threeColumnWidth
           ? 3
-          : bounds.maxWidth >= 650
+          : bounds.maxWidth >= _twoColumnWidth
               ? 2
               : 1;
       return SingleChildScrollView(
@@ -144,30 +124,31 @@ class WorkspaceHome extends StatelessWidget {
                         if (onReloadServer != null)
                           Align(
                               alignment: Alignment.centerLeft,
-                              child: TextButton(
-                                  onPressed: onReloadServer,
-                                  child: const Text('Reload / sign in'))),
+                              child: ConsoleButton(
+                                  label: 'Reload / sign in',
+                                  variant: ConsoleButtonVariant.quiet,
+                                  onPressed: onReloadServer)),
                         const SizedBox(height: AppDesign.spaceSm),
                       ],
                       Row(children: [
                         Expanded(
                             child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: TextButton(
+                                child: ConsoleButton(
+                                    label: 'Diagnostics',
+                                    variant: ConsoleButtonVariant.quiet,
                                     onPressed: () =>
-                                        onNavigate(MixerDestination.debug),
-                                    style: TextButton.styleFrom(
-                                        backgroundColor: Colors.transparent,
-                                        foregroundColor: palette.mutedText),
-                                    child: const Text('Diagnostics')))),
+                                        onNavigate(MixerDestination.debug)))),
                         if (onLeaveServer != null)
-                          TextButton(
-                              onPressed: onLeaveServer,
-                              child: Text(leaveServerLabel)),
+                          ConsoleButton(
+                              label: leaveServerLabel,
+                              variant: ConsoleButtonVariant.quiet,
+                              onPressed: onLeaveServer),
                         if (onQuit != null)
-                          TextButton(
-                              onPressed: onQuit,
-                              child: const Text('Quit OpenFader')),
+                          ConsoleButton(
+                              label: 'Quit OpenFader',
+                              variant: ConsoleButtonVariant.quiet,
+                              onPressed: onQuit),
                       ]),
                     ]))),
       );
