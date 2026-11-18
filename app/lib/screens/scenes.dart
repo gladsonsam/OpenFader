@@ -584,7 +584,10 @@ class _NameRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        ConsoleButton(label: actionLabel, primary: true, onPressed: onAction),
+        ConsoleButton(
+            label: actionLabel,
+            variant: ConsoleButtonVariant.primary,
+            onPressed: onAction),
       ],
     );
   }

@@ -620,8 +620,13 @@ class _Btn extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConsoleButton(
         label: label,
-        primary: primary,
-        danger: danger,
+        variant: danger
+            ? (primary
+                ? ConsoleButtonVariant.destructive
+                : ConsoleButtonVariant.danger)
+            : (primary
+                ? ConsoleButtonVariant.primary
+                : ConsoleButtonVariant.secondary),
         onPressed: enabled ? onTap : null);
   }
 }

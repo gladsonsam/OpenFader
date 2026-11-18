@@ -139,7 +139,7 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
               ),
               ConsoleButton(
                 label: 'Apply',
-                primary: true,
+                variant: ConsoleButtonVariant.primary,
                 onPressed: () => Navigator.pop(context, draft),
               ),
             ],

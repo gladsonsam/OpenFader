@@ -92,8 +92,8 @@ class _PrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) => ConsoleButton(
       label: label,
       icon: icon,
-      primary: true,
-      fontSize: AppDesign.rowLabel,
+      variant: ConsoleButtonVariant.primary,
+      size: ConsoleButtonSize.large,
       onPressed: () => _runSettingsAction(context, onTap));
 }
 
@@ -107,7 +107,7 @@ class _PlainButton extends StatelessWidget {
   Widget build(BuildContext context) => ConsoleButton(
       label: label,
       icon: icon,
-      fontSize: AppDesign.rowLabel,
+      size: ConsoleButtonSize.large,
       onPressed: () => _runSettingsAction(context, onTap));
 }
 

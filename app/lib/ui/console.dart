@@ -15,3 +15,4 @@ export 'layout/console_panel.dart';
 export 'layout/console_preference_row.dart';
 export 'overlays/anchored_menu.dart';
 export 'overlays/console_dialogs.dart';
+export 'text/console_text.dart';

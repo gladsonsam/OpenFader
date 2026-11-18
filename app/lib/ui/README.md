@@ -7,9 +7,27 @@ acyclic and avoid accidentally coupling primitives to the whole library.
 - `controls/`: buttons, icon targets, selectors and switches.
 - `layout/`: panel surfaces and preference rows.
 - `overlays/`: anchored option menus and reusable decision/name dialogs.
+- `text/`: named text roles and tones.
 - `icons/`: the shared console icon vocabulary.
 - `../design.dart`: immutable spacing, type, shape, target and timing tokens.
 - `../palette.dart`: context-resolved theme colors.
+
+## Which component do I use?
+
+- Action: `ConsoleButton`. Variants: `secondary` (default), `primary` (main
+  action), `quiet` (low emphasis, e.g. Cancel in dense spots), `danger`
+  (outlined risky action), `destructive` (filled irreversible confirm). Sizes:
+  `compact` (default), `regular` (dialogs, forms), `large` (page actions).
+  `selected` marks a toggle on state. Icon-only: `ConsoleIconButton`.
+- Dialogs: `showConsoleConfirmation` (yes/no), `showConsoleChoice` (2-3
+  outcomes, Cancel returns null), `showConsoleTextInput` / `showConsoleNameDialog`
+  (text, with optional inline `validate`), `showConsoleDialog` + `ConsoleDialog`
+  for custom content.
+- Text: `ConsoleText` or `consoleTextStyle` with a `ConsoleTextRole` (size and
+  weight) and `ConsoleTextTone` (colour).
+
+Screens must not use raw `TextButton`, `FilledButton`, `ElevatedButton`,
+`OutlinedButton`, `IconButton`, `AlertDialog` or numeric font sizes.
 
 Keep this library independent of screens, stores, engine/protocol objects and
 application state. Pass values and callbacks through constructors. Dialogs only

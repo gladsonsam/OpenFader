@@ -1,75 +1,130 @@
 import 'package:material_ui/material_ui.dart';
+
 import '../../palette.dart';
 import '../../design.dart';
 import '../motion.dart';
+
+/// Emphasis and intent of a [ConsoleButton].
+enum ConsoleButtonVariant {
+  /// Default action on a control background.
+  secondary,
+
+  /// The single main action of a view or dialog, filled with the accent.
+  primary,
+
+  /// Low-emphasis action with no background, such as Cancel in dense spots.
+  quiet,
+
+  /// Risky action that is not the main one, outlined in the danger colour.
+  danger,
+
+  /// Confirms an irreversible action, filled with the danger colour.
+  destructive,
+}
+
+/// Label size of a [ConsoleButton]. Every size keeps the 44-point target.
+enum ConsoleButtonSize {
+  /// Dense toolbars and inline actions.
+  compact(AppDesign.smallLabel),
+
+  /// Dialog actions and standard form buttons.
+  regular(AppDesign.controlLabel),
+
+  /// Prominent page-level actions.
+  large(AppDesign.rowLabel);
+
+  final double fontSize;
+  const ConsoleButtonSize(this.fontSize);
+}
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
 /// 44-point target. Colour indicates state or intent rather than screen type.
 class ConsoleButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
-  final bool selected, primary, danger;
+  final ConsoleButtonVariant variant;
+  final ConsoleButtonSize size;
+  final bool selected;
   final Color? accent;
   final IconData? icon;
-  final double fontSize;
-  const ConsoleButton(
-      {super.key,
-      required this.label,
-      required this.onPressed,
-      this.selected = false,
-      this.primary = false,
-      this.danger = false,
-      this.accent,
-      this.icon,
-      this.fontSize = AppDesign.smallLabel});
+  const ConsoleButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.variant = ConsoleButtonVariant.secondary,
+    this.size = ConsoleButtonSize.compact,
+    this.selected = false,
+    this.accent,
+    this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final active = danger
-        ? ConsolePalette.of(context).mute
-        : accent ?? ConsolePalette.of(context).lime;
-    final filled = selected || primary;
+    final p = ConsolePalette.of(context);
+    final danger =
+        variant == ConsoleButtonVariant.danger ||
+        variant == ConsoleButtonVariant.destructive;
+    final quiet = variant == ConsoleButtonVariant.quiet;
+    final active = danger ? p.mute : accent ?? p.lime;
+    final filled =
+        selected ||
+        variant == ConsoleButtonVariant.primary ||
+        variant == ConsoleButtonVariant.destructive;
+    final outlined = variant == ConsoleButtonVariant.danger && !filled;
     final animationsOff = MediaQuery.disableAnimationsOf(context);
     return ConsolePressFeedback(
       enabled: onPressed != null,
       child: TextButton(
-          onPressed: onPressed,
-          style: TextButton.styleFrom(
-            backgroundColor:
-                filled ? active : ConsolePalette.of(context).control,
-            foregroundColor: filled
-                ? (danger
-                    ? ConsolePalette.of(context).onDanger
-                    : ConsolePalette.of(context).onAccent)
-                : ConsolePalette.of(context).text,
-            disabledBackgroundColor: ConsolePalette.of(context).selected,
-            disabledForegroundColor: ConsolePalette.of(context).mutedText,
-            minimumSize: AppDesign.controlSize,
-            padding: AppDesign.controlPadding,
-            textStyle: AppDesign.type(fontSize, weight: FontWeight.w600),
-            shape: const RoundedRectangleBorder(borderRadius: AppDesign.radius),
-            side:
-                danger && !filled ? BorderSide(color: active) : BorderSide.none,
-          ).copyWith(
-              animationDuration:
-                  animationsOff ? Duration.zero : ConsoleMotion.state,
-              side: WidgetStateProperty.resolveWith((states) => states
-                      .contains(WidgetState.focused)
-                  ? BorderSide(color: ConsolePalette.of(context).selectedLine)
-                  : danger && !filled
-                      ? BorderSide(color: active)
-                      : BorderSide.none)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
+        onPressed: onPressed,
+        style:
+            TextButton.styleFrom(
+              backgroundColor: filled
+                  ? active
+                  : quiet
+                  ? Colors.transparent
+                  : p.control,
+              foregroundColor: filled
+                  ? (danger ? p.onDanger : p.onAccent)
+                  : p.text,
+              disabledBackgroundColor: quiet ? Colors.transparent : p.selected,
+              disabledForegroundColor: p.mutedText,
+              minimumSize: AppDesign.controlSize,
+              padding: AppDesign.controlPadding,
+              textStyle: AppDesign.type(size.fontSize, weight: FontWeight.w600),
+              shape: const RoundedRectangleBorder(
+                borderRadius: AppDesign.radius,
+              ),
+              side: outlined ? BorderSide(color: active) : BorderSide.none,
+            ).copyWith(
+              animationDuration: animationsOff
+                  ? Duration.zero
+                  : ConsoleMotion.state,
+              side: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.focused)
+                    ? BorderSide(color: p.selectedLine)
+                    : outlined
+                    ? BorderSide(color: active)
+                    : BorderSide.none,
+              ),
+            ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             if (icon != null) ...[
               Icon(icon, size: AppDesign.iconSize),
               const SizedBox(width: AppDesign.spaceSm),
             ],
             Flexible(
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center)),
-          ])),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
