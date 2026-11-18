@@ -6,7 +6,8 @@ import 'package:dbus/dbus.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:screen_retriever/screen_retriever.dart';
+import 'package:screen_retriever/screen_retriever.dart'
+    show DisplayManager, RectangleToRect;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart' as tray;
 import 'package:window_manager/window_manager.dart';
@@ -55,7 +56,7 @@ class DesktopIntegration {
       desktop._windowListener = window.addListener(desktop._onWindowEvent);
       desktop._windowReady = true;
       desktop._prefs = await SharedPreferences.getInstance();
-      await desktop._restoreBounds();
+      desktop._restoreBounds();
     } catch (error) {
       debugPrint('Desktop window integration unavailable: $error');
     }
@@ -317,14 +318,19 @@ class DesktopIntegration {
     }
   }
 
-  Future<void> _restoreBounds() async {
-    final displays = await screenRetriever.getAllDisplays();
-    if (displays.isEmpty) return;
-    final areas = displays
-        .map((d) =>
-            (d.visiblePosition ?? Offset.zero) & (d.visibleSize ?? d.size))
-        .where((r) => r.width > 0 && r.height > 0)
-        .toList();
+  void _restoreBounds() {
+    final displays = DisplayManager.instance.getAll();
+    final List<Rect> areas;
+    try {
+      areas = displays
+          .map((display) => display.workArea.toRect())
+          .where((area) => area.width > 0 && area.height > 0)
+          .toList();
+    } finally {
+      for (final display in displays) {
+        display.dispose();
+      }
+    }
     if (areas.isEmpty) return;
     final saved = _prefs?.getStringList('desktop.window.bounds');
     final values = saved?.map(double.tryParse).toList();
