@@ -1,4 +1,4 @@
-import '../ui/overlays/console_dialogs.dart';
+import '../ui/console.dart';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -108,15 +108,14 @@ Future<T?> showCompactChoiceDialog<T>({
   required Listenable changes,
   required bool Function() isCurrent,
 }) =>
-    showDialog<T>(
-      context: context,
+    showConsoleDialog<T>(
+      context,
       builder: (dialogContext) => ListenableBuilder(
         listenable: changes,
         builder: (context, _) {
           final current = isCurrent();
-          return ConsoleAlertDialog(
-            title: Text(title),
-            scrollable: true,
+          return ConsoleDialog(
+            title: title,
             content: SizedBox(
               width: 420,
               child: Column(
@@ -141,9 +140,10 @@ Future<T?> showCompactChoiceDialog<T>({
               ),
             ),
             actions: [
-              TextButton(
+              ConsoleButton(
+                label: 'Cancel',
+                size: ConsoleButtonSize.regular,
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
               ),
             ],
           );

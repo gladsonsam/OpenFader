@@ -357,31 +357,32 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   spacing: 8,
                   children: [
-                    Text(
+                    ConsoleText(
                       '$laneCount tracks',
-                      style: TextStyle(color: p.mutedText, fontSize: 14),
+                      tone: ConsoleTextTone.muted,
                     ),
                     if (_peakError != null)
                       Tooltip(
                         message: _peakError!,
-                        child: TextButton(
+                        child: ConsoleButton(
+                          variant: ConsoleButtonVariant.quiet,
                           onPressed: () => setState(() {
                             _requestKey = null;
                             _peakError = null;
                           }),
-                          child: const Text('Retry waveform'),
+                          label: 'Retry waveform',
                         ),
                       ),
                     if (recording)
-                      IconButton(
-                        tooltip: _followRecording
+                      ConsoleIconButton(
+                        label: _followRecording
                             ? 'Following recording · click to scroll freely'
                             : 'Follow recording playhead',
-                        isSelected: _followRecording,
+                        selected: _followRecording,
                         onPressed: () => setState(
                           () => _followRecording = !_followRecording,
                         ),
-                        icon: const Icon(Icons.follow_the_signs),
+                        child: const Icon(Icons.follow_the_signs),
                       ),
                     if (laneCount > 0)
                       Container(
@@ -392,12 +393,12 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              tooltip: 'Zoom out',
+                            ConsoleIconButton(
+                              label: 'Zoom out',
                               onPressed: _zoom > 1
                                   ? () => _setZoom(_zoom / 2)
                                   : null,
-                              icon: const Icon(Icons.remove, size: 20),
+                              child: const Icon(Icons.remove, size: 20),
                             ),
                             SizedBox(
                               height: 16,
@@ -406,21 +407,21 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                 color: p.linePanel,
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Zoom in',
+                            ConsoleIconButton(
+                              label: 'Zoom in',
                               onPressed: _zoom < 8
                                   ? () => _setZoom(_zoom * 2)
                                   : null,
-                              icon: const Icon(Icons.add, size: 20),
+                              child: const Icon(Icons.add, size: 20),
                             ),
                           ],
                         ),
                       ),
                     if (laneCount > 0 && _zoom > 1)
-                      IconButton(
-                        tooltip: 'Show whole take',
+                      ConsoleIconButton(
+                        label: 'Show whole take',
                         onPressed: () => _setZoom(1),
-                        icon: const Icon(Icons.fit_screen, size: 20),
+                        child: const Icon(Icons.fit_screen, size: 20),
                       ),
                   ],
                 ),
@@ -435,16 +436,12 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                         children: [
                           Icon(Icons.graphic_eq, size: 40, color: p.mutedText),
                           const SizedBox(height: 12),
-                          Text(
+                          ConsoleText(
                             take == null
                                 ? 'No tracks yet'
                                 : 'Track layout unavailable',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: p.text1,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            role: ConsoleTextRole.sectionTitle,
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -462,14 +459,16 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                               spacing: 8,
                               children: [
                                 if (widget.onNewTake != null)
-                                  TextButton(
+                                  ConsoleButton(
+                                    variant: ConsoleButtonVariant.quiet,
                                     onPressed: widget.onNewTake,
-                                    child: const Text('New take'),
+                                    label: 'New take',
                                   ),
                                 if (widget.onAudioSetup != null)
-                                  TextButton(
+                                  ConsoleButton(
+                                    variant: ConsoleButtonVariant.quiet,
                                     onPressed: widget.onAudioSetup,
-                                    child: const Text('Audio setup'),
+                                    label: 'Audio setup',
                                   ),
                               ],
                             ),
@@ -545,13 +544,10 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                       SizedBox(
                                         height: 56,
                                         child: Center(
-                                          child: Text(
+                                          child: ConsoleText(
                                             'Tracks',
                                             textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: p.mutedText,
-                                              fontSize: 14,
-                                            ),
+                                            tone: ConsoleTextTone.muted,
                                           ),
                                         ),
                                       ),
@@ -589,11 +585,10 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                                                           'Channel ${i + 1}',
                                                       overflow:
                                                           TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        color: p.text1,
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w600,
+                                                      style: consoleTextStyle(
+                                                        context,
+                                                        ConsoleTextRole.body,
+                                                        weight: FontWeight.w600,
                                                       ),
                                                     ),
                                                   ),
@@ -842,12 +837,9 @@ class _RecorderArrangementState extends State<RecorderArrangement> {
                               child: ColoredBox(
                                 color: p.panel,
                                 child: Center(
-                                  child: Text(
+                                  child: ConsoleText(
                                     'Tracks',
-                                    style: TextStyle(
-                                      color: p.mutedText,
-                                      fontSize: 14,
-                                    ),
+                                    tone: ConsoleTextTone.muted,
                                   ),
                                 ),
                               ),
@@ -1102,7 +1094,10 @@ class _TimelinePainter extends CustomPainter {
       final text = TextPainter(
         text: TextSpan(
           text: '${(seconds ~/ 60).toString().padLeft(2, '0')}:$secondsLabel',
-          style: TextStyle(color: palette.recorderMuted, fontSize: 18),
+          style: TextStyle(
+            color: palette.recorderMuted,
+            fontSize: AppDesign.sectionTitle,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

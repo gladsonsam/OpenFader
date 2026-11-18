@@ -24,7 +24,7 @@ class U4Section extends StatelessWidget {
                 child: Text(title,
                     style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 12,
+                        fontSize: AppDesign.caption,
                         color: ConsolePalette.of(context).text7)),
               ),
               ?trailing,

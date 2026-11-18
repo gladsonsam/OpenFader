@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../palette.dart';
+import '../../ui/console.dart';
 import '../../theme.dart';
 
 /// Full-scale at -24 dB.
@@ -24,12 +24,12 @@ class U4GrBar extends StatelessWidget {
                 Text('GR',
                     style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 11,
+                        fontSize: AppDesign.minorText,
                         color: ConsolePalette.of(context).text7)),
                 Text('${grDb.toStringAsFixed(1)} dB',
                     style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 11,
+                        fontSize: AppDesign.minorText,
                         color: ConsolePalette.of(context).text1,
                         fontFeatures: [FontFeature.tabularFigures()])),
               ],

@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 
 /// Persistent operation feedback, placed in the surface that owns the action.
 class InlineFeedbackController extends ValueNotifier<String?> {
@@ -33,10 +33,10 @@ class InlineFeedbackView extends StatelessWidget {
                           child: Text(message,
                               style: TextStyle(
                                   color: ConsolePalette.of(context).text1)));
-                      final dismiss = IconButton(
-                          tooltip: 'Dismiss message',
+                      final dismiss = ConsoleIconButton(
+                          label: 'Dismiss message',
                           onPressed: controller.clear,
-                          icon: const Icon(Icons.close));
+                          child: const Icon(Icons.close));
                       if (constraints.maxWidth < 240) {
                         return Column(
                             mainAxisSize: MainAxisSize.min,

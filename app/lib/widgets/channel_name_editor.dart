@@ -8,10 +8,7 @@ import 'package:flutter/semantics.dart';
 import '../core/channel_clipboard.dart';
 import '../core/channel_name.dart';
 import '../core/processor_presets.dart';
-import '../design.dart';
-import '../palette.dart';
-import '../ui/controls/console_action_group.dart';
-import '../ui/overlays/anchored_menu.dart';
+import '../ui/console.dart';
 import 'channel_symbol.dart';
 
 String _identityLabel(ChannelNameTarget target) =>
@@ -553,10 +550,10 @@ class _NameEditorState extends State<_NameEditor> {
                   ]))),
           if (reason != null) ...[
             const SizedBox(width: AppDesign.spaceSm),
-            IconButton(
-                tooltip: 'Why is $label unavailable?',
+            ConsoleIconButton(
+                label: 'Why is $label unavailable?',
                 onPressed: _pending ? null : () => _info(label, reason),
-                icon: const Icon(Icons.info_outline)),
+                child: const Icon(Icons.info_outline)),
           ],
         ]));
   }
@@ -586,8 +583,8 @@ class _NameEditorState extends State<_NameEditor> {
               errorText: _nameError ?? widget.store.nameEditError(target),
               errorMaxLines: 4,
               suffixIcon: widget.store.nameCanBeEmpty(target)
-                  ? IconButton(
-                      tooltip: 'Use default name',
+                  ? ConsoleIconButton(
+                      label: 'Use default name',
                       onPressed: _pending ||
                               widget.store.nameEditError(target) != null ||
                               _text.text.isEmpty
@@ -596,7 +593,7 @@ class _NameEditorState extends State<_NameEditor> {
                                 _text.clear();
                                 _nameError = null;
                               }),
-                      icon: const Icon(Icons.restart_alt))
+                      child: const Icon(Icons.restart_alt))
                   : null),
           onChanged: (_) => setState(() => _nameError = null),
           onSubmitted: (_) {
@@ -838,12 +835,12 @@ class _NameEditorState extends State<_NameEditor> {
                     Row(mainAxisSize: MainAxisSize.min, children: [
                       _iconTile(imported[index], 'Imported image ${index + 1}'),
                       const SizedBox(width: AppDesign.spaceSm),
-                      IconButton(
-                          tooltip: 'Remove imported image ${index + 1}',
+                      ConsoleIconButton(
+                          label: 'Remove imported image ${index + 1}',
                           onPressed: _pending || error != null
                               ? null
                               : () => _removeImportedIcon(imported[index]),
-                          icon: const Icon(Icons.delete_outline,
+                          child: const Icon(Icons.delete_outline,
                               size: AppDesign.iconSize)),
                     ]),
                 ]),
@@ -1000,10 +997,10 @@ class _NameEditorState extends State<_NameEditor> {
         const SizedBox(height: AppDesign.spaceSm),
         Row(children: [
           const Expanded(child: Text('Processing clipboard')),
-          IconButton(
-              tooltip: 'About processing clipboard',
+          ConsoleIconButton(
+              label: 'About processing clipboard',
               onPressed: _pending ? null : _clipboardInfo,
-              icon: const Icon(Icons.info_outline)),
+              child: const Icon(Icons.info_outline)),
         ]),
         _option('Copy processing', Icons.copy_outlined, _copyProcessing,
             reason: _clipboardStore.channelProcessingError(processing),
@@ -1036,9 +1033,9 @@ class _NameEditorState extends State<_NameEditor> {
           _go(_ChannelPage.preset);
         }),
       if (error == null)
-        TextButton(
-            onPressed: _pending ? null : () => _run(_reloadLibrary),
-            child: const Text('Reload')),
+        ConsoleButton(
+            label: 'Reload',
+            onPressed: _pending ? null : () => _run(_reloadLibrary)),
     ]);
   }
 
@@ -1101,21 +1098,28 @@ class _NameEditorState extends State<_NameEditor> {
         final canRename = !_pending &&
             widget.store.nameEditError(widget.target) == null &&
             _text.text != widget.target.name;
-        return FilledButton(
-            onPressed: canRename ? _rename : null,
-            child: const Text('Rename channel'));
+        return ConsoleButton(
+            label: 'Rename channel',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
+            onPressed: canRename ? _rename : null);
       case _ChannelPage.color:
         final current = widget.store.colorForChannel(widget.target);
-        return FilledButton(
+        return ConsoleButton(
+            label: 'Apply',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: !_pending &&
                     _appearanceError == null &&
                     _appearanceValue != current &&
                     _appearanceChoices.any((c) => c.value == _appearanceValue)
                 ? _applyAppearance
-                : null,
-            child: const Text('Apply'));
+                : null);
       case _ChannelPage.icon:
-        return FilledButton(
+        return ConsoleButton(
+            label: 'Apply',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: !_pending &&
                     widget.store.iconEditError(widget.target) == null &&
                     (_iconSelection !=
@@ -1125,27 +1129,32 @@ class _NameEditorState extends State<_NameEditor> {
                                     widget.target, _iconSelection) ==
                                 null))
                 ? _applyIcon
-                : null,
-            child: const Text('Apply'));
+                : null);
       case _ChannelPage.presetName:
-        return FilledButton(
+        return ConsoleButton(
+            label: _renamingPreset ? 'Rename' : 'Save',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: _pending ||
                     _presetStore.presetTargetError(_presetTarget!) != null
                 ? null
-                : _savePreset,
-            child: Text(_renamingPreset ? 'Rename' : 'Save'));
+                : _savePreset);
       case _ChannelPage.confirm:
         return Row(children: [
           Expanded(
-              child: OutlinedButton(
+              child: ConsoleButton(
+                  label: 'Cancel',
+                  size: ConsoleButtonSize.regular,
                   onPressed:
-                      _pending ? null : () => _resolveConfirmation(false),
-                  child: const Text('Cancel'))),
+                      _pending ? null : () => _resolveConfirmation(false))),
           const SizedBox(width: AppDesign.spaceSm),
           Expanded(
-              child: FilledButton(
-                  onPressed: _pending ? null : () => _resolveConfirmation(true),
-                  child: Text(_confirmAction))),
+              child: ConsoleButton(
+                  label: _confirmAction,
+                  variant: ConsoleButtonVariant.primary,
+                  size: ConsoleButtonSize.regular,
+                  onPressed:
+                      _pending ? null : () => _resolveConfirmation(true))),
         ]);
       default:
         return null;
@@ -1177,10 +1186,11 @@ class _NameEditorState extends State<_NameEditor> {
                                 if (_history.length > 1) ...[
                                   SizedBox.square(
                                       dimension: AppDesign.touchTarget,
-                                      child: IconButton(
-                                          tooltip: 'Back',
+                                      child: ConsoleIconButton(
+                                          label: 'Back',
                                           onPressed: _pending ? null : _back,
-                                          icon: const Icon(Icons.arrow_back))),
+                                          child:
+                                              const Icon(Icons.arrow_back))),
                                   const SizedBox(width: AppDesign.spaceSm),
                                 ],
                                 Expanded(
@@ -1194,12 +1204,12 @@ class _NameEditorState extends State<_NameEditor> {
                                 const SizedBox(width: AppDesign.spaceSm),
                                 SizedBox.square(
                                     dimension: AppDesign.touchTarget,
-                                    child: IconButton(
-                                        tooltip: 'Close channel settings',
+                                    child: ConsoleIconButton(
+                                        label: 'Close channel settings',
                                         onPressed: _pending || _clipboardActive
                                             ? null
                                             : () => Navigator.pop(context),
-                                        icon: const Icon(Icons.close))),
+                                        child: const Icon(Icons.close))),
                               ])),
                           const SizedBox(height: AppDesign.spaceSm),
                           Expanded(
@@ -1298,8 +1308,8 @@ class _ChannelPageContentsState extends State<_ChannelPageContents> {
                 color: widget.statusError ? p.mute : p.mutedText)),
       ],
       if (widget.onCancel != null)
-        TextButton(
-            onPressed: widget.onCancel, child: const Text('Cancel operation')),
+        ConsoleButton(
+            label: 'Cancel operation', onPressed: widget.onCancel),
       if (widget.footer != null) ...[
         const SizedBox(height: AppDesign.spaceSm),
         ConstrainedBox(

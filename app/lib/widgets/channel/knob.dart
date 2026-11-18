@@ -1,10 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../palette.dart';
+import '../../ui/console.dart';
 import '../../core/control_reset.dart';
 import '../../theme.dart';
 import 'dart:math' as math;
-import '../../design.dart';
 import '../../core/channel_views.dart';
 
 class U4Knob extends StatefulWidget {
@@ -104,7 +103,7 @@ class _U4KnobState extends State<U4Knob> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 11,
+                      fontSize: AppDesign.minorText,
                       color: ConsolePalette.of(context).text7)),
               Text(widget.text,
                   textAlign: TextAlign.center,
@@ -112,7 +111,7 @@ class _U4KnobState extends State<U4Knob> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 12,
+                      fontSize: AppDesign.caption,
                       color: ConsolePalette.of(context).text1,
                       fontFeatures: [FontFeature.tabularFigures()])),
             ],

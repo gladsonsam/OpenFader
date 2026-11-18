@@ -18,9 +18,9 @@ class OutputProcessorPresetActions extends StatelessWidget {
       InlineFeedbackScope(expand: false, builder: _build);
 
   Widget _build(BuildContext context) => ConsoleActionGroup(children: [
-        TextButton.icon(
-            icon: const Icon(Icons.folder_open),
-            label: const Text('Presets / Paste'),
+        ConsoleButton(
+            icon: Icons.folder_open,
+            label: 'Presets / Paste',
             onPressed: () {
               final target = store.captureOutputPresetTarget(surface);
               if (target == null) {
@@ -28,16 +28,15 @@ class OutputProcessorPresetActions extends StatelessWidget {
                     'Output presets are unavailable or settings are changing.');
                 return;
               }
-              showDialog<void>(
-                  animationStyle: AnimationStyle.noAnimation,
-                  context: context,
+              showConsoleDialog<void>(
+                  context,
                   barrierDismissible: false,
                   builder: (_) =>
                       _OutputPresetLibrary(store: store, target: target));
             }),
-        TextButton.icon(
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy processor'),
+        ConsoleButton(
+            icon: Icons.copy,
+            label: 'Copy processor',
             onPressed: () {
               final target = store.captureOutputPresetTarget(surface);
               final error = target == null
@@ -175,10 +174,9 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                 : widget.store
                     .outputPresetTargetError(_completedTarget ?? widget.target);
             final enabled = !_busy && !_recallSucceeded && error == null;
-            return ConsoleAlertDialog(
-                backgroundColor: ConsolePalette.of(context).panel,
-                title: Text(
-                    '${widget.target.kind!.label} · ${widget.target.name}'),
+            return ConsoleDialog(
+                scrollable: false,
+                title: '${widget.target.kind!.label} · ${widget.target.name}',
                 content: SizedBox(
                     width: 520,
                     child: SingleChildScrollView(
@@ -202,15 +200,15 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                               decoration: const InputDecoration(
                                   labelText: 'Preset name')),
                           ConsoleActionGroup(children: [
-                            TextButton(
-                                onPressed: enabled ? _save : null,
-                                child: const Text('Save current')),
-                            TextButton(
+                            ConsoleButton(
+                                label: 'Save current',
+                                onPressed: enabled ? _save : null),
+                            ConsoleButton(
+                                label: 'Paste processor',
                                 onPressed: enabled &&
                                         widget.store.hasOutputProcessorClipboard
                                     ? () => _recall(null)
-                                    : null,
-                                child: const Text('Paste processor')),
+                                    : null),
                           ]),
                           if (_presets.isEmpty && !_busy)
                             const Text(
@@ -225,11 +223,11 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                                       subtitle: Text(
                                           '${preset.values.length} settings')),
                                   ConsoleActionGroup(children: [
-                                    TextButton(
+                                    ConsoleButton(
+                                        label: 'Recall',
                                         onPressed: enabled
                                             ? () => _recall(preset.id)
-                                            : null,
-                                        child: const Text('Recall')),
+                                            : null),
                                     PopupMenuButton<String>(
                                         popUpAnimationStyle:
                                             AnimationStyle.noAnimation,
@@ -251,16 +249,18 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                         ]))),
                 actions: [
                   if (_recalling)
-                    TextButton(
+                    ConsoleButton(
+                        label: 'Cancel recall',
+                        size: ConsoleButtonSize.regular,
                         onPressed: () {
                           widget.store.cancelOutputPresetRecall();
                           setState(() => _message =
                               'Cancellation requested. An in-flight setting may still complete.');
-                        },
-                        child: const Text('Cancel recall')),
-                  TextButton(
-                      onPressed: _busy ? null : () => Navigator.pop(context),
-                      child: const Text('Close')),
+                        }),
+                  ConsoleButton(
+                      label: 'Close',
+                      size: ConsoleButtonSize.regular,
+                      onPressed: _busy ? null : () => Navigator.pop(context)),
                 ]);
           }));
 }

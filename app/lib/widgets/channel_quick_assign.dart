@@ -1,14 +1,11 @@
-import '../ui/overlays/console_dialogs.dart';
+import '../ui/console.dart';
 import 'package:material_ui/material_ui.dart';
 import '../core/channel_name.dart';
-import '../design.dart';
-import '../palette.dart';
 
 Future<void> showChannelQuickAssign(BuildContext context,
         ChannelNameStore store, ChannelNameTarget target) =>
-    showDialog<void>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
+    showConsoleDialog<void>(
+      context,
       barrierDismissible: false,
       builder: (_) => _QuickAssign(store: store, target: target),
     );
@@ -46,14 +43,12 @@ class _QuickAssignState extends State<_QuickAssign> {
   Widget build(BuildContext context) => AnimatedBuilder(
       animation: widget.store,
       builder: (context, _) {
-        final p = ConsolePalette.of(context);
         final choices = widget.store.assignmentsForChannel(widget.target);
         return PopScope(
           canPop: !_pending,
-          child: ConsoleAlertDialog(
-            backgroundColor: p.panel,
-            title: Text('Channel ${widget.target.channel + 1} · Quick Assign',
-                style: AppDesign.type(18, color: p.text7)),
+          child: ConsoleDialog(
+            scrollable: false,
+            title: 'Channel ${widget.target.channel + 1} · Quick Assign',
             content: SizedBox(
               width: 320,
               child: ConstrainedBox(
@@ -88,15 +83,17 @@ class _QuickAssignState extends State<_QuickAssign> {
                             ? 'Sending assignment…'
                             : _status ??
                                 'Change one membership at a time. Switches show the latest assignment state.',
-                        style: AppDesign.type(14, color: p.mutedText)),
+                        style: consoleTextStyle(context, ConsoleTextRole.body,
+                            tone: ConsoleTextTone.muted)),
                   ]),
                 ),
               ),
             ),
             actions: [
-              TextButton(
-                  onPressed: _pending ? null : () => Navigator.pop(context),
-                  child: const Text('Close')),
+              ConsoleButton(
+                  label: 'Close',
+                  size: ConsoleButtonSize.regular,
+                  onPressed: _pending ? null : () => Navigator.pop(context)),
             ],
           ),
         );

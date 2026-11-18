@@ -10,9 +10,8 @@ Future<void> showProcessorPresetLibrary(
         ProcessorPresetStore store,
         ProcessorPresetKind kind,
         ProcessorPresetTarget? target) =>
-    showDialog<void>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
+    showConsoleDialog<void>(
+        context,
         barrierDismissible: false,
         builder: (_) =>
             _ProcessorPresetLibrary(store: store, kind: kind, target: target));
@@ -78,9 +77,8 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
 
   Future<void> _name({ProcessorPreset? preset}) => _run(() async {
         final target = widget.target!;
-        final changed = await showDialog<bool>(
-            animationStyle: AnimationStyle.noAnimation,
-            context: context,
+        final changed = await showConsoleDialog<bool>(
+            context,
             barrierDismissible: false,
             builder: (_) => _PresetNameDialog(
                 store: widget.store,
@@ -172,7 +170,6 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
   Widget build(BuildContext context) => AnimatedBuilder(
       animation: widget.store,
       builder: (context, _) {
-        final p = ConsolePalette.of(context);
         final target = widget.target;
         final unavailable = target == null
             ? '${widget.kind.label} presets are unavailable for this channel.'
@@ -180,17 +177,9 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
         final enabled = !_busy && unavailable == null;
         return PopScope(
             canPop: !_busy,
-            child: ConsoleAlertDialog(
-                backgroundColor: p.panel,
-                title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${widget.kind.label} presets',
-                          style: AppDesign.type(22, color: p.text1)),
-                      const SizedBox(height: 4),
-                      Text('On this device',
-                          style: AppDesign.type(14, color: p.mutedText)),
-                    ]),
+            child: ConsoleDialog(
+                scrollable: false,
+                title: '${widget.kind.label} presets',
                 content: SizedBox(
                     width: 520,
                     height: (MediaQuery.sizeOf(context).height * .52)
@@ -198,128 +187,123 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (target != null)
-                            Text(
-                                '${target.name} · ${target.driver.toUpperCase()}',
-                                style: AppDesign.type(16, color: p.text1)),
+                          const ConsoleText('On this device',
+                              tone: ConsoleTextTone.muted),
                           const SizedBox(height: 8),
-                          FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                  foregroundColor: p.text1,
-                                  backgroundColor: p.control),
+                          if (target != null)
+                            ConsoleText(
+                                '${target.name} · ${target.driver.toUpperCase()}',
+                                role: ConsoleTextRole.controlLabel),
+                          const SizedBox(height: 8),
+                          ConsoleButton(
                               onPressed: enabled ? () => _name() : null,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Save current')),
+                              icon: Icons.add,
+                              label: 'Save current'),
                           if (widget.store
                               case final InputProcessorPresetStore
                                   clipboard) ...[
                             const SizedBox(height: AppDesign.spaceSm),
                             ConsoleActionGroup(spacing: 8, children: [
-                              TextButton.icon(
+                              ConsoleButton(
                                   onPressed: enabled ? _copy : null,
-                                  icon: const Icon(Icons.copy),
-                                  label: const Text('Copy processor')),
+                                  icon: Icons.copy,
+                                  label: 'Copy processor'),
                               Tooltip(
                                   message: target == null
                                       ? 'Processor unavailable.'
                                       : clipboard.processorPasteError(target) ??
                                           'Paste copied processor',
-                                  child: TextButton.icon(
+                                  child: ConsoleButton(
                                       onPressed: enabled &&
                                               clipboard.processorPasteError(
                                                       target!) ==
                                                   null
                                           ? _paste
                                           : null,
-                                      icon: const Icon(Icons.paste),
-                                      label: const Text('Paste processor'))),
+                                      icon: Icons.paste,
+                                      label: 'Paste processor')),
                             ]),
                           ],
                           const SizedBox(height: 8),
                           Expanded(
                               child: _presets.isEmpty
                                   ? Center(
-                                      child: Text(
+                                      child: ConsoleText(
                                           _busy
                                               ? 'Loading presets…'
                                               : 'No user presets saved.',
-                                          style: AppDesign.type(15,
-                                              color: p.mutedText)))
+                                          tone: ConsoleTextTone.muted))
                                   : ListView.separated(
                                       itemCount: _presets.length,
                                       separatorBuilder: (context, index) =>
-                                          Divider(color: p.line),
+                                          Divider(
+                                              color: ConsolePalette.of(context)
+                                                  .line),
                                       itemBuilder: (context, index) {
                                         final preset = _presets[index];
                                         return Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Text(preset.name,
-                                                  style: AppDesign.type(18,
-                                                      color: p.text1)),
-                                              Text(
+                                              ConsoleText(preset.name,
+                                                  role: ConsoleTextRole
+                                                      .sectionTitle),
+                                              ConsoleText(
                                                   'User preset · ${preset.values.length} settings',
-                                                  style: AppDesign.type(13,
-                                                      color: p.mutedText)),
+                                                  role: ConsoleTextRole
+                                                      .smallLabel,
+                                                  tone: ConsoleTextTone.muted),
                                               const SizedBox(
                                                   height: AppDesign.spaceSm),
                                               ConsoleActionGroup(children: [
-                                                TextButton(
+                                                ConsoleButton(
+                                                    label: 'Recall',
                                                     onPressed: enabled
                                                         ? () => _recall(preset)
-                                                        : null,
-                                                    child: Text('Recall',
-                                                        style: TextStyle(
-                                                            color: p.cyan))),
-                                                TextButton(
+                                                        : null),
+                                                ConsoleButton(
+                                                    label: 'Rename',
                                                     onPressed: enabled
                                                         ? () => _name(
                                                             preset: preset)
-                                                        : null,
-                                                    child:
-                                                        const Text('Rename')),
-                                                TextButton(
+                                                        : null),
+                                                ConsoleButton(
+                                                    label: 'Delete',
                                                     onPressed: enabled
                                                         ? () => _delete(preset)
-                                                        : null,
-                                                    child:
-                                                        const Text('Delete')),
+                                                        : null),
                                               ]),
                                             ]);
                                       })),
                           if (_busy)
                             Padding(
                                 padding: const EdgeInsets.only(top: 8),
-                                child: Text('Please wait…',
-                                    style: AppDesign.type(14,
-                                        color: p.mutedText))),
+                                child: const ConsoleText('Please wait…',
+                                    tone: ConsoleTextTone.muted)),
                           if (_result != null)
                             Padding(
                                 padding: const EdgeInsets.only(top: 8),
-                                child: Text(_result!,
-                                    style: AppDesign.type(14, color: p.text1))),
+                                child: ConsoleText(_result!)),
                           if (_error != null || unavailable != null)
                             Flexible(
                                 child: SingleChildScrollView(
                                     padding: const EdgeInsets.only(top: 8),
-                                    child: Text(_error ?? unavailable!,
-                                        style: AppDesign.type(14,
-                                            color: p.mute)))),
+                                    child: ConsoleText(_error ?? unavailable!,
+                                        tone: ConsoleTextTone.danger))),
                         ])),
                 actions: [
                   if (_error != null && !_busy && unavailable == null)
-                    TextButton(
+                    ConsoleButton(
+                        label: 'Reload',
+                        size: ConsoleButtonSize.regular,
                         onPressed: () {
                           setState(() => _error = null);
                           _load();
-                        },
-                        child: Text('Reload',
-                            style: AppDesign.type(16, color: p.cyan))),
-                  TextButton(
-                      onPressed: _busy ? null : () => Navigator.pop(context),
-                      child: Text('Close',
-                          style: AppDesign.type(16, color: p.mutedText))),
+                        }),
+                  ConsoleButton(
+                      label: 'Close',
+                      size: ConsoleButtonSize.regular,
+                      onPressed: _busy ? null : () => Navigator.pop(context)),
                 ]));
       });
 }
@@ -390,10 +374,8 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
         final unavailable = widget.store.presetTargetError(widget.target);
         return PopScope(
             canPop: !_busy,
-            child: ConsoleAlertDialog(
-                backgroundColor: p.panel,
-                title: Text(widget.title,
-                    style: AppDesign.type(20, color: p.text1)),
+            child: ConsoleDialog(
+                title: widget.title,
                 content: SizedBox(
                     width: 360,
                     child: TextField(
@@ -402,15 +384,19 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
                         enableSuggestions: false,
                         autofocus: true,
                         enabled: !_busy && unavailable == null,
-                        style: AppDesign.type(18, color: p.text1),
+                        style: consoleTextStyle(
+                            context, ConsoleTextRole.sectionTitle),
                         decoration: InputDecoration(
                             labelText: 'Preset name',
-                            labelStyle: AppDesign.type(14, color: p.mutedText),
+                            labelStyle: consoleTextStyle(context, ConsoleTextRole.body,
+                                tone: ConsoleTextTone.muted),
                             filled: true,
                             fillColor: p.well,
                             errorText: _error ?? unavailable,
                             errorMaxLines: 6,
-                            errorStyle: AppDesign.type(13, color: p.mute),
+                            errorStyle: consoleTextStyle(
+                                context, ConsoleTextRole.smallLabel,
+                                tone: ConsoleTextTone.danger),
                             enabledBorder: OutlineInputBorder(
                                 borderSide: BorderSide(color: p.line)),
                             focusedBorder: OutlineInputBorder(
@@ -420,14 +406,15 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
                           if (unavailable == null) _apply();
                         })),
                 actions: [
-                  TextButton(
-                      onPressed: _busy ? null : () => Navigator.pop(context),
-                      child: Text('Cancel',
-                          style: AppDesign.type(16, color: p.mutedText))),
-                  TextButton(
-                      onPressed: _busy || unavailable != null ? null : _apply,
-                      child: Text(_busy ? 'Please wait…' : widget.action,
-                          style: AppDesign.type(16, color: p.cyan))),
+                  ConsoleButton(
+                      label: 'Cancel',
+                      size: ConsoleButtonSize.regular,
+                      onPressed: _busy ? null : () => Navigator.pop(context)),
+                  ConsoleButton(
+                      label: _busy ? 'Please wait…' : widget.action,
+                      variant: ConsoleButtonVariant.primary,
+                      size: ConsoleButtonSize.regular,
+                      onPressed: _busy || unavailable != null ? null : _apply),
                 ]));
       });
 }

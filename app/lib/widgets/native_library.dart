@@ -1,8 +1,10 @@
 import 'inline_feedback.dart';
+
 import 'dart:convert';
 
 import '../core/native_library_store.dart';
 import '../ui/console.dart';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/native_library.dart';
@@ -19,8 +21,12 @@ class NativeLibrarySection extends StatelessWidget {
     String description,
   ) async {
     final captured = store.nativeContext;
-    final ok = await showConsoleConfirmation(context,
-        title: title, message: description, confirmLabel: 'Continue');
+    final ok = await showConsoleConfirmation(
+      context,
+      title: title,
+      message: description,
+      confirmLabel: 'Continue',
+    );
     if (ok == true && context.mounted) {
       await store.nativeAction(action, captured);
     }
@@ -28,13 +34,15 @@ class NativeLibrarySection extends StatelessWidget {
 
   Future<void> _name(BuildContext context, [Map<String, dynamic>? slot]) async {
     final captured = store.nativeContext;
-    final name = await showConsoleNameDialog(context,
-        title: slot == null
-            ? 'Capture simulated strips'
-            : 'Rename provider snapshot',
-        initialValue: slot?['name'] as String? ?? '',
-        fieldLabel: 'Name (up to 63 UTF-8 bytes)',
-        confirmLabel: slot == null ? 'Capture' : 'Rename');
+    final name = await showConsoleNameDialog(
+      context,
+      title: slot == null
+          ? 'Capture simulated strips'
+          : 'Rename provider snapshot',
+      initialValue: slot?['name'] as String? ?? '',
+      fieldLabel: 'Name (up to 63 UTF-8 bytes)',
+      confirmLabel: slot == null ? 'Capture' : 'Rename',
+    );
     if (name != null && name.trim().isNotEmpty && context.mounted) {
       await store.nativeAction({
         'op': slot == null ? 'capture' : 'rename',
@@ -52,13 +60,14 @@ class NativeLibrarySection extends StatelessWidget {
     final captured = store.nativeContext;
     final fields = view.scopeFields!;
     final draft = (slot['scope'] as String).split('');
-    final result = await showDialog<String>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
+    final result = await showConsoleDialog<String>(
+      context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
-          return ConsoleAlertDialog(
-            title: Text('Recall scope · ${slot['slot']}'),
+          return ConsoleDialog(
+            scrollable: false,
+            maxWidth: 560,
+            title: 'Recall scope · ${slot['slot']}',
             content: SizedBox(
               width: 560,
               child: SingleChildScrollView(
@@ -69,9 +78,10 @@ class NativeLibrarySection extends StatelessWidget {
                     const Text(
                       'Select which settings are recalled from this snapshot.',
                     ),
-                    for (final group in fields
-                        .map((field) => field['group'] as String)
-                        .toSet()) ...[
+                    for (final group
+                        in fields
+                            .map((field) => field['group'] as String)
+                            .toSet()) ...[
                       Padding(
                         padding: const EdgeInsets.only(top: 16),
                         child: Text(
@@ -89,8 +99,9 @@ class NativeLibrarySection extends StatelessWidget {
                           title: Text(field['label'] as String),
                           value: draft[field['index'] as int] == '+',
                           onChanged: (value) => setState(
-                            () => draft[field['index'] as int] =
-                                value == true ? '+' : '-',
+                            () => draft[field['index'] as int] = value == true
+                                ? '+'
+                                : '-',
                           ),
                         ),
                     ],
@@ -99,13 +110,16 @@ class NativeLibrarySection extends StatelessWidget {
               ),
             ),
             actions: [
-              TextButton(
+              ConsoleButton(
+                label: 'Cancel',
+                size: ConsoleButtonSize.regular,
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
               ),
-              TextButton(
+              ConsoleButton(
+                label: 'Apply',
+                variant: ConsoleButtonVariant.primary,
+                size: ConsoleButtonSize.regular,
                 onPressed: () => Navigator.pop(context, draft.join()),
-                child: const Text('Apply'),
               ),
             ],
           );
@@ -118,7 +132,9 @@ class NativeLibrarySection extends StatelessWidget {
         store.nativeContext != captured ||
         store.nativeLibrary?.connected != true) {
       InlineFeedbackScope.show(
-          context, 'Mixer or access changed. Reopen recall scope to edit.');
+        context,
+        'Mixer or access changed. Reopen recall scope to edit.',
+      );
       return;
     }
     await store.nativeAction({
@@ -141,11 +157,10 @@ class NativeLibrarySection extends StatelessWidget {
     final slotCtl = TextEditingController();
     final nameCtl = TextEditingController(text: initialName);
     try {
-      final result = await showDialog<Map<String, dynamic>>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: Text(title),
+      final result = await showConsoleDialog<Map<String, dynamic>>(
+        context,
+        builder: (context) => ConsoleDialog(
+          title: title,
           content: SizedBox(
             width: 400,
             child: Form(
@@ -189,11 +204,15 @@ class NativeLibrarySection extends StatelessWidget {
             ),
           ),
           actions: [
-            TextButton(
+            ConsoleButton(
+              label: 'Cancel',
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
             ),
-            TextButton(
+            ConsoleButton(
+              label: 'Continue',
+              variant: ConsoleButtonVariant.primary,
+              size: ConsoleButtonSize.regular,
               onPressed: () {
                 if (formKey.currentState?.validate() != true) return;
                 Navigator.pop(context, {
@@ -201,7 +220,6 @@ class NativeLibrarySection extends StatelessWidget {
                   'name': nameCtl.text,
                 });
               },
-              child: const Text('Continue'),
             ),
           ],
         ),
@@ -214,50 +232,29 @@ class NativeLibrarySection extends StatelessWidget {
   }
 
   /// Name-only prompt for provider-described rename rows.
-  Future<String?> _newName(BuildContext context, String initial) async {
-    final ctl = TextEditingController(text: initial);
-    try {
-      return await showDialog<String>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: const Text('Rename desk slot'),
-          content: TextField(
-            controller: ctl,
-            decoration: const InputDecoration(
-              labelText: 'Name (1-63 bytes, no surrounding space)',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, ctl.text),
-              child: const Text('Rename'),
-            ),
-          ],
-        ),
+  Future<String?> _newName(BuildContext context, String initial) =>
+      showConsoleTextInput(
+        context,
+        title: 'Rename desk slot',
+        confirmLabel: 'Rename',
+        initialValue: initial,
+        fieldLabel: 'Name (1-63 bytes, no surrounding space)',
       );
-    } finally {
-      ctl.dispose();
-    }
-  }
 
   /// Paste a previously exported local archive document for inspection or
   /// import. Anything that is not a JSON object is rejected before dispatch;
   /// schema/kind/node validation happens provider-side with no mixer write
   /// for inspection.
   Future<Map<String, dynamic>?> _archivePaste(
-      BuildContext context, String title) async {
+    BuildContext context,
+    String title,
+  ) async {
     final ctl = TextEditingController();
     try {
-      final text = await showDialog<String>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: Text(title),
+      final text = await showConsoleDialog<String>(
+        context,
+        builder: (context) => ConsoleDialog(
+          title: title,
           content: SizedBox(
             width: 480,
             child: TextField(
@@ -269,13 +266,16 @@ class NativeLibrarySection extends StatelessWidget {
             ),
           ),
           actions: [
-            TextButton(
+            ConsoleButton(
+              label: 'Cancel',
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
             ),
-            TextButton(
+            ConsoleButton(
+              label: 'Continue',
+              variant: ConsoleButtonVariant.primary,
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context, ctl.text),
-              child: const Text('Continue'),
             ),
           ],
         ),
@@ -294,16 +294,17 @@ class NativeLibrarySection extends StatelessWidget {
 
   /// Integer-argument prompt driven by a provider-described copy form.
   Future<Map<String, int>?> _copyArgs(
-      BuildContext context, NativeCopyForm form) async {
+    BuildContext context,
+    NativeCopyForm form,
+  ) async {
     final ctls = {
-      for (final field in form.fields) field.key: TextEditingController()
+      for (final field in form.fields) field.key: TextEditingController(),
     };
     try {
-      return await showDialog<Map<String, int>>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: Text(form.title),
+      return await showConsoleDialog<Map<String, int>>(
+        context,
+        builder: (context) => ConsoleDialog(
+          title: form.title,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -320,10 +321,15 @@ class NativeLibrarySection extends StatelessWidget {
             ],
           ),
           actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel')),
-            TextButton(
+            ConsoleButton(
+              label: 'Cancel',
+              size: ConsoleButtonSize.regular,
+              onPressed: () => Navigator.pop(context),
+            ),
+            ConsoleButton(
+              label: form.submitLabel,
+              variant: ConsoleButtonVariant.primary,
+              size: ConsoleButtonSize.regular,
               onPressed: () {
                 final args = <String, int>{};
                 for (final field in form.fields) {
@@ -337,7 +343,6 @@ class NativeLibrarySection extends StatelessWidget {
                 }
                 Navigator.pop(context, args);
               },
-              child: Text(form.submitLabel),
             ),
           ],
         ),
@@ -381,74 +386,74 @@ class NativeLibrarySection extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              TextButton(
+              ConsoleButton(
+                label: 'Inspect provider',
                 onPressed: enabled
                     ? () => store.nativeAction({
-                          'op': 'inspect',
-                        }, store.nativeContext)
+                        'op': 'inspect',
+                      }, store.nativeContext)
                     : null,
-                child: const Text('Inspect provider'),
               ),
               if (view?.supports('refresh') == true)
-                TextButton(
+                ConsoleButton(
+                  label: 'Transfer / refresh reports',
                   onPressed: enabled
                       ? () => _confirm(
-                            context,
-                            {'op': 'refresh'},
-                            view?.refreshTitle ?? policy.refreshTitle,
-                            view?.refreshDescription ??
-                                policy.refreshDescription,
-                          )
+                          context,
+                          {'op': 'refresh'},
+                          view?.refreshTitle ?? policy.refreshTitle,
+                          view?.refreshDescription ?? policy.refreshDescription,
+                        )
                       : null,
-                  child: const Text('Transfer / refresh reports'),
                 ),
               if (view?.supports('export_file') == true)
-                TextButton(
+                ConsoleButton(
+                  label: 'Save native show ZIP',
                   onPressed: enabled
                       ? () => _confirm(
-                            context,
-                            {'op': 'export_file'},
-                            'Preserve native show ZIP?',
-                            'Download, validate and save the original stored-show ZIP on this device. Unknown file bytes are retained. Current unsaved edits and exact restoration are unverified; this is not a full native backup.',
-                          )
+                          context,
+                          {'op': 'export_file'},
+                          'Preserve native show ZIP?',
+                          'Download, validate and save the original stored-show ZIP on this device. Unknown file bytes are retained. Current unsaved edits and exact restoration are unverified; this is not a full native backup.',
+                        )
                       : null,
-                  child: const Text('Save native show ZIP'),
                 ),
               if (view?.supports('inspect_file') == true)
-                TextButton(
+                ConsoleButton(
+                  label: 'Import ZIP for inspection',
                   onPressed: enabled ? store.importNativeFile : null,
-                  child: const Text('Import ZIP for inspection'),
                 ),
               if (store.hasNativeFile)
-                TextButton(
+                ConsoleButton(
+                  label: 'Export preserved ZIP',
                   onPressed: enabled ? store.exportNativeFile : null,
-                  child: const Text('Export preserved ZIP'),
                 ),
               if (view?.supports('store') == true)
-                TextButton(
-                  onPressed: enabled &&
+                ConsoleButton(
+                  label: 'Save native snapshot',
+                  onPressed:
+                      enabled &&
                           store.nativeWritable &&
                           view!.slots.length < view.capacity
                       ? () => _confirm(
-                            context,
-                            {'op': 'store'},
-                            'Save new native snapshot?',
-                            'Store current mixer state at the next user position. Native naming is retained; use Rename after save. Current-edit coverage and safes remain unverified. No automatic retry.',
-                          )
+                          context,
+                          {'op': 'store'},
+                          'Save new native snapshot?',
+                          'Store current mixer state at the next user position. Native naming is retained; use Rename after save. Current-edit coverage and safes remain unverified. No automatic retry.',
+                        )
                       : null,
-                  child: const Text('Save native snapshot'),
                 ),
               if (view?.supports('capture') == true)
-                TextButton(
+                ConsoleButton(
+                  label: 'Capture simulated strips',
                   onPressed: enabled && store.nativeWritable
                       ? () => _name(context)
                       : null,
-                  child: const Text('Capture simulated strips'),
                 ),
               if (store.nativeBusy)
-                TextButton(
+                ConsoleButton(
+                  label: 'Cancel waiting',
                   onPressed: store.cancelNativeAction,
-                  child: const Text('Cancel waiting'),
                 ),
             ],
           ),
@@ -457,13 +462,13 @@ class NativeLibrarySection extends StatelessWidget {
             Text(store.nativeStatus!, style: TextStyle(color: palette.text4)),
           if (view != null) ...[
             if (view.supports('read_show'))
-              TextButton(
+              ConsoleButton(
+                label: 'Check current show',
                 onPressed: enabled
                     ? () => store.nativeAction({
-                          'op': 'read_show',
-                        }, store.nativeContext)
+                        'op': 'read_show',
+                      }, store.nativeContext)
                     : null,
-                child: const Text('Check current show'),
               ),
             Text(
               '${view.authority} · ${view.complete ? 'complete provider index' : 'partial observed index'} · '
@@ -474,122 +479,118 @@ class NativeLibrarySection extends StatelessWidget {
               Text(header, style: TextStyle(color: palette.text7)),
             Text(
               view.limitations,
-              style: TextStyle(color: palette.text7, fontSize: 12),
+              style: TextStyle(color: palette.text7, fontSize: AppDesign.caption),
             ),
             if (view.banks.isEmpty) ...[
               if (view.guard['default_slot'] != null)
-                TextButton(
-                  onPressed: enabled &&
+                ConsoleButton(
+                  label: '0 · Default - recall only',
+                  onPressed:
+                      enabled &&
                           view.connected &&
                           store.nativeWritable &&
                           view.supports('recall')
                       ? () => _confirm(
-                            context,
-                            {
-                              'op': 'recall',
-                              'slot': view.guard['default_slot']
-                            },
-                            'Recall Default 0?',
-                            'This resets the mixer to the native default snapshot. '
-                                'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
-                          )
+                          context,
+                          {'op': 'recall', 'slot': view.guard['default_slot']},
+                          'Recall Default 0?',
+                          'This resets the mixer to the native default snapshot. '
+                              'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
+                        )
                       : null,
-                  child: const Text('0 · Default - recall only'),
                 ),
               if (view.slots.isEmpty)
                 Text(
-                  view.complete
-                      ? 'No captured slots.'
-                      : 'No names reported. This does not prove the show is empty.',
+                  view.complete ? 'No captured slots.' : 'No names reported. This does not prove the show is empty.',
                   style: TextStyle(color: palette.text7),
                 ),
               for (final slot in view.slots)
                 Padding(
-                    padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
-                    child: ConsoleActionGroup(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      children: [
-                        Text(
-                          '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
-                          '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
-                          style: TextStyle(color: palette.text1),
+                  padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
+                  child: ConsoleActionGroup(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    children: [
+                      Text(
+                        '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
+                        '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
+                        style: TextStyle(color: palette.text1),
+                      ),
+                      if (view.supports('set_scope'))
+                        if (view.scopeFields != null && view.hasScope(slot))
+                          ConsoleButton(
+                            label: 'Recall scope',
+                            onPressed:
+                                enabled &&
+                                    view.connected &&
+                                    store.nativeWritable
+                                ? () => _scope(context, view, slot)
+                                : null,
+                          )
+                        else
+                          Text(
+                            'Recall scope unavailable',
+                            style: TextStyle(color: palette.text7),
+                          ),
+                      if (view.supports('recall'))
+                        ConsoleButton(
+                          label: 'Recall',
+                          onPressed:
+                              enabled && view.connected && store.nativeWritable
+                              ? () => _confirm(
+                                  context,
+                                  {'op': 'recall', 'slot': slot['slot']},
+                                  'Recall provider snapshot?',
+                                  'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
+                                      'Safe behavior and audio state are not verified here. No automatic retry.',
+                                )
+                              : null,
                         ),
-                        if (view.supports('set_scope'))
-                          if (view.scopeFields != null && view.hasScope(slot))
-                            TextButton(
-                              onPressed: enabled &&
-                                      view.connected &&
-                                      store.nativeWritable
-                                  ? () => _scope(context, view, slot)
-                                  : null,
-                              child: const Text('Recall scope'),
-                            )
-                          else
-                            Text(
-                              'Recall scope unavailable',
-                              style: TextStyle(color: palette.text7),
-                            ),
-                        if (view.supports('recall'))
-                          TextButton(
-                            onPressed: enabled &&
-                                    view.connected &&
-                                    store.nativeWritable
-                                ? () => _confirm(
-                                      context,
-                                      {'op': 'recall', 'slot': slot['slot']},
-                                      'Recall provider snapshot?',
-                                      'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
-                                          'Safe behavior and audio state are not verified here. No automatic retry.',
-                                    )
-                                : null,
-                            child: const Text('Recall'),
-                          ),
-                        if (view.supports('replace'))
-                          TextButton(
-                            onPressed: enabled &&
-                                    view.connected &&
-                                    store.nativeWritable
-                                ? () => _confirm(
-                                      context,
-                                      {'op': 'replace', 'slot': slot['slot']},
-                                      view.authority == 'mixer'
-                                          ? 'Update native snapshot?'
-                                          : 'Replace simulated capture?',
-                                      policy.replaceDescription(
-                                          view.authority == 'mixer'),
-                                    )
-                                : null,
-                            child: Text(policy.replaceLabel),
-                          ),
-                        if (view.supports('rename'))
-                          TextButton(
-                            onPressed: enabled &&
-                                    view.connected &&
-                                    store.nativeWritable
-                                ? () => _name(context, slot)
-                                : null,
-                            child: const Text('Rename'),
-                          ),
-                        if (view.supports('delete'))
-                          TextButton(
-                            onPressed: enabled &&
-                                    view.connected &&
-                                    store.nativeWritable
-                                ? () => _confirm(
-                                      context,
-                                      {'op': 'delete', 'slot': slot['slot']},
-                                      view.authority == 'mixer'
-                                          ? 'Delete native snapshot?'
-                                          : 'Delete simulated slot?',
-                                      policy.deleteDescription(
-                                          view.authority == 'mixer'),
-                                    )
-                                : null,
-                            child: const Text('Delete'),
-                          ),
-                      ],
-                    )),
+                      if (view.supports('replace'))
+                        ConsoleButton(
+                          label: policy.replaceLabel,
+                          onPressed:
+                              enabled && view.connected && store.nativeWritable
+                              ? () => _confirm(
+                                  context,
+                                  {'op': 'replace', 'slot': slot['slot']},
+                                  view.authority == 'mixer'
+                                      ? 'Update native snapshot?'
+                                      : 'Replace simulated capture?',
+                                  policy.replaceDescription(
+                                    view.authority == 'mixer',
+                                  ),
+                                )
+                              : null,
+                        ),
+                      if (view.supports('rename'))
+                        ConsoleButton(
+                          label: 'Rename',
+                          onPressed:
+                              enabled && view.connected && store.nativeWritable
+                              ? () => _name(context, slot)
+                              : null,
+                        ),
+                      if (view.supports('delete'))
+                        ConsoleButton(
+                          label: 'Delete',
+                          onPressed:
+                              enabled && view.connected && store.nativeWritable
+                              ? () => _confirm(
+                                  context,
+                                  {'op': 'delete', 'slot': slot['slot']},
+                                  view.authority == 'mixer'
+                                      ? 'Delete native snapshot?'
+                                      : 'Delete simulated slot?',
+                                  policy.deleteDescription(
+                                    view.authority == 'mixer',
+                                  ),
+                                )
+                              : null,
+                        ),
+                    ],
+                  ),
+                ),
             ],
             if (view.banks.isNotEmpty)
               _DescriptorBanks(
@@ -621,10 +622,14 @@ class _DescriptorBanks extends StatelessWidget {
   final bool enabled;
   final Future<void> Function(Map<String, dynamic> action) onAction;
   final Future<void> Function(
-      Map<String, dynamic> action, String title, String message) onConfirm;
+    Map<String, dynamic> action,
+    String title,
+    String message,
+  )
+  onConfirm;
   final Future<String?> Function(String initial) onNewName;
   final Future<Map<String, dynamic>?> Function(String title, int min, int max)
-      onSlotName;
+  onSlotName;
   final Future<Map<String, int>?> Function(NativeCopyForm form) onCopy;
   final Future<Map<String, dynamic>?> Function(String title) onArchivePaste;
 
@@ -639,8 +644,13 @@ class _DescriptorBanks extends StatelessWidget {
     required this.onArchivePaste,
   });
 
-  String _fill(String template,
-      {Object? slot, Object? name, String? bank, Object? number}) {
+  String _fill(
+    String template, {
+    Object? slot,
+    Object? name,
+    String? bank,
+    Object? number,
+  }) {
     return template
         .replaceAll('{slot}', '${slot ?? ''}')
         .replaceAll('{name}', '${name ?? ''}')
@@ -648,10 +658,16 @@ class _DescriptorBanks extends StatelessWidget {
         .replaceAll('{number}', '${number ?? slot ?? ''}');
   }
 
-  Future<void> _save(BuildContext context, NativeBankDescriptor bank,
-      NativeBankAction save) async {
+  Future<void> _save(
+    BuildContext context,
+    NativeBankDescriptor bank,
+    NativeBankAction save,
+  ) async {
     final input = await onSlotName(
-        save.promptTitle ?? 'Save ${bank.title}', bank.slotMin, bank.slotMax);
+      save.promptTitle ?? 'Save ${bank.title}',
+      bank.slotMin,
+      bank.slotMax,
+    );
     if (input == null || !context.mounted) return;
     await onAction({
       'op': save.op,
@@ -661,8 +677,12 @@ class _DescriptorBanks extends StatelessWidget {
     });
   }
 
-  Future<void> _rename(BuildContext context, NativeBankDescriptor bank,
-      NativeBankAction rename, Map<String, dynamic> row) async {
+  Future<void> _rename(
+    BuildContext context,
+    NativeBankDescriptor bank,
+    NativeBankAction rename,
+    Map<String, dynamic> row,
+  ) async {
     final key = bank.rowKey == 'position' ? 'position' : 'slot';
     final name = await onNewName((row['name'] ?? '') as String);
     if (name == null || !context.mounted) return;
@@ -679,24 +699,26 @@ class _DescriptorBanks extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     bool writable = enabled && view.connected && view.complete;
     Future<void> act(Map<String, dynamic> a) => onAction(a);
-    TextStyle head =
-        TextStyle(color: palette.text1, fontWeight: FontWeight.w700);
-    TextStyle sub = TextStyle(color: palette.text7, fontSize: 12);
+    TextStyle head = TextStyle(
+      color: palette.text1,
+      fontWeight: FontWeight.w700,
+    );
+    TextStyle sub = TextStyle(color: palette.text7, fontSize: AppDesign.caption);
     Widget bankTitle(String t, String? extra) => Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Text(extra == null ? t : '$t · $extra', style: head),
-        );
+      padding: const EdgeInsets.only(top: 10),
+      child: Text(extra == null ? t : '$t · $extra', style: head),
+    );
     Widget bankRow(String label, List<Widget> buttons) => Padding(
-          padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
-          child: ConsoleActionGroup(children: [
-            Text(label, style: TextStyle(color: palette.text1)),
-            ...buttons,
-          ]),
-        );
-    TextButton btn(String label, VoidCallback? onPressed) => TextButton(
-          onPressed: onPressed,
-          child: Text(label),
-        );
+      padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
+      child: ConsoleActionGroup(
+        children: [
+          Text(label, style: TextStyle(color: palette.text1)),
+          ...buttons,
+        ],
+      ),
+    );
+    ConsoleButton btn(String label, VoidCallback? onPressed) =>
+        ConsoleButton(label: label, onPressed: onPressed);
     VoidCallback? guard(VoidCallback fn) => writable ? fn : null;
 
     String rowLabel(NativeBankDescriptor bank, Map<String, dynamic> row) {
@@ -712,55 +734,84 @@ class _DescriptorBanks extends StatelessWidget {
         row[bank.rowKey] as Object;
 
     List<Widget> rowButtons(
-        NativeBankDescriptor bank, Map<String, dynamic> row) {
+      NativeBankDescriptor bank,
+      Map<String, dynamic> row,
+    ) {
       final key = bank.rowKey == 'position' ? 'position' : 'slot';
       final id = rowKeyOf(bank, row);
       final name = row['name'];
       final buttons = <Widget>[];
       final recall = bank.recall;
       if (recall != null && view.supports(recall.op)) {
-        buttons.add(btn(
+        buttons.add(
+          btn(
             'Recall',
-            guard(() => onConfirm(
-                  {
-                    'op': recall.op,
-                    if (bank.bank != null) 'bank': bank.bank,
-                    key: id,
-                  },
-                  recall.confirmTitle == null
-                      ? 'Recall?'
-                      : _fill(recall.confirmTitle!,
-                          slot: id, name: name, bank: bank.bank),
-                  recall.confirmMessage == null
-                      ? 'Apply this change on the mixer?'
-                      : _fill(recall.confirmMessage!,
-                          slot: id, name: name, bank: bank.bank),
-                ))));
+            guard(
+              () => onConfirm(
+                {
+                  'op': recall.op,
+                  if (bank.bank != null) 'bank': bank.bank,
+                  key: id,
+                },
+                recall.confirmTitle == null
+                    ? 'Recall?'
+                    : _fill(
+                        recall.confirmTitle!,
+                        slot: id,
+                        name: name,
+                        bank: bank.bank,
+                      ),
+                recall.confirmMessage == null
+                    ? 'Apply this change on the mixer?'
+                    : _fill(
+                        recall.confirmMessage!,
+                        slot: id,
+                        name: name,
+                        bank: bank.bank,
+                      ),
+              ),
+            ),
+          ),
+        );
       }
       final rename = bank.rename;
       if (rename != null && view.supports(rename.op)) {
         buttons.add(
-            btn('Rename', guard(() => _rename(context, bank, rename, row))));
+          btn('Rename', guard(() => _rename(context, bank, rename, row))),
+        );
       }
       final delete = bank.delete;
       if (delete != null && view.supports(delete.op)) {
-        buttons.add(btn(
+        buttons.add(
+          btn(
             'Delete',
-            guard(() => onConfirm(
-                  {
-                    'op': delete.op,
-                    if (bank.bank != null) 'bank': bank.bank,
-                    key: id,
-                  },
-                  delete.confirmTitle == null
-                      ? 'Delete?'
-                      : _fill(delete.confirmTitle!,
-                          slot: id, name: name, bank: bank.bank),
-                  delete.confirmMessage == null
-                      ? 'Apply this change on the mixer?'
-                      : _fill(delete.confirmMessage!,
-                          slot: id, name: name, bank: bank.bank),
-                ))));
+            guard(
+              () => onConfirm(
+                {
+                  'op': delete.op,
+                  if (bank.bank != null) 'bank': bank.bank,
+                  key: id,
+                },
+                delete.confirmTitle == null
+                    ? 'Delete?'
+                    : _fill(
+                        delete.confirmTitle!,
+                        slot: id,
+                        name: name,
+                        bank: bank.bank,
+                      ),
+                delete.confirmMessage == null
+                    ? 'Apply this change on the mixer?'
+                    : _fill(
+                        delete.confirmMessage!,
+                        slot: id,
+                        name: name,
+                        bank: bank.bank,
+                      ),
+              ),
+            ),
+          ),
+        );
       }
       return buttons;
     }
@@ -776,25 +827,31 @@ class _DescriptorBanks extends StatelessWidget {
               (bank.add != null && view.supports(bank.add!.op)))
             Padding(
               padding: const EdgeInsets.symmetric(vertical: AppDesign.spaceSm),
-              child: ConsoleActionGroup(children: [
-                if (bank.save != null && view.supports(bank.save!.op))
-                  btn('Save', guard(() => _save(context, bank, bank.save!))),
-                if (bank.add != null && view.supports(bank.add!.op))
-                  btn('Add', guard(() async {
-                    final add = bank.add!;
-                    final input = await onSlotName(
-                        add.promptTitle ?? 'Add ${bank.title}',
-                        bank.slotMin,
-                        bank.slotMax);
-                    if (input == null || !context.mounted) return;
-                    await act({
-                      'op': add.op,
-                      if (bank.bank != null) 'bank': bank.bank,
-                      add.numberArg ?? 'number': input['slot'],
-                      'name': input['name'],
-                    });
-                  })),
-              ]),
+              child: ConsoleActionGroup(
+                children: [
+                  if (bank.save != null && view.supports(bank.save!.op))
+                    btn('Save', guard(() => _save(context, bank, bank.save!))),
+                  if (bank.add != null && view.supports(bank.add!.op))
+                    btn(
+                      'Add',
+                      guard(() async {
+                        final add = bank.add!;
+                        final input = await onSlotName(
+                          add.promptTitle ?? 'Add ${bank.title}',
+                          bank.slotMin,
+                          bank.slotMax,
+                        );
+                        if (input == null || !context.mounted) return;
+                        await act({
+                          'op': add.op,
+                          if (bank.bank != null) 'bank': bank.bank,
+                          add.numberArg ?? 'number': input['slot'],
+                          'name': input['name'],
+                        });
+                      }),
+                    ),
+                ],
+              ),
             ),
           for (final row in bank.rows) ...[
             if (rowButtons(bank, row).isEmpty)
@@ -804,51 +861,76 @@ class _DescriptorBanks extends StatelessWidget {
           ],
         ],
         if (view.copyForms.any((form) => view.supports(form.op)))
-          ConsoleActionGroup(children: [
-            for (final form in view.copyForms)
-              if (view.supports(form.op))
-                btn(form.title, guard(() async {
-                  final args = await onCopy(form);
-                  if (args == null || !context.mounted) return;
-                  await act({'op': form.op, ...args});
-                })),
-          ]),
+          ConsoleActionGroup(
+            children: [
+              for (final form in view.copyForms)
+                if (view.supports(form.op))
+                  btn(
+                    form.title,
+                    guard(() async {
+                      final args = await onCopy(form);
+                      if (args == null || !context.mounted) return;
+                      await act({'op': form.op, ...args});
+                    }),
+                  ),
+            ],
+          ),
         if (archive != null) ...[
           bankTitle('Local archives (JSON)', null),
-          ConsoleActionGroup(spacing: 8, children: [
-            for (final kind in archive.kinds)
-              if (kind.slotMin != null && kind.slotMax != null)
-                btn('Export ${kind.label}', guard(() async {
-                  final input = await onSlotName(
-                      'Export ${kind.label}', kind.slotMin!, kind.slotMax!);
-                  if (input == null || !context.mounted) return;
-                  await act({
-                    'op': archive.exportOp,
-                    'kind': kind.id,
-                    'slot': input['slot'],
-                  });
-                }))
-              else
-                btn(
+          ConsoleActionGroup(
+            spacing: 8,
+            children: [
+              for (final kind in archive.kinds)
+                if (kind.slotMin != null && kind.slotMax != null)
+                  btn(
                     'Export ${kind.label}',
-                    guard(
-                        () => act({'op': archive.exportOp, 'kind': kind.id}))),
-            if (view.supports(archive.inspectOp))
-              btn('Inspect archive JSON', guard(() async {
-                final doc = await onArchivePaste(
-                    'Inspect local archive (no mixer write)');
-                if (doc == null || !context.mounted) return;
-                await act({'op': archive.inspectOp, 'archive': doc});
-              })),
-            if (view.supports(archive.importOp))
-              btn('Import archive JSON', guard(() async {
-                final doc = await onArchivePaste(
-                    'Import local archive (writes mixer nodes)');
-                if (doc == null || !context.mounted) return;
-                await onConfirm({'op': archive.importOp, 'archive': doc},
-                    archive.importConfirmTitle, archive.importConfirmMessage);
-              })),
-          ]),
+                    guard(() async {
+                      final input = await onSlotName(
+                        'Export ${kind.label}',
+                        kind.slotMin!,
+                        kind.slotMax!,
+                      );
+                      if (input == null || !context.mounted) return;
+                      await act({
+                        'op': archive.exportOp,
+                        'kind': kind.id,
+                        'slot': input['slot'],
+                      });
+                    }),
+                  )
+                else
+                  btn(
+                    'Export ${kind.label}',
+                    guard(() => act({'op': archive.exportOp, 'kind': kind.id})),
+                  ),
+              if (view.supports(archive.inspectOp))
+                btn(
+                  'Inspect archive JSON',
+                  guard(() async {
+                    final doc = await onArchivePaste(
+                      'Inspect local archive (no mixer write)',
+                    );
+                    if (doc == null || !context.mounted) return;
+                    await act({'op': archive.inspectOp, 'archive': doc});
+                  }),
+                ),
+              if (view.supports(archive.importOp))
+                btn(
+                  'Import archive JSON',
+                  guard(() async {
+                    final doc = await onArchivePaste(
+                      'Import local archive (writes mixer nodes)',
+                    );
+                    if (doc == null || !context.mounted) return;
+                    await onConfirm(
+                      {'op': archive.importOp, 'archive': doc},
+                      archive.importConfirmTitle,
+                      archive.importConfirmMessage,
+                    );
+                  }),
+                ),
+            ],
+          ),
           Text(
             'Local archives are OpenFader JSON copies, not desk USB files.',
             style: sub,

@@ -1,12 +1,9 @@
 library;
 
-import '../ui/overlays/console_dialogs.dart';
-
 import 'package:material_ui/material_ui.dart';
-import '../palette.dart';
 import 'package:flutter/services.dart';
 
-import '../design.dart';
+import '../ui/console.dart';
 
 /// Show a numeric entry dialog for [title]. Returns the accepted value or
 /// null when cancelled/invalid. [initial] is the live value text, [min]/[max]
@@ -22,16 +19,11 @@ Future<double?> showNumberEntry({
 }) {
   final ctl = TextEditingController(text: initial);
   String? error;
-  return showDialog<double>(
-    animationStyle: AnimationStyle.noAnimation,
-    context: context,
+  return showConsoleDialog<double>(
+    context,
     builder: (context) => StatefulBuilder(
-      builder: (context, setState) => ConsoleAlertDialog(
-        backgroundColor: ConsolePalette.of(context).panel,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: ConsolePalette.of(context).line)),
-        title: Text(title, style: AppDesign.type(18, weight: FontWeight.w600)),
+      builder: (context, setState) => ConsoleDialog(
+        title: title,
         content: SizedBox(
           width: 280,
           child: Column(
@@ -54,8 +46,8 @@ Future<double?> showNumberEntry({
                   filled: true,
                   fillColor: ConsolePalette.of(context).well,
                   errorText: error,
-                  errorStyle: AppDesign.type(13,
-                      color: ConsolePalette.of(context).mute),
+                  errorStyle: consoleTextStyle(context, ConsoleTextRole.smallLabel,
+                      tone: ConsoleTextTone.danger),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
@@ -77,25 +69,24 @@ Future<double?> showNumberEntry({
               const SizedBox(height: 6),
               Text(
                   'Range ${min.toStringAsFixed(1)} … ${max.toStringAsFixed(1)}',
-                  style: AppDesign.type(12,
-                      color: ConsolePalette.of(context).mutedText)),
+                  style: consoleTextStyle(context, ConsoleTextRole.caption,
+                      tone: ConsoleTextTone.muted)),
             ],
           ),
         ),
         actions: [
-          TextButton(
+          ConsoleButton(
+            label: 'Cancel',
+            variant: ConsoleButtonVariant.quiet,
+            size: ConsoleButtonSize.regular,
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel',
-                style: AppDesign.type(16,
-                    color: ConsolePalette.of(context).mutedText)),
           ),
-          TextButton(
+          ConsoleButton(
+            label: 'Set',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: () => _submit(context, ctl, setState, min, max,
                 allowNegInf, negInfValue, (e) => error = e),
-            child: Text('Set',
-                style: AppDesign.type(16,
-                    color: ConsolePalette.of(context).lime,
-                    weight: FontWeight.w600)),
           ),
         ],
       ),

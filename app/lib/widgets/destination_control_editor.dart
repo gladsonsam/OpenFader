@@ -1,8 +1,7 @@
-import '../ui/overlays/console_dialogs.dart';
+import '../ui/console.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/destination_controls.dart';
-import '../palette.dart';
 import 'compact_choice_picker.dart';
 
 class DestinationControlEditor extends StatefulWidget {
@@ -76,9 +75,8 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
         final palette = ConsolePalette.of(context);
         return PopScope(
             canPop: !_sending,
-            child: ConsoleAlertDialog(
-                scrollable: true,
-                title: Text('${control.label} · ${control.destinationName}'),
+            child: ConsoleDialog(
+                title: '${control.label} · ${control.destinationName}',
                 content: SizedBox(
                     width: 420,
                     child: Column(
@@ -131,20 +129,23 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
                           ],
                         ])),
                 actions: [
-                  TextButton(
+                  ConsoleButton(
+                      label: 'Cancel',
+                      size: ConsoleButtonSize.regular,
                       onPressed:
-                          _sending ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Cancel')),
-                  TextButton(
+                          _sending ? null : () => Navigator.of(context).pop()),
+                  ConsoleButton(
+                      label: _sending
+                          ? 'Sending…'
+                          : 'Apply to ${control.targetLabel}',
+                      variant: ConsoleButtonVariant.primary,
+                      size: ConsoleButtonSize.regular,
                       onPressed: current &&
                               !_sending &&
                               control.allowsValue(_selected) &&
                               _selected != control.value
                           ? _apply
-                          : null,
-                      child: Text(_sending
-                          ? 'Sending…'
-                          : 'Apply to ${control.targetLabel}')),
+                          : null),
                 ]));
       });
 }

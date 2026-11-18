@@ -117,16 +117,10 @@
  },
  "app/lib/screens/recorder.dart": {
   "numeric-breakpoint": 1,
-  "numeric-font-size": 6,
-  "raw-button": 45,
-  "raw-dialog": 36,
-  "raw-icon-button": 10
+  "numeric-font-size": 2
  },
  "app/lib/screens/recorder_arrangement.dart": {
-  "numeric-breakpoint": 1,
-  "numeric-font-size": 6,
-  "raw-button": 3,
-  "raw-icon-button": 4
+  "numeric-breakpoint": 1
  },
  "app/lib/screens/routing.dart": {
   "numeric-font-size": 7,
@@ -192,68 +186,17 @@
   "numeric-font-size": 2,
   "raw-button": 5
  },
- "app/lib/widgets/channel/building_blocks.dart": {
-  "numeric-font-size": 1
- },
  "app/lib/widgets/channel/eq_graph.dart": {
   "numeric-breakpoint": 2
  },
- "app/lib/widgets/channel/knob.dart": {
-  "numeric-font-size": 2
- },
- "app/lib/widgets/channel/level_meters.dart": {
-  "numeric-font-size": 2
- },
- "app/lib/widgets/channel/send_row.dart": {
-  "numeric-font-size": 3
- },
- "app/lib/widgets/channel_clipboard_actions.dart": {
-  "raw-button": 5,
-  "raw-dialog": 2
- },
  "app/lib/widgets/channel_name_editor.dart": {
   "color-literal": 2,
-  "raw-button": 9,
-  "raw-icon-button": 6
- },
- "app/lib/widgets/channel_quick_assign.dart": {
-  "numeric-font-size": 2,
-  "raw-button": 1,
-  "raw-dialog": 2
- },
- "app/lib/widgets/compact_choice_picker.dart": {
-  "raw-button": 1,
-  "raw-dialog": 2
- },
- "app/lib/widgets/destination_control_editor.dart": {
-  "raw-button": 2,
-  "raw-dialog": 1
+  "raw-button": 1
  },
  "app/lib/widgets/inline_feedback.dart": {
-  "numeric-breakpoint": 1,
-  "raw-icon-button": 1
- },
- "app/lib/widgets/native_library.dart": {
-  "numeric-font-size": 2,
-  "raw-button": 26,
-  "raw-dialog": 10
+  "numeric-breakpoint": 1
  },
  "app/lib/widgets/number_entry.dart": {
-  "numeric-font-size": 6,
-  "raw-button": 2,
-  "raw-dialog": 2
- },
- "app/lib/widgets/output_geq_editor.dart": {
-  "raw-button": 6,
-  "raw-dialog": 2
- },
- "app/lib/widgets/output_processor_presets.dart": {
-  "raw-button": 7,
-  "raw-dialog": 2
- },
- "app/lib/widgets/processor_preset_library.dart": {
-  "numeric-font-size": 17,
-  "raw-button": 10,
-  "raw-dialog": 4
+  "numeric-font-size": 1
  }
 }

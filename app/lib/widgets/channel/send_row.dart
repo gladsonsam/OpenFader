@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../palette.dart';
+import '../../ui/console.dart';
 import '../../theme.dart';
 import '../../core/channel_views.dart';
 
@@ -38,7 +38,7 @@ class U4SendRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 13,
+                        fontSize: AppDesign.smallLabel,
                         fontWeight: FontWeight.w600,
                         color: ConsolePalette.of(context).text1)),
                 const SizedBox(height: 6),
@@ -71,7 +71,7 @@ class U4SendRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 11,
+                      fontSize: AppDesign.minorText,
                       fontWeight: FontWeight.w700,
                       color: send.muted
                           ? ConsolePalette.of(context).onDanger
@@ -99,7 +99,7 @@ class U4SendRow extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 11,
+                    fontSize: AppDesign.minorText,
                     fontWeight: FontWeight.w700,
                     color: ConsolePalette.of(context).cyan),
               ),

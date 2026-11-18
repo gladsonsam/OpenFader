@@ -43,31 +43,16 @@ class _ChannelClipboardActionsState extends State<ChannelClipboardActions> {
         widget.target,
       );
       if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: Text('Paste Processing to ${proposal.destination}?'),
-          content: SingleChildScrollView(
-            child: Text(
-              'Copy from ${proposal.source}: ${proposal.settings} advertised settings.\n\n'
-              '$channelProcessingScope\n\n$channelProcessingExclusions\n\n'
-              'Settings are applied serially with verified readback. Cancelling or a failed guard can leave a partial result; changes are not rolled back.',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Paste Processing'),
-            ),
-          ],
-        ),
+      final confirmed = await showConsoleConfirmation(
+        context,
+        title: 'Paste Processing to ${proposal.destination}?',
+        message:
+            'Copy from ${proposal.source}: ${proposal.settings} advertised settings.\n\n'
+            '$channelProcessingScope\n\n$channelProcessingExclusions\n\n'
+            'Settings are applied serially with verified readback. Cancelling or a failed guard can leave a partial result; changes are not rolled back.',
+        confirmLabel: 'Paste Processing',
       );
-      if (!mounted || confirmed != true) return;
+      if (!mounted || !confirmed) return;
       setState(() => _applying = true);
       final result = await widget.store.pasteChannelProcessing(proposal);
       if (!mounted) return;
@@ -112,18 +97,18 @@ class _ChannelClipboardActionsState extends State<ChannelClipboardActions> {
               ConsoleActionGroup(
                 spacing: 8,
                 children: [
-                  TextButton(
+                  ConsoleButton(
+                    label: 'Copy',
                     onPressed: _busy || copyError != null ? null : _copy,
-                    child: const Text('Copy'),
                   ),
-                  TextButton(
+                  ConsoleButton(
+                    label: 'Paste Processing',
                     onPressed: _busy || pasteError != null ? null : _paste,
-                    child: const Text('Paste Processing'),
                   ),
                   if (_busy)
-                    TextButton(
+                    ConsoleButton(
+                      label: 'Cancel operation',
                       onPressed: widget.store.cancelChannelProcessing,
-                      child: const Text('Cancel operation'),
                     ),
                 ],
               ),

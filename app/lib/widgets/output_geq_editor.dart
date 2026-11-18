@@ -22,9 +22,8 @@ class OutputGeqDraftActions extends StatelessWidget {
           'Wait for verified Graphic EQ settings and an unlocked output.');
       return;
     }
-    showDialog<void>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
+    showConsoleDialog<void>(
+      context,
       barrierDismissible: false,
       builder: (_) =>
           _OutputGeqEditor(store: store, target: target, flat: flat),
@@ -37,19 +36,19 @@ class OutputGeqDraftActions extends StatelessWidget {
 
   Widget _build(BuildContext context) => ConsoleActionGroup(
         children: [
-          TextButton.icon(
+          ConsoleButton(
             onPressed: () => _open(context, false),
-            icon: const Icon(Icons.gesture),
-            label: const Text('Draw'),
+            icon: Icons.gesture,
+            label: 'Draw',
           ),
-          TextButton.icon(
+          ConsoleButton(
             onPressed: outputGeqBands(store.outputProcessingControls
                         .where((c) => c.target == store.outputProcessingTarget))
                     .every((c) => c.allowsValue(0))
                 ? () => _open(context, true)
                 : null,
-            icon: const Icon(Icons.horizontal_rule),
-            label: const Text('Flat'),
+            icon: Icons.horizontal_rule,
+            label: 'Flat',
           ),
         ],
       );
@@ -165,9 +164,10 @@ class _OutputGeqEditorState extends State<_OutputGeqEditor> {
     final band = _bands[_selected];
     return PopScope(
       canPop: !_applying,
-      child: ConsoleAlertDialog(
-        backgroundColor: palette.panel,
-        title: Text('${widget.target.name} · Graphic EQ draft'),
+      child: ConsoleDialog(
+        scrollable: false,
+        maxWidth: 760,
+        title: '${widget.target.name} · Graphic EQ draft',
         content: SizedBox(
           width: 760,
           child: SingleChildScrollView(
@@ -289,30 +289,35 @@ class _OutputGeqEditorState extends State<_OutputGeqEditor> {
           ),
         ),
         actions: [
-          TextButton(
+          ConsoleButton(
+            size: ConsoleButtonSize.regular,
             onPressed: _editable && _canFlat
                 ? () => setState(() => _gains.fillRange(0, _gains.length, 0))
                 : null,
-            child: const Text('Flat draft'),
+            label: 'Flat draft',
           ),
           if (_applying)
-            TextButton(
+            ConsoleButton(
+              size: ConsoleButtonSize.regular,
               onPressed: _stopping
                   ? null
                   : () {
                       widget.store.cancelOutputPresetRecall();
                       setState(() => _stopping = true);
                     },
-              child: Text(_stopping ? 'Stopping…' : 'Stop after current write'),
+              label: _stopping ? 'Stopping…' : 'Stop after current write',
             )
           else
-            TextButton(
+            ConsoleButton(
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context),
-              child: Text(_finished ? 'Close' : 'Cancel'),
+              label: _finished ? 'Close' : 'Cancel',
             ),
-          FilledButton(
+          ConsoleButton(
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: _editable ? _apply : null,
-            child: const Text('Apply'),
+            label: 'Apply',
           ),
         ],
       ),

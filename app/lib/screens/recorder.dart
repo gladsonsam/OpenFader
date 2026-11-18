@@ -133,9 +133,8 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
-    return ConsoleAlertDialog(
-      backgroundColor: p.panel,
-      title: Text('Go to time', style: TextStyle(color: p.text1)),
+    return ConsoleDialog(
+      title: 'Go to time',
       content: TextField(
         controller: controller,
         autofocus: true,
@@ -148,11 +147,18 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
         onSubmitted: (_) => submit(),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(onPressed: submit, child: const Text('Go')),
+        ConsoleButton(
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
+          onPressed: submit,
+          label: 'Go',
+        ),
       ],
     );
   }
@@ -227,9 +233,8 @@ class _LoopDialogState extends State<_LoopDialog> {
   @override
   Widget build(BuildContext context) {
     final p = ConsolePalette.of(context);
-    return ConsoleAlertDialog(
-      backgroundColor: p.panel,
-      title: Text('Loop range', style: TextStyle(color: p.text1)),
+    return ConsoleDialog(
+      title: 'Loop range',
       content: SizedBox(
         width: 280,
         child: Column(
@@ -257,11 +262,18 @@ class _LoopDialogState extends State<_LoopDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(onPressed: submit, child: const Text('Apply')),
+        ConsoleButton(
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
+          onPressed: submit,
+          label: 'Apply',
+        ),
       ],
     );
   }
@@ -415,26 +427,13 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<bool> _continueWithoutSnapshot() async {
     if (!mounted) return false;
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => ConsoleAlertDialog(
-            title: const Text('Linked snapshot unavailable'),
-            content: const Text(
-              'The linked mixer snapshot cannot be verified. Continue without recalling it, or cancel to reconnect and inspect the mixer.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Continue without snapshot'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    return showConsoleConfirmation(
+      context,
+      title: 'Linked snapshot unavailable',
+      message:
+          'The linked mixer snapshot cannot be verified. Continue without recalling it, or cancel to reconnect and inspect the mixer.',
+      confirmLabel: 'Continue without snapshot',
+    );
   }
 
   Future<void> _linkSnapshot(String takeId) async {
@@ -456,30 +455,31 @@ class _RecorderPageState extends State<RecorderPage> {
       return;
     }
     final captured = native.nativeContext;
-    final selected = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Link native mixer snapshot'),
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
+    final selected = await showConsoleDialog<Map<String, dynamic>>(
+      context,
+      builder: (context) => ConsoleDialog(
+        title: 'Link native mixer snapshot',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
               'A device-local reference, separate from OpenFader scenes. Create or manage native snapshots in Scenes, then inspect here. Verify the mixer before recall.',
             ),
-          ),
-          for (final slot in view.slots)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, slot),
-              child: Text(
-                '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}',
+            for (final slot in view.slots)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, slot),
+                child: Text(
+                  '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}',
+                ),
               ),
-            ),
-          if (_snapshotLinks.containsKey(takeId))
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, <String, dynamic>{}),
-              child: const Text('Remove link'),
-            ),
-        ],
+            if (_snapshotLinks.containsKey(takeId))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, <String, dynamic>{}),
+                child: const Text('Remove link'),
+              ),
+          ],
+        ),
       ),
     );
     if (!mounted || selected == null) return;
@@ -554,28 +554,22 @@ class _RecorderPageState extends State<RecorderPage> {
       return _continueWithoutSnapshot();
     }
     final captured = native.nativeContext;
-    final recall = await showDialog<bool>(
-      context: context,
-      builder: (context) => ConsoleAlertDialog(
-        title: const Text('Recall linked mixer snapshot?'),
-        content: Text(
+    final recall = await showConsoleChoice<bool>(
+      context,
+      title: 'Recall linked mixer snapshot?',
+      message:
           'Slot ${link['slot']} “${link['name']}” in ${link['label']}. Recall may change mixer settings. The provider name does not identify a particular physical mixer. Return to live restores routing only.',
+      actions: [
+        const ConsoleDialogAction(
+          label: 'Continue without recall',
+          value: false,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Continue without recall'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Recall snapshot'),
-          ),
-        ],
-      ),
+        const ConsoleDialogAction(
+          label: 'Recall snapshot',
+          value: true,
+          variant: ConsoleButtonVariant.primary,
+        ),
+      ],
     );
     if (!mounted || recall == null) return false;
     if (!_safeToRecall ||
@@ -680,11 +674,14 @@ class _RecorderPageState extends State<RecorderPage> {
       );
       return;
     }
-    final format = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: Text(importing ? 'Import take' : 'Export take'),
-        children: [
+    final format = await showConsoleDialog<String>(
+      context,
+      builder: (context) => ConsoleDialog(
+        title: importing ? 'Import take' : 'Export take',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           if (importing)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'wav'),
@@ -728,7 +725,7 @@ class _RecorderPageState extends State<RecorderPage> {
             ),
           if (!importing)
             const Padding(
-              padding: EdgeInsets.fromLTRB(24, 8, 24, 16),
+              padding: EdgeInsets.fromLTRB(0, 8, 0, 16),
               child: Text(
                 'Stereo mix combines all tracks at equal level, centered, '
                 'and reduces the level if needed to prevent clipping. '
@@ -736,7 +733,8 @@ class _RecorderPageState extends State<RecorderPage> {
                 'Files over 4 GiB use RF64 WAV.',
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
     if (!mounted || format == null) return;
@@ -930,11 +928,12 @@ class _RecorderPageState extends State<RecorderPage> {
       return track < available.length ? available[track] : null;
     });
     if (!mounted) return null;
-    final confirmed = await showDialog<List<int?>>(
-      context: context,
+    final confirmed = await showConsoleDialog<List<int?>>(
+      context,
       builder: (context) => StatefulBuilder(
-        builder: (context, update) => ConsoleAlertDialog(
-          title: const Text('Map tracks to mixer inputs'),
+        builder: (context, update) => ConsoleDialog(
+          title: 'Map tracks to mixer inputs',
+          scrollable: false,
           content: SizedBox(
             width: 440,
             child: Column(
@@ -998,11 +997,15 @@ class _RecorderPageState extends State<RecorderPage> {
             ),
           ),
           actions: [
-            TextButton(
+            ConsoleButton(
+              variant: ConsoleButtonVariant.quiet,
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            FilledButton(
+            ConsoleButton(
+              variant: ConsoleButtonVariant.primary,
+              size: ConsoleButtonSize.regular,
               onPressed: () {
                 final assigned = mapping.whereType<int>().toList();
                 if (assigned.isEmpty ||
@@ -1014,7 +1017,7 @@ class _RecorderPageState extends State<RecorderPage> {
                 }
                 Navigator.pop(context, List<int?>.of(mapping));
               },
-              child: const Text('Save mapping and play'),
+              label: 'Save mapping and play',
             ),
           ],
         ),
@@ -1084,19 +1087,23 @@ class _RecorderPageState extends State<RecorderPage> {
       }
       var deviceId = store.state['selected_device_id'] as String?;
       if (!devices.any((d) => d['id'] == deviceId)) {
-        deviceId = await showDialog<String>(
-          context: context,
-          builder: (context) => SimpleDialog(
-            title: const Text('Choose playback interface'),
-            children: [
-              for (final d in devices)
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, '${d['id']}'),
-                  child: Text(
-                    '${d['name']} · ${d['output_channels']} outputs · ${d['sample_rate']} Hz',
+        deviceId = await showConsoleDialog<String>(
+          context,
+          builder: (context) => ConsoleDialog(
+            title: 'Choose playback interface',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final d in devices)
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, '${d['id']}'),
+                    child: Text(
+                      '${d['name']} · ${d['output_channels']} outputs · ${d['sample_rate']} Hz',
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
         if (deviceId == null || !mounted) return;
@@ -1163,11 +1170,12 @@ class _RecorderPageState extends State<RecorderPage> {
           );
         }
         if (!mounted) return;
-        final chosen = await showDialog<List<int?>>(
-          context: context,
+        final chosen = await showConsoleDialog<List<int?>>(
+          context,
           builder: (context) => StatefulBuilder(
-            builder: (context, update) => ConsoleAlertDialog(
-              title: const Text('Prepare manual playback'),
+            builder: (context, update) => ConsoleDialog(
+              title: 'Prepare manual playback',
+              scrollable: false,
               content: SizedBox(
                 width: 420,
                 child: Column(
@@ -1231,11 +1239,15 @@ class _RecorderPageState extends State<RecorderPage> {
                 ),
               ),
               actions: [
-                TextButton(
+                ConsoleButton(
+                  variant: ConsoleButtonVariant.quiet,
+                  size: ConsoleButtonSize.regular,
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+                  label: 'Cancel',
                 ),
-                FilledButton(
+                ConsoleButton(
+                  variant: ConsoleButtonVariant.primary,
+                  size: ConsoleButtonSize.regular,
                   onPressed: () {
                     final assigned = mapping.whereType<int>().toList();
                     if (assigned.isEmpty ||
@@ -1247,7 +1259,7 @@ class _RecorderPageState extends State<RecorderPage> {
                     }
                     Navigator.pop(context, mapping);
                   },
-                  child: const Text('Routing is ready · play'),
+                  label: 'Routing is ready · play',
                 ),
               ],
             ),
@@ -1297,21 +1309,24 @@ class _RecorderPageState extends State<RecorderPage> {
       return;
     }
     if (!mounted || store.pending) return;
-    final restored = await showDialog<bool>(
-      context: context,
-      builder: (context) => ConsoleAlertDialog(
-        title: const Text('Restore live inputs'),
-        content: const Text(
-          'Playback output is stopped. Restore the mixer’s physical live input routing yourself, then confirm below. OpenFader does not change the mixer in manual mode.',
-        ),
+    final restored = await showConsoleDialog<bool>(
+      context,
+      builder: (context) => ConsoleDialog(
+        title: 'Restore live inputs',
+        message:
+            'Playback output is stopped. Restore the mixer’s physical live input routing yourself, then confirm below. OpenFader does not change the mixer in manual mode.',
         actions: [
-          TextButton(
+          ConsoleButton(
+            variant: ConsoleButtonVariant.quiet,
+            size: ConsoleButtonSize.regular,
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Not yet'),
+            label: 'Not yet',
           ),
-          FilledButton(
+          ConsoleButton(
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Live routing restored'),
+            label: 'Live routing restored',
           ),
         ],
       ),
@@ -1374,8 +1389,8 @@ class _RecorderPageState extends State<RecorderPage> {
 
   Future<void> _newTake() async {
     if (!_canPrepare) return;
-    final draft = await showDialog<({String name, String deviceId})>(
-      context: context,
+    final draft = await showConsoleDialog<({String name, String deviceId})>(
+      context,
       builder: (_) => _PrepareTakeDialog(store: store),
     );
     if (!mounted || draft == null || !_canPrepare) return;
@@ -1438,8 +1453,8 @@ class _RecorderPageState extends State<RecorderPage> {
     final rate = (take['sample_rate'] as num?)?.toDouble() ?? 0;
     final duration = (take['duration_frames'] as num?)?.toDouble() ?? 0;
     if (rate <= 0 || duration <= 0) return;
-    final frames = await showDialog<int>(
-      context: context,
+    final frames = await showConsoleDialog<int>(
+      context,
       builder: (_) => _GoToTimeDialog(duration: duration, rate: rate),
     );
     if (frames != null &&
@@ -1456,8 +1471,8 @@ class _RecorderPageState extends State<RecorderPage> {
     final frames = (take['duration_frames'] as num?)?.toInt() ?? 0;
     final rate = (take['sample_rate'] as num?)?.toDouble() ?? 0;
     if (frames <= 0 || rate <= 0) return;
-    final range = await showDialog<List<int>>(
-      context: context,
+    final range = await showConsoleDialog<List<int>>(
+      context,
       builder: (_) => _LoopDialog(
         frames: frames,
         rate: rate,
@@ -1491,10 +1506,11 @@ class _RecorderPageState extends State<RecorderPage> {
       final data = await store.inspectTake(take['id'] as String);
       if (!mounted) return;
       final manifest = data['manifest'] as Map;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => ConsoleAlertDialog(
-          title: Text('Take details · ${take['id']}'),
+      await showConsoleDialog<void>(
+        context,
+        builder: (context) => ConsoleDialog(
+          title: 'Take details · ${take['id']}',
+          scrollable: false,
           content: SizedBox(
             width: 600,
             child: SingleChildScrollView(
@@ -1520,9 +1536,11 @@ class _RecorderPageState extends State<RecorderPage> {
             ),
           ),
           actions: [
-            TextButton(
+            ConsoleButton(
+              variant: ConsoleButtonVariant.quiet,
+              size: ConsoleButtonSize.regular,
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
+              label: 'Close',
             ),
           ],
         ),
@@ -1629,10 +1647,10 @@ class _RecorderPageState extends State<RecorderPage> {
         height: 48,
         child: Row(
           children: [
-            IconButton(
-              tooltip: 'Adjust mix',
+            ConsoleIconButton(
+              label: 'Adjust mix',
               onPressed: widget.onMixer,
-              icon: const Icon(Icons.equalizer),
+              child: const Icon(Icons.equalizer),
             ),
             Expanded(
               child: InkWell(
@@ -1642,15 +1660,11 @@ class _RecorderPageState extends State<RecorderPage> {
                   child: Row(
                     children: [
                       Flexible(
-                        child: Text(
+                        child: ConsoleText(
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.text1,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          role: ConsoleTextRole.sectionTitle,
                         ),
                       ),
                       const Icon(Icons.expand_more, size: 18),
@@ -1660,7 +1674,8 @@ class _RecorderPageState extends State<RecorderPage> {
               ),
             ),
             if (take?['complete'] == true && _localTransferAvailable)
-              TextButton.icon(
+              ConsoleButton(
+                variant: ConsoleButtonVariant.quiet,
                 onPressed:
                     store.connected &&
                         !store.pending &&
@@ -1672,13 +1687,13 @@ class _RecorderPageState extends State<RecorderPage> {
                         takeId: take!['id'] as String,
                       )
                     : null,
-                icon: const Icon(Icons.file_download_outlined, size: 20),
-                label: const Text('Export'),
+                icon: Icons.file_download_outlined,
+                label: 'Export',
               ),
-            IconButton(
-              tooltip: 'Audio setup',
+            ConsoleIconButton(
+              label: 'Audio setup',
               onPressed: () => _showSetup(context, store),
-              icon: const Icon(Icons.usb, size: 20),
+              child: const Icon(Icons.usb, size: 20),
             ),
             PopupMenuButton<String>(
               tooltip: 'Recorder actions',
@@ -1805,26 +1820,32 @@ class _RecorderPageState extends State<RecorderPage> {
       Widget transportControls = Row(
         children: [
           if (!soundcheck && !recovery)
-            IconButton(
-              tooltip: recording ? 'Stop recording' : 'Record',
-              style: IconButton.styleFrom(foregroundColor: p.meterRed),
-              onPressed: recording
-                  ? (store.pending ? null : () => store.command('stop'))
-                  : canRecord
-                  ? _record
-                  : null,
-              icon: Icon(recording ? Icons.stop : Icons.fiber_manual_record),
+            Builder(
+              builder: (context) {
+                final VoidCallback? onRecord = recording
+                    ? (store.pending ? null : () => store.command('stop'))
+                    : canRecord
+                    ? _record
+                    : null;
+                return ConsoleIconButton(
+                  label: recording ? 'Stop recording' : 'Record',
+                  onPressed: onRecord,
+                  child: Icon(
+                    recording ? Icons.stop : Icons.fiber_manual_record,
+                    color: onRecord == null ? p.mutedText : p.meterRed,
+                  ),
+                );
+              },
             ),
           if (!recording)
-            IconButton(
-              tooltip: _startingPlay
+            ConsoleIconButton(
+              label: _startingPlay
                   ? 'Preparing playback'
                   : transport == 'playing'
                   ? 'Pause'
                   : 'Play',
-              style: IconButton.styleFrom(foregroundColor: p.lime),
               onPressed: canPlay ? () => _playSelected(previewId) : null,
-              icon: _startingPlay
+              child: _startingPlay
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -1832,13 +1853,14 @@ class _RecorderPageState extends State<RecorderPage> {
                     )
                   : Icon(
                       transport == 'playing' ? Icons.pause : Icons.play_arrow,
+                      color: canPlay ? p.lime : p.mutedText,
                     ),
             ),
           if (soundcheck)
-            IconButton(
-              tooltip: 'Stop playback',
+            ConsoleIconButton(
+              label: 'Stop playback',
               onPressed: enabled ? () => store.command('stop') : null,
-              icon: const Icon(Icons.stop),
+              child: const Icon(Icons.stop),
             ),
           const SizedBox(width: 8),
           Flexible(
@@ -1858,10 +1880,11 @@ class _RecorderPageState extends State<RecorderPage> {
           ),
           if (soundcheck || recovery) const SizedBox(width: 12),
           if (soundcheck || recovery)
-            IconButton.filledTonal(
-              tooltip: 'Return to live inputs',
+            ConsoleIconButton(
+              label: 'Return to live inputs',
+              filled: true,
               onPressed: enabled ? _returnLive : null,
-              icon: const Icon(Icons.input),
+              child: const Icon(Icons.input),
             ),
         ],
       );
@@ -1901,7 +1924,11 @@ class _RecorderPageState extends State<RecorderPage> {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Text(
                 recordReason,
-                style: TextStyle(color: p.mutedText, fontSize: 12),
+                style: consoleTextStyle(
+                  context,
+                  ConsoleTextRole.caption,
+                  tone: ConsoleTextTone.muted,
+                ),
               ),
             ),
           if ((s['xruns'] as num? ?? 0) > 0)
@@ -1909,7 +1936,11 @@ class _RecorderPageState extends State<RecorderPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 'Audio dropouts: ${s['xruns']}',
-                style: TextStyle(color: p.amber, fontSize: 12),
+                style: consoleTextStyle(
+                  context,
+                  ConsoleTextRole.caption,
+                  tone: ConsoleTextTone.warning,
+                ),
               ),
             ),
           if (!store.connected ||
@@ -1941,9 +1972,10 @@ class _RecorderPageState extends State<RecorderPage> {
                     'Restore the mixer’s live inputs yourself. Playback remains unavailable until you confirm.',
                     style: TextStyle(color: p.text1),
                   ),
-                  FilledButton(
+                  ConsoleButton(
+                    variant: ConsoleButtonVariant.primary,
                     onPressed: enabled ? _returnManualLive : null,
-                    child: const Text('Restore live inputs'),
+                    label: 'Restore live inputs',
                   ),
                 ],
               ),
@@ -1959,13 +1991,11 @@ class _RecorderPageState extends State<RecorderPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            ConsoleText(
                               'Routing recovery required',
-                              style: TextStyle(
-                                color: p.amber,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
+                              role: ConsoleTextRole.sectionTitle,
+                              tone: ConsoleTextTone.warning,
+                              weight: FontWeight.bold,
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -1978,85 +2008,40 @@ class _RecorderPageState extends State<RecorderPage> {
                               style: TextStyle(color: p.text1),
                             ),
                             const SizedBox(height: 12),
-                            FilledButton(
+                            ConsoleButton(
+                              variant: ConsoleButtonVariant.primary,
                               onPressed: enabled && transport == 'stopped'
                                   ? () async {
-                                      final confirmed = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) =>
-                                            ConsoleAlertDialog(
-                                              title: const Text(
-                                                'Rebind recovery?',
-                                              ),
-                                              content: const Text(
+                                      final confirmed =
+                                          await showConsoleConfirmation(
+                                            context,
+                                            title: 'Rebind recovery?',
+                                            message:
                                                 'Confirm that the connected mixer is the same physical mixer used for this journal. The app cannot establish physical identity. A fresh routing snapshot will be validated against the journal before rebinding; no routing will be changed by this step.',
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        false,
-                                                      ),
-                                                  child: const Text('Cancel'),
-                                                ),
-                                                FilledButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        true,
-                                                      ),
-                                                  child: const Text(
-                                                    'Confirm mixer and rebind',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                      );
-                                      if (confirmed == true) {
+                                            confirmLabel:
+                                                'Confirm mixer and rebind',
+                                          );
+                                      if (confirmed) {
                                         await store.command('rebind_recovery');
                                       }
                                     }
                                   : null,
-                              child: const Text('Rebind recovery'),
+                              label: 'Rebind recovery',
                             ),
                             const SizedBox(height: 8),
-                            OutlinedButton(
+                            ConsoleButton(
                               onPressed: enabled && transport == 'stopped'
                                   ? () async {
-                                      final confirmed = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) =>
-                                            ConsoleAlertDialog(
-                                              title: const Text(
-                                                'Keep current routing?',
-                                              ),
-                                              content: const Text(
+                                      final confirmed =
+                                          await showConsoleConfirmation(
+                                            context,
+                                            title: 'Keep current routing?',
+                                            message:
                                                 'Use this after the mixer has already been restored. The host will verify every recorded selector matches its original value, stop playback, and archive the recovery journal. No mixer routing will be changed. Any routing missing from an older journal is accepted as it is now.',
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        false,
-                                                      ),
-                                                  child: const Text('Cancel'),
-                                                ),
-                                                FilledButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        true,
-                                                      ),
-                                                  child: const Text(
-                                                    'Keep routing and archive',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                      );
-                                      if (confirmed == true) {
+                                            confirmLabel:
+                                                'Keep routing and archive',
+                                          );
+                                      if (confirmed) {
                                         await store.command(
                                           'accept_current_routing',
                                           {'accept_current': true},
@@ -2064,9 +2049,7 @@ class _RecorderPageState extends State<RecorderPage> {
                                       }
                                     }
                                   : null,
-                              child: const Text(
-                                'Accept current routing and archive',
-                              ),
+                              label: 'Accept current routing and archive',
                             ),
                           ],
                         ),
@@ -2099,51 +2082,28 @@ class _RecorderPageState extends State<RecorderPage> {
   );
 
   Future<void> _recoverTake(String id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => ConsoleAlertDialog(
-        title: const Text('Recover take?'),
-        content: const Text(
+    final confirmed = await showConsoleConfirmation(
+      context,
+      title: 'Recover take?',
+      message:
           'Recovery keeps the last saved checkpoint and discards audio recorded after it. Stop recording and playback before continuing.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Recover take'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Recover take',
     );
-    if (confirmed == true) {
+    if (confirmed) {
       await store.command('recover_take', {'take_id': id, 'confirm': true});
     }
   }
 
   Future<void> _deleteTake(RecorderStore store, String id, String name) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => ConsoleAlertDialog(
-        title: const Text('Delete take?'),
-        content: Text(
+    final confirmed = await showConsoleConfirmation(
+      context,
+      title: 'Delete take?',
+      message:
           'Permanently delete “$name” and its recorded audio from the recorder computer? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete take'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete take',
+      danger: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await store.command('delete_take', {'take_id': id, 'confirm': true});
     if (!mounted || store.takes.any((take) => take['id'] == id)) return;
     setState(() {
@@ -2248,10 +2208,10 @@ class _RecorderPageState extends State<RecorderPage> {
                           ),
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Close audio setup',
+                      ConsoleIconButton(
+                        label: 'Close audio setup',
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
+                        child: const Icon(Icons.close),
                       ),
                     ],
                   ),
@@ -2262,14 +2222,15 @@ class _RecorderPageState extends State<RecorderPage> {
                         Row(
                           children: [
                             Expanded(child: label('Audio interface')),
-                            TextButton(
+                            ConsoleButton(
+                              variant: ConsoleButtonVariant.quiet,
                               onPressed:
                                   store.pending ||
                                       !store.connected ||
                                       s['device_scan_pending'] == true
                                   ? null
                                   : store.refreshDevices,
-                              child: const Text('Refresh devices'),
+                              label: 'Refresh devices',
                             ),
                           ],
                         ),
@@ -2318,15 +2279,16 @@ class _RecorderPageState extends State<RecorderPage> {
                   ),
                   if (selectedDevice != null) ...[
                     const SizedBox(height: 12),
-                    TextButton.icon(
+                    ConsoleButton(
+                      variant: ConsoleButtonVariant.quiet,
                       onPressed: enabled && !recording && !soundcheck
-                          ? () => showDialog<void>(
-                              context: context,
+                          ? () => showConsoleDialog<void>(
+                              context,
                               builder: (_) => _CaptureNamesDialog(store: store),
                             )
                           : null,
-                      icon: const Icon(Icons.account_tree_outlined),
-                      label: const Text('Input names and mixer mapping'),
+                      icon: Icons.account_tree_outlined,
+                      label: 'Input names and mixer mapping',
                     ),
                     Text(
                       s['capture_names_automatic'] == true
@@ -2517,8 +2479,8 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
     var query = '';
     final inputs = widget.store.channelNames.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-    final name = await showDialog<String>(
-      context: context,
+    final name = await showConsoleDialog<String>(
+      context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) {
           final matches = inputs
@@ -2526,8 +2488,9 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
                 (e) => '${e.key + 1} ${e.value}'.toLowerCase().contains(query),
               )
               .toList();
-          return ConsoleAlertDialog(
-            title: Text('Choose input channel · ${inputs.length} inputs'),
+          return ConsoleDialog(
+            title: 'Choose input channel · ${inputs.length} inputs',
+            scrollable: false,
             content: SizedBox(
               width: 440,
               height: min(480, MediaQuery.sizeOf(context).height * .55),
@@ -2560,9 +2523,11 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
               ),
             ),
             actions: [
-              TextButton(
+              ConsoleButton(
+                variant: ConsoleButtonVariant.quiet,
+                size: ConsoleButtonSize.regular,
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                label: 'Cancel',
               ),
             ],
           );
@@ -2582,8 +2547,9 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
             .where((e) => e.value.trim().isNotEmpty)
             .toList()
           ..sort((a, b) => a.key.compareTo(b.key));
-    return ConsoleAlertDialog(
-      title: const Text('Input names and mixer mapping'),
+    return ConsoleDialog(
+      title: 'Input names and mixer mapping',
+      scrollable: false,
       content: SizedBox(
         width: 520,
         height: min(480, MediaQuery.sizeOf(context).height * .55),
@@ -2602,10 +2568,11 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: ConsoleButton(
+                variant: ConsoleButtonVariant.quiet,
                 onPressed: _saving ? null : _useAutoNames,
-                icon: const Icon(Icons.auto_fix_high_outlined),
-                label: const Text('Auto from USB patch'),
+                icon: Icons.auto_fix_high_outlined,
+                label: 'Auto from USB patch',
               ),
             ),
             if (widget.store.state['channel_names_reason'] is String)
@@ -2639,12 +2606,12 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
                         ),
                       ),
                       if (mixerNames.isNotEmpty)
-                        IconButton(
-                          tooltip: 'Choose mixer input channel',
+                        ConsoleIconButton(
+                          label: 'Choose mixer input channel',
                           onPressed: _saving
                               ? null
                               : () => _chooseMixerInput(i),
-                          icon: const Icon(Icons.account_tree_outlined),
+                          child: const Icon(Icons.account_tree_outlined),
                         ),
                     ],
                   ),
@@ -2656,13 +2623,17 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        ConsoleButton(
+          variant: ConsoleButtonVariant.quiet,
+          size: ConsoleButtonSize.regular,
           onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(
+        ConsoleButton(
+          variant: ConsoleButtonVariant.primary,
+          size: ConsoleButtonSize.regular,
           onPressed: _saving || _labels.isEmpty ? null : _save,
-          child: Text(_saving ? 'Saving…' : 'Save input names'),
+          label: _saving ? 'Saving…' : 'Save input names',
         ),
       ],
     );
@@ -2744,8 +2715,9 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
           .toList();
       final device = devices.where((d) => d['id'] == _deviceId).firstOrNull;
       final busy = _preparing || store.pending;
-      return ConsoleAlertDialog(
-        title: const Text('New take'),
+      return ConsoleDialog(
+        title: 'New take',
+        scrollable: false,
         content: SizedBox(
           width: 440,
           child: SingleChildScrollView(
@@ -2812,13 +2784,14 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
                   ),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
+                  child: ConsoleButton(
+                    variant: ConsoleButtonVariant.quiet,
                     onPressed:
                         busy || store.state['device_scan_pending'] == true
                         ? null
                         : store.refreshDevices,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Refresh interfaces'),
+                    icon: Icons.refresh,
+                    label: 'Refresh interfaces',
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -2831,15 +2804,19 @@ class _PrepareTakeDialogState extends State<_PrepareTakeDialog> {
           ),
         ),
         actions: [
-          TextButton(
+          ConsoleButton(
+            variant: ConsoleButtonVariant.quiet,
+            size: ConsoleButtonSize.regular,
             onPressed: busy ? null : () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            label: 'Cancel',
           ),
-          FilledButton(
+          ConsoleButton(
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.regular,
             onPressed: !busy && store.connected && device != null
                 ? _prepare
                 : null,
-            child: Text(_preparing ? 'Preparing…' : 'Create take'),
+            label: _preparing ? 'Preparing…' : 'Create take',
           ),
         ],
       );
@@ -2925,10 +2902,10 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                         ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Close takes',
+                    ConsoleIconButton(
+                      label: 'Close takes',
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
+                      child: const Icon(Icons.close),
                     ),
                   ],
                 ),
@@ -2966,10 +2943,10 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                     ),
                     const SizedBox(width: 12),
                     if (canTransfer)
-                      IconButton(
-                        tooltip: 'Import take',
+                      ConsoleIconButton(
+                        label: 'Import take',
                         onPressed: canOpen ? widget.onImport : null,
-                        icon: const Icon(Icons.file_upload_outlined),
+                        child: const Icon(Icons.file_upload_outlined),
                       ),
                   ],
                 ),
@@ -3041,7 +3018,9 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         if (canTransfer)
-                                          TextButton.icon(
+                                          ConsoleButton(
+                                            variant:
+                                                ConsoleButtonVariant.quiet,
                                             onPressed:
                                                 canOpen &&
                                                     widget.onExport != null
@@ -3049,11 +3028,8 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                                     take['id'] as String,
                                                   )
                                                 : null,
-                                            icon: const Icon(
-                                              Icons.file_download_outlined,
-                                              size: 18,
-                                            ),
-                                            label: const Text('Export'),
+                                            icon: Icons.file_download_outlined,
+                                            label: 'Export',
                                           ),
                                         Icon(
                                           Icons.chevron_right,
@@ -3062,13 +3038,14 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                       ],
                                     )
                                   : widget.onRecover != null
-                                  ? TextButton(
+                                  ? ConsoleButton(
+                                      variant: ConsoleButtonVariant.quiet,
                                       onPressed: canOpen
                                           ? () => widget.onRecover!(
                                               take['id'] as String,
                                             )
                                           : null,
-                                      child: const Text('Recover'),
+                                      label: 'Recover',
                                     )
                                   : null,
                             );
@@ -3146,7 +3123,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
         const SizedBox(height: 12),
         ConsoleActionGroup(
           children: [
-            OutlinedButton(
+            ConsoleButton(
               onPressed: store.remotePending || password.text.isEmpty
                   ? null
                   : () async {
@@ -3156,15 +3133,15 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
                         setState(() {});
                       }
                     },
-              child: const Text('Set password'),
+              label: 'Set password',
             ),
-            OutlinedButton(
+            ConsoleButton(
               onPressed:
                   store.remotePending ||
                       store.remoteStatus['password_required'] != true
                   ? null
                   : () => store.remoteAction('password', ''),
-              child: const Text('Remove password'),
+              label: 'Remove password',
             ),
           ],
         ),
@@ -3177,23 +3154,23 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
         ConsoleActionGroup(
           children: [
             if (!kIsWeb && Platform.isMacOS)
-              OutlinedButton(
+              ConsoleButton(
                 onPressed: store.remotePending
                     ? null
                     : () => store.remoteAction('allowRecording'),
-                child: const Text('Allow recording'),
+                label: 'Allow recording',
               ),
-            OutlinedButton(
+            ConsoleButton(
               onPressed: store.remotePending || enabled
                   ? null
                   : () => store.remoteAction('enable'),
-              child: const Text('Enable'),
+              label: 'Enable',
             ),
-            OutlinedButton(
+            ConsoleButton(
               onPressed: store.remotePending || !enabled
                   ? null
                   : () => store.remoteAction('disable'),
-              child: const Text('Disable'),
+              label: 'Disable',
             ),
           ],
         ),
@@ -3216,11 +3193,12 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
               Expanded(
                 child: SelectableText(client, style: TextStyle(color: p.text1)),
               ),
-              TextButton(
+              ConsoleButton(
+                variant: ConsoleButtonVariant.quiet,
                 onPressed: store.remotePending
                     ? null
                     : () => store.remoteAction('revoke', client),
-                child: const Text('Revoke'),
+                label: 'Revoke',
               ),
             ],
           ),
@@ -3351,15 +3329,15 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
                     style: TextStyle(color: palette.text1),
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Copy browser address',
+                ConsoleIconButton(
+                  label: 'Copy browser address',
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: url));
                     if (context.mounted) {
                       _feedback.show('Browser address copied');
                     }
                   },
-                  icon: const Icon(Icons.copy, size: 18),
+                  child: const Icon(Icons.copy, size: 18),
                 ),
               ],
             ),
