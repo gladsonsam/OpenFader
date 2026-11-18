@@ -45,3 +45,5 @@ When changing a shared component, inspect every consumer, run `flutter analyze`,
 build the app, and check both phone and tablet simulators. Do not add frontend
 test suites (see the repository's AGENTS.md). Rust workspace tests remain the
 protocol regression gate.
+
+`python3 scripts/ui_guard.py check` fails on new raw buttons, dialogs, numeric font sizes, color literals and breakpoints outside this library; see AGENTS.md.

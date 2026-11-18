@@ -74,6 +74,9 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 ## Gates (binding)
 
 - `flutter analyze` in `app` must be clean — no exceptions.
+- `python3 scripts/ui_guard.py check` must pass. Screens use the `ui/` library
+  (ConsoleButton variants, ConsoleDialog helpers, ConsoleText roles, palette).
+  After removing violations run `update` to lower the baseline; never raise it.
 - `cargo test --workspace --locked` must stay green. It guards the desk
   protocol; do not expand it without being asked.
 - Do NOT write frontend tests (widget/interaction/screenshot-diff suites)

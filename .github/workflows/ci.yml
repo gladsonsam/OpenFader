@@ -60,6 +60,7 @@ jobs:
         working-directory: app
       - run: flutter analyze --no-pub
         working-directory: app
+      - run: python3 scripts/ui_guard.py check
       - run: flutter build web --release --no-pub --no-web-resources-cdn
         working-directory: app
 
