@@ -4,7 +4,6 @@ library;
 import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
-import '../theme.dart';
 import '../design.dart';
 
 class U4SceneButton extends StatelessWidget {
@@ -49,7 +48,7 @@ class U4SceneButton extends StatelessWidget {
                 color: active
                     ? ConsolePalette.of(context).lineCtl
                     : ConsolePalette.of(context).divider),
-            borderRadius: U4.rBtn,
+            borderRadius: AppDesign.radius,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -64,14 +63,14 @@ class U4SceneButton extends StatelessWidget {
                         text: num.isEmpty ? '' : '$num  ',
                         style: TextStyle(
                             fontSize: AppDesign.body,
-                            color: ConsolePalette.of(context).text10),
+                            color: ConsolePalette.of(context).textSubtle),
                       ),
                       TextSpan(
                         text: name,
                         style: TextStyle(
                             fontSize: AppDesign.body,
                             fontWeight: FontWeight.w600,
-                            color: ConsolePalette.of(context).text1),
+                            color: ConsolePalette.of(context).text),
                       ),
                     ],
                   ),
@@ -97,7 +96,7 @@ class _ChevronPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = palette.text7
+      ..color = palette.mutedText
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round

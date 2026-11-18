@@ -189,7 +189,7 @@ Future<void> showMixerLayers(BuildContext context, MixerController controller) {
                         trailing: state.activeLayer.isAll &&
                                 controller.store.bank == 'view:all'
                             ? Icon(Icons.check,
-                                color: ConsolePalette.of(context).lime)
+                                color: ConsolePalette.of(context).accent)
                             : null,
                         onTap: () {
                           Navigator.pop(context);
@@ -205,7 +205,7 @@ Future<void> showMixerLayers(BuildContext context, MixerController controller) {
                           trailing: state.activeLayer.isAll &&
                                   controller.store.bank == 'custom:${view.id}'
                               ? Icon(Icons.check,
-                                  color: ConsolePalette.of(context).lime)
+                                  color: ConsolePalette.of(context).accent)
                               : null,
                           onTap: () {
                             Navigator.pop(context);
@@ -237,7 +237,7 @@ Future<void> showMixerLayers(BuildContext context, MixerController controller) {
                             children: [
                               if (layer.id == state.activeLayerId)
                                 Icon(Icons.check,
-                                    color: ConsolePalette.of(context).lime),
+                                    color: ConsolePalette.of(context).accent),
                               PopupMenuButton<String>(
                                 popUpAnimationStyle: AnimationStyle.noAnimation,
                                 tooltip: 'Layer actions',
@@ -328,7 +328,7 @@ Future<void> showMixerLayers(BuildContext context, MixerController controller) {
                       Divider(color: ConsolePalette.of(context).line),
                       ListTile(
                         leading: Icon(Icons.add,
-                            color: ConsolePalette.of(context).lime),
+                            color: ConsolePalette.of(context).accent),
                         title: Text('New layer', style: mixerType(context, 17)),
                         onTap: () async {
                           final layer = MixerLayer(

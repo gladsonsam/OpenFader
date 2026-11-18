@@ -148,10 +148,10 @@ class _ProcessorHeader extends StatelessWidget {
             color: on
                 ? ConsolePalette.of(context).processingSelected
                 : ConsolePalette.of(context).control,
-            borderRadius: U4.rBtn,
+            borderRadius: AppDesign.radius,
             border: Border.all(
                 color: on
-                    ? ConsolePalette.of(context).cyan.withValues(alpha: 0.27)
+                    ? ConsolePalette.of(context).accent.withValues(alpha: 0.27)
                     : ConsolePalette.of(context).lineCtl),
           ),
           child: Row(
@@ -160,17 +160,17 @@ class _ProcessorHeader extends StatelessWidget {
               Expanded(
                   child: Text(title,
                       style: TextStyle(
-                          fontFamily: U4.font,
+                          fontFamily: AppDesign.font,
                           fontSize: compact ? 18 : 28 * scale,
                           fontWeight: FontWeight.w600,
                           color: on
-                              ? ConsolePalette.of(context).cyan
+                              ? ConsolePalette.of(context).accent
                               : ConsolePalette.of(context).mutedText))),
               const SizedBox(width: 8),
               Icon(Icons.power_settings_new,
                   size: compact ? 22 : 24,
                   color: on
-                      ? ConsolePalette.of(context).cyan
+                      ? ConsolePalette.of(context).accent
                       : ConsolePalette.of(context).mutedText),
             ],
           ),

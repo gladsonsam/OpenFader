@@ -31,10 +31,10 @@ class _AboutDetail extends StatelessWidget {
                 Text(
                   'OpenFader',
                   style: TextStyle(
-                    fontFamily: U4.font,
+                    fontFamily: AppDesign.font,
                     fontSize: AppDesign.pageTitle,
                     fontWeight: FontWeight.w600,
-                    color: ConsolePalette.of(context).text1,
+                    color: ConsolePalette.of(context).text,
                   ),
                 ),
               ],
@@ -105,20 +105,20 @@ class _AboutDetail extends StatelessWidget {
                       Text(
                         'OpenFader is free and open source. The project repository contains the current licence and contributor information.',
                         style: TextStyle(
-                          fontFamily: U4.font,
+                          fontFamily: AppDesign.font,
                           fontSize: AppDesign.rowLabel,
                           height: 1.5,
-                          color: ConsolePalette.of(context).text7,
+                          color: ConsolePalette.of(context).mutedText,
                         ),
                       ),
                       const SizedBox(height: AppDesign.spaceMd),
                       Text(
                         'Interface typeface: Barlow. Toolbar symbols and the OpenFader logo are vector artwork.',
                         style: TextStyle(
-                          fontFamily: U4.font,
+                          fontFamily: AppDesign.font,
                           fontSize: AppDesign.rowLabel,
                           height: 1.5,
-                          color: ConsolePalette.of(context).text7,
+                          color: ConsolePalette.of(context).mutedText,
                         ),
                       ),
                       const SizedBox(height: AppDesign.spaceLg),
@@ -128,10 +128,10 @@ class _AboutDetail extends StatelessWidget {
                         child: Text(
                           'Open project repository',
                           style: TextStyle(
-                            fontFamily: U4.font,
+                            fontFamily: AppDesign.font,
                             fontSize: AppDesign.rowLabel,
                             fontWeight: FontWeight.w600,
-                            color: ConsolePalette.of(context).cyan,
+                            color: ConsolePalette.of(context).accent,
                           ),
                         ),
                       ),
@@ -157,7 +157,7 @@ class _AboutDetail extends StatelessWidget {
             'Made by Gladson Sam',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: U4.font,
+              fontFamily: AppDesign.font,
               fontSize: wide ? 18 : 13,
               height: wide ? 24 / 18 : 18 / 13,
               color: ConsolePalette.of(context).panFill,
@@ -207,11 +207,11 @@ class _LinkRow extends StatelessWidget {
                     Text(
                       label,
                       style: TextStyle(
-                        fontFamily: U4.font,
+                        fontFamily: AppDesign.font,
                         fontSize: AppDesign.rowLabel,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
-                        color: ConsolePalette.of(context).text1,
+                        color: ConsolePalette.of(context).text,
                       ),
                     ),
                     if (desc != null) ...[
@@ -219,10 +219,10 @@ class _LinkRow extends StatelessWidget {
                       Text(
                         desc!,
                         style: TextStyle(
-                          fontFamily: U4.font,
+                          fontFamily: AppDesign.font,
                           fontSize: AppDesign.body,
                           height: wide ? 1.4 : 21 / 15,
-                          color: ConsolePalette.of(context).text7,
+                          color: ConsolePalette.of(context).mutedText,
                         ),
                       ),
                     ],
@@ -233,7 +233,7 @@ class _LinkRow extends StatelessWidget {
               _SettingsIcon(
                 icon,
                 size: 22,
-                color: ConsolePalette.of(context).text7,
+                color: ConsolePalette.of(context).mutedText,
               ),
             ],
           ),
@@ -280,11 +280,11 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                     child: Text(
                       widget.title,
                       style: TextStyle(
-                        fontFamily: U4.font,
+                        fontFamily: AppDesign.font,
                         fontSize: AppDesign.rowLabel,
                         height: 1.2,
                         fontWeight: FontWeight.w500,
-                        color: ConsolePalette.of(context).text1,
+                        color: ConsolePalette.of(context).text,
                       ),
                     ),
                   ),
@@ -315,10 +315,10 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                   Text(
                     paragraph,
                     style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.body,
                       height: wide ? 1.5 : 22 / 15,
-                      color: ConsolePalette.of(context).text7,
+                      color: ConsolePalette.of(context).mutedText,
                     ),
                   ),
                 ],

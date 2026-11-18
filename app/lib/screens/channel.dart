@@ -18,7 +18,6 @@ import '../core/audio_spectrum_peaks.dart';
 import '../engine.dart' show AudioSpectrumFrame;
 import '../settings/prefs.dart';
 import '../mixer/geometry.dart';
-import '../theme.dart';
 import '../widgets/mobile_reference_width.dart';
 import '../widgets/processing_layout.dart';
 import '../ui/console.dart';
@@ -696,10 +695,10 @@ class _MenuRow extends StatelessWidget {
               color: active
                   ? ConsolePalette.of(context).selectionFill
                   : ConsolePalette.of(context).tileBg,
-              borderRadius: U4.rBtn,
+              borderRadius: AppDesign.radius,
               border: Border.all(
                   color: active
-                      ? ConsolePalette.of(context).cyan.withValues(alpha: 0.27)
+                      ? ConsolePalette.of(context).accent.withValues(alpha: 0.27)
                       : ConsolePalette.of(context).tileBorder),
             ),
             child: Column(
@@ -709,23 +708,23 @@ class _MenuRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontFamily: U4.font,
+                        fontFamily: AppDesign.font,
                         fontSize: AppDesign.entryValue,
                         fontWeight: FontWeight.w600,
                         color: active
-                            ? ConsolePalette.of(context).cyan
+                            ? ConsolePalette.of(context).accent
                             : off
-                                ? ConsolePalette.of(context).text7
-                                : ConsolePalette.of(context).text4)),
+                                ? ConsolePalette.of(context).mutedText
+                                : ConsolePalette.of(context).textSecondary)),
                 if (status != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(status ? 'On' : 'Off',
                         style: TextStyle(
-                            fontFamily: U4.font,
+                            fontFamily: AppDesign.font,
                             fontSize: AppDesign.smallLabel,
                             fontWeight: FontWeight.w600,
-                            color: ConsolePalette.of(context).text7)),
+                            color: ConsolePalette.of(context).mutedText)),
                   ),
                 const SizedBox(height: 8),
                 Expanded(
@@ -780,17 +779,17 @@ class _NavPreview extends StatelessWidget {
                           decoration: BoxDecoration(
                               color: ConsolePalette.of(context).selectionFill,
                               border: Border.all(
-                                  color: ConsolePalette.of(context).cyan))))),
+                                  color: ConsolePalette.of(context).accent))))),
               const SizedBox(height: 4),
               Text('48V',
                   textAlign: TextAlign.right,
                   style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.caption,
                       fontWeight: FontWeight.w700,
                       color: phantom
                           ? ConsolePalette.of(context).phantom
-                          : ConsolePalette.of(context).text10)),
+                          : ConsolePalette.of(context).textSubtle)),
             ],
           ),
         );
@@ -799,7 +798,7 @@ class _NavPreview extends StatelessWidget {
         final kind = tab == ChannelTab.gate ? DynKind.gate : DynKind.comp;
         final dyn = kind == DynKind.gate ? store.gate : store.comp;
         final color = kind == DynKind.gate
-            ? ConsolePalette.of(context).cyan
+            ? ConsolePalette.of(context).accent
             : ConsolePalette.of(context).processingPurple;
         return ValueListenableBuilder<double>(
             valueListenable: store.levelDb,
@@ -886,13 +885,13 @@ class _BottomCell extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.body,
                       fontWeight: FontWeight.w600,
                       color: active
-                          ? ConsolePalette.of(context).cyan
+                          ? ConsolePalette.of(context).accent
                           : off
-                              ? ConsolePalette.of(context).text7
+                              ? ConsolePalette.of(context).mutedText
                               : ConsolePalette.of(context).mutedText)),
               const SizedBox(height: 7),
               Expanded(

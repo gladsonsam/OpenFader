@@ -1,10 +1,12 @@
 import '../../palette.dart';
+import '../../ui/density.dart';
 import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../../u4law.dart';
 import '../design.dart';
 import 'meter.dart';
+import '../../design.dart';
 
 /// Cap-only vertical gestures coexist with horizontal channel scrolling.
 /// Travel is in local logical points, with a stable start value per gesture.
@@ -40,7 +42,8 @@ class _MixerFaderState extends State<MixerFader> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final ch = widget.channel;
-        final geometry = _FaderGeometry(box.biggest, widget.compact);
+        final geometry = _FaderGeometry(
+            box.biggest, widget.compact, ConsoleDensity.of(context).largeTargets);
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
         // Enlarge only while held; selection keeps only its outline.
@@ -156,13 +159,14 @@ class _MixerFaderState extends State<MixerFader> {
 class _FaderGeometry {
   final Size size;
   final bool compact;
-  const _FaderGeometry(this.size, this.compact);
+  final bool largeTargets;
+  const _FaderGeometry(this.size, this.compact, this.largeTargets);
   // Keep the entire cap, including its held enlargement and touch padding,
   // inside the well even when a compact layout shortens the travel.
   double get endClearance =>
       math.max(
           capHeight * (compact ? 1.25 : 1.4) / 2, capHeight / 2 + touchPad) +
-      MixerDesign.spaceSm;
+      AppDesign.spaceSm;
   double get top =>
       math.max(endClearance, size.height * (compact ? 38 / 534 : 65 / 647));
   double get bottom =>
@@ -173,10 +177,10 @@ class _FaderGeometry {
       34,
       size.width *
           (compact ? 54 / 96.2 : 84 / 178.2) *
-          (!compact && MixerDesign.largeTargets ? 1.08 : 1));
+          (!compact && largeTargets ? 1.08 : 1));
   double get capHeight => capWidth;
 
-  double get touchPad => MixerDesign.largeTargets ? 10 : 6;
+  double get touchPad => largeTargets ? 10 : 6;
 }
 
 class _ScalePainter extends CustomPainter {
@@ -220,7 +224,10 @@ class _ScalePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ScalePainter old) =>
-      old.palette != palette || old.g.size != g.size || old.number != number;
+      old.palette != palette ||
+      old.g.size != g.size ||
+      old.g.largeTargets != g.largeTargets ||
+      old.number != number;
 }
 
 class _CapPainter extends CustomPainter {

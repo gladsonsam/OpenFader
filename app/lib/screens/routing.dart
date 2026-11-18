@@ -2,7 +2,6 @@
 // The store retains provider identity, access and stale-operation guards.
 import 'package:material_ui/material_ui.dart';
 
-import '../theme.dart';
 import '../ui/console.dart';
 import '../core/routing_store.dart';
 import '../core/destination_controls.dart';
@@ -257,7 +256,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                     label: '${strip.name}: ${source.label}',
                                     child: ConsoleButton(
                                       selected: strip.src == source.label,
-                                      accent: p.cyan,
+                                      accent: p.accent,
                                       icon: strip.src == source.label
                                           ? Icons.check
                                           : null,
@@ -473,7 +472,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                           child: Center(
                               child: Text('${index + 1}',
                                   style: TextStyle(
-                                      color: p.text7, fontSize: AppDesign.caption)))),
+                                      color: p.mutedText, fontSize: AppDesign.caption)))),
                       title: Text(strip.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -482,8 +481,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(strip.src,
-                              style: TextStyle(color: p.cyan, fontSize: AppDesign.smallLabel))),
-                      trailing: Icon(Icons.chevron_right, color: p.text7),
+                              style: TextStyle(color: p.accent, fontSize: AppDesign.smallLabel))),
+                      trailing: Icon(Icons.chevron_right, color: p.mutedText),
                       onTap: () => _pickSource(strip),
                     );
                   })),
@@ -551,7 +550,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                             .titleLarge),
                                     const SizedBox(height: AppDesign.spaceXs),
                                     Text('Current · ${strip.src}',
-                                        style: TextStyle(color: p.text7)),
+                                        style: TextStyle(color: p.mutedText)),
                                   ])),
                               ConsoleIconButton(
                                   label: 'Close',
@@ -639,19 +638,19 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                             padding: const EdgeInsets.all(4),
                                             child: Material(
                                                 color: tile.current
-                                                    ? p.cyan
+                                                    ? p.accent
                                                     : active
                                                         ? p.selected
                                                         : p.well,
                                                 shape: RoundedRectangleBorder(
-                                                    borderRadius: U4.rBtn,
+                                                    borderRadius: AppDesign.radius,
                                                     side: BorderSide(
                                                         color: active
-                                                            ? p.cyan
+                                                            ? p.accent
                                                             : p.tileBorder,
                                                         width: active ? 2 : 1)),
                                                 child: InkWell(
-                                                    borderRadius: U4.rBtn,
+                                                    borderRadius: AppDesign.radius,
                                                     onTap: valid &&
                                                             !tile.current
                                                         ? () => Navigator.pop(
@@ -695,7 +694,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                               .w600,
                                                                           color: tile.current
                                                                               ? p.onAccent
-                                                                              : p.text1))),
+                                                                              : p.text))),
                                                             ]))))));
                                       }),
                                 ))),
@@ -708,7 +707,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                     color:
-                                        preview == null ? p.text7 : p.cyan))),
+                                        preview == null ? p.mutedText : p.accent))),
                       ]);
                 });
           }))),
@@ -790,10 +789,10 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                         children: [
                                                       Text('DESTINATION',
                                                           style: TextStyle(
-                                                              color: p.text7,
+                                                              color: p.mutedText,
                                                               fontSize: AppDesign.minorText)),
                                                       Icon(Icons.arrow_downward,
-                                                          color: p.text7,
+                                                          color: p.mutedText,
                                                           size: 12),
                                                     ]))),
                                             for (final source in sources)
@@ -916,13 +915,13 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                           padding: const EdgeInsets.all(3),
                                                                           child: Material(
                                                                               color: connected
-                                                                                  ? p.cyan
+                                                                                  ? p.accent
                                                                                   : highlighted || rowActive || columnActive
                                                                                       ? p.selected
                                                                                       : p.well,
-                                                                              shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
+                                                                              shape: RoundedRectangleBorder(borderRadius: AppDesign.radius, side: BorderSide(color: highlighted ? p.accent : p.tileBorder, width: highlighted ? 2 : 1)),
                                                                               child: InkWell(
-                                                                                  borderRadius: U4.rBtn,
+                                                                                  borderRadius: AppDesign.radius,
                                                                                   onTap: () => _choose(strip, source),
                                                                                   child: Center(
                                                                                       child: Icon(
@@ -935,8 +934,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                                           color: connected
                                                                                               ? p.onAccent
                                                                                               : highlighted
-                                                                                                  ? p.cyan
-                                                                                                  : p.text7))))))));
+                                                                                                  ? p.accent
+                                                                                                  : p.mutedText))))))));
                                                         }),
                                                     ]),
                                                 ]),
@@ -972,7 +971,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     fontSize: AppDesign.minorText,
-                                    color: ConsolePalette.of(context).text7)),
+                                    color: ConsolePalette.of(context).mutedText)),
                           ])),
                 )),
       );

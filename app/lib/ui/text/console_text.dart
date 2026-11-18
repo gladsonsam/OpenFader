@@ -47,8 +47,8 @@ Color consoleTextColor(BuildContext context, ConsoleTextTone tone) {
   return switch (tone) {
     ConsoleTextTone.normal => p.text,
     ConsoleTextTone.muted => p.mutedText,
-    ConsoleTextTone.subtle => p.text10,
-    ConsoleTextTone.accent => p.lime,
+    ConsoleTextTone.subtle => p.textSubtle,
+    ConsoleTextTone.accent => p.accent,
     ConsoleTextTone.danger => p.mute,
     ConsoleTextTone.warning => p.amber,
     ConsoleTextTone.success => p.success,

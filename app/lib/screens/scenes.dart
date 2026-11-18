@@ -4,7 +4,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
-import '../theme.dart';
 import '../core/scenes_store.dart';
 import '../widgets/native_library.dart';
 import '../ui/console.dart';
@@ -124,7 +123,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(store.status!,
                             style: TextStyle(
-                                color: ConsolePalette.of(context).text4))),
+                                color: ConsolePalette.of(context).textSecondary))),
                   if (store.busy)
                     const Padding(
                         padding: EdgeInsets.only(top: 6),
@@ -152,7 +151,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                     Text('no shows yet',
                         style: TextStyle(
                             fontSize: AppDesign.caption,
-                            color: ConsolePalette.of(context).text7))
+                            color: ConsolePalette.of(context).mutedText))
                   else ...[
                     ConsoleActionGroup(children: [
                       for (final show in store.shows)
@@ -161,7 +160,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                 ? null
                                 : () => store.selectShow(show),
                             selected: show == store.show,
-                            accent: ConsolePalette.of(context).cyan,
+                            accent: ConsolePalette.of(context).accent,
                             label: show),
                     ]),
                     for (final scene in store.showScenes)
@@ -224,7 +223,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                               color: ConsolePalette.of(context).well,
                               border: Border.all(
                                   color: ConsolePalette.of(context).lineCtl),
-                              borderRadius: U4.rBtn,
+                              borderRadius: AppDesign.radius,
                             ),
                             child: Text('Clear all',
                                 textAlign: TextAlign.center,
@@ -233,7 +232,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                 style: TextStyle(
                                     fontSize: AppDesign.caption,
                                     fontWeight: FontWeight.w700,
-                                    color: ConsolePalette.of(context).text1)),
+                                    color: ConsolePalette.of(context).text)),
                           ),
                         ),
                     ],
@@ -259,7 +258,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                     Text('no snapshots saved',
                         style: TextStyle(
                             fontSize: AppDesign.caption,
-                            color: ConsolePalette.of(context).text7))
+                            color: ConsolePalette.of(context).mutedText))
                   else
                     GridView.builder(
                       shrinkWrap: true,
@@ -287,7 +286,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     ? ConsolePalette.of(context).meterGreen
                                     : ConsolePalette.of(context).meterAmber,
                                 width: e.current ? 2 : 1),
-                            borderRadius: U4.rBtn,
+                            borderRadius: AppDesign.radius,
                           ),
                           child: renaming
                               ? Row(
@@ -299,7 +298,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         style: TextStyle(
                                             fontSize: AppDesign.smallLabel,
                                             color: ConsolePalette.of(context)
-                                                .text1),
+                                                .text),
                                         decoration: InputDecoration(
                                           isDense: true,
                                           border: InputBorder.none,
@@ -309,14 +308,14 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                               borderSide: BorderSide(
                                                   color:
                                                       ConsolePalette.of(context)
-                                                          .cyan)),
+                                                          .accent)),
                                           filled: false,
                                           contentPadding: EdgeInsets.symmetric(
                                               vertical: 12),
                                           hintText: 'name…',
                                           hintStyle: TextStyle(
                                               color: ConsolePalette.of(context)
-                                                  .text10),
+                                                  .textSubtle),
                                         ),
                                         onSubmitted: (_) => _submitRename(),
                                       ),
@@ -344,7 +343,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                               fontSize: AppDesign.minorText,
                                               fontWeight: FontWeight.w700,
                                               color: ConsolePalette.of(context)
-                                                  .text7),
+                                                  .mutedText),
                                         ),
                                         if (e.current)
                                           Padding(
@@ -374,7 +373,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                               fontSize: AppDesign.body,
                                               fontWeight: FontWeight.w600,
                                               color: ConsolePalette.of(context)
-                                                  .text1),
+                                                  .text),
                                         ),
                                       ),
                                     ),
@@ -464,13 +463,13 @@ class _NativeSnapshotsSection extends StatelessWidget {
       decoration: BoxDecoration(
           color: palette.well,
           border: Border.all(color: palette.railBorder),
-          borderRadius: U4.rBtn),
+          borderRadius: AppDesign.radius),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SectionTitle('Mixer snapshots'),
           Text(view.error ?? message,
-              style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
+              style: TextStyle(fontSize: AppDesign.caption, color: palette.mutedText)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
             const SizedBox(height: AppDesign.spaceSm),
             Text(
@@ -481,11 +480,11 @@ class _NativeSnapshotsSection extends StatelessWidget {
                 style: TextStyle(
                     fontSize: AppDesign.smallLabel,
                     fontWeight: FontWeight.w600,
-                    color: palette.text1)),
+                    color: palette.text)),
             const SizedBox(height: AppDesign.spaceSm),
             if (view.slots.isEmpty)
               Text('No slot names reported yet.',
-                  style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
+                  style: TextStyle(fontSize: AppDesign.caption, color: palette.mutedText)),
             for (final slot in view.slots)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -493,7 +492,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Slot ${slot.slot}',
-                          style: TextStyle(fontSize: AppDesign.caption, color: palette.text4)),
+                          style: TextStyle(fontSize: AppDesign.caption, color: palette.textSecondary)),
                       const SizedBox(width: AppDesign.spaceMd),
                       Expanded(
                         child: Text(
@@ -501,7 +500,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                                 ? 'Name not reported'
                                 : slot.name,
                             style:
-                                TextStyle(fontSize: AppDesign.smallLabel, color: palette.text1)),
+                                TextStyle(fontSize: AppDesign.smallLabel, color: palette.text)),
                       ),
                     ]),
               ),
@@ -524,7 +523,7 @@ class _SectionTitle extends StatelessWidget {
           style: TextStyle(
               fontSize: AppDesign.caption,
               fontWeight: FontWeight.w700,
-              color: ConsolePalette.of(context).text4)),
+              color: ConsolePalette.of(context).textSecondary)),
     );
   }
 }
@@ -552,12 +551,12 @@ class _NameRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: ConsolePalette.of(context).well,
               border: Border.all(color: ConsolePalette.of(context).railBorder),
-              borderRadius: U4.rBtn,
+              borderRadius: AppDesign.radius,
             ),
             child: TextField(
               controller: controller,
               style: TextStyle(
-                  fontSize: AppDesign.smallLabel, color: ConsolePalette.of(context).text1),
+                  fontSize: AppDesign.smallLabel, color: ConsolePalette.of(context).text),
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
@@ -565,11 +564,11 @@ class _NameRow extends StatelessWidget {
                 disabledBorder: InputBorder.none,
                 focusedBorder: UnderlineInputBorder(
                     borderSide:
-                        BorderSide(color: ConsolePalette.of(context).cyan)),
+                        BorderSide(color: ConsolePalette.of(context).accent)),
                 filled: false,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
                 hintText: hint,
-                hintStyle: TextStyle(color: ConsolePalette.of(context).text10),
+                hintStyle: TextStyle(color: ConsolePalette.of(context).textSubtle),
               ),
               onSubmitted: onAction == null ? null : (_) => onAction?.call(),
             ),

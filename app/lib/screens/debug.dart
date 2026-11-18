@@ -64,7 +64,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
                           fontFamily: 'monospace',
                           fontSize: AppDesign.body,
                           fontWeight: FontWeight.w700,
-                          color: ConsolePalette.of(context).text1)),
+                          color: ConsolePalette.of(context).text)),
                   const SizedBox(height: 8),
                   ConsoleActionGroup(
                     children: [
@@ -80,7 +80,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
                       style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: AppDesign.caption,
-                          color: ConsolePalette.of(context).cyan)),
+                          color: ConsolePalette.of(context).accent)),
                   const SizedBox(height: 4),
                   Container(
                     decoration: BoxDecoration(
@@ -106,14 +106,14 @@ class _U4DebugPageState extends State<U4DebugPage> {
                         style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: AppDesign.caption,
-                            color: ConsolePalette.of(context).cyan)),
+                            color: ConsolePalette.of(context).accent)),
                     for (final l in s.lines)
                       Text(l,
                           style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: AppDesign.minorText,
                               height: 1.45,
-                              color: ConsolePalette.of(context).text1)),
+                              color: ConsolePalette.of(context).text)),
                     const SizedBox(height: 8),
                   ],
                 ],
@@ -157,7 +157,7 @@ class _SparkPainter extends CustomPainter {
       final h = v * size.height;
       canvas.drawRect(
         Rect.fromLTWH(i * w, size.height - h, (w - 1).clamp(1.0, w), h),
-        Paint()..color = v > 0.966 ? palette.meterRed : palette.cyan,
+        Paint()..color = v > 0.966 ? palette.meterRed : palette.accent,
       );
       canvas.drawRect(
         Rect.fromLTWH(i * w, size.height - h, (w - 1).clamp(1.0, w), 1),

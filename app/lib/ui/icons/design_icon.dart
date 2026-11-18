@@ -47,7 +47,7 @@ class DesignIcon extends StatelessWidget {
       width: size,
       height: size,
       colorFilter: ColorFilter.mode(
-          color ?? ConsolePalette.of(context).text7, BlendMode.srcIn),
+          color ?? ConsolePalette.of(context).mutedText, BlendMode.srcIn),
     );
   }
 }

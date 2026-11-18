@@ -60,7 +60,7 @@ class DynCurvePainter extends CustomPainter {
       canvas.drawPath(
         curve,
         Paint()
-          ..color = palette.cyan
+          ..color = palette.accent
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
@@ -84,7 +84,7 @@ class DynCurvePainter extends CustomPainter {
           dot,
           6,
           Paint()
-            ..color = palette.text1
+            ..color = palette.text
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.5);
     }

@@ -10,7 +10,6 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../theme.dart';
 import '../core/output_meters.dart';
 import '../ui/console.dart';
 import '../core/destination_controls.dart';
@@ -279,9 +278,9 @@ class _U4MetersPageState extends State<U4MetersPage> {
                               child: Text(
                                 'Offline - ladders are dark until a live link is up. Connect for live meters.',
                                 style: TextStyle(
-                                  fontFamily: U4.font,
+                                  fontFamily: AppDesign.font,
                                   fontSize: AppDesign.caption,
-                                  color: ConsolePalette.of(context).text7,
+                                  color: ConsolePalette.of(context).mutedText,
                                 ),
                               ),
                             ),
@@ -357,10 +356,10 @@ class _PhysicalOutputs extends StatelessWidget {
           Text(
             group.title,
             style: TextStyle(
-              fontFamily: U4.font,
+              fontFamily: AppDesign.font,
               fontSize: AppDesign.caption,
               fontWeight: FontWeight.w700,
-              color: palette.text1,
+              color: palette.text,
             ),
           ),
           const SizedBox(height: AppDesign.spaceLg),
@@ -485,10 +484,10 @@ class _LadderGroup extends StatelessWidget {
               Text(
                 group.title,
                 style: TextStyle(
-                  fontFamily: U4.font,
+                  fontFamily: AppDesign.font,
                   fontSize: AppDesign.caption,
                   fontWeight: FontWeight.w700,
-                  color: ConsolePalette.of(context).text1,
+                  color: ConsolePalette.of(context).text,
                 ),
               ),
               if (!online)
@@ -497,8 +496,8 @@ class _LadderGroup extends StatelessWidget {
                   child: Text(
                     'no data',
                     style: consoleTextStyle(context, ConsoleTextRole.micro).copyWith(
-                      fontFamily: U4.font,
-                      color: ConsolePalette.of(context).text7,
+                      fontFamily: AppDesign.font,
+                      color: ConsolePalette.of(context).mutedText,
                     ),
                   ),
                 ),
@@ -549,10 +548,10 @@ class _CollapsedGroup extends StatelessWidget {
             Text(
               group.title,
               style: TextStyle(
-                fontFamily: U4.font,
+                fontFamily: AppDesign.font,
                 fontSize: AppDesign.caption,
                 fontWeight: FontWeight.w600,
-                color: ConsolePalette.of(context).text7,
+                color: ConsolePalette.of(context).mutedText,
               ),
             ),
             const SizedBox(width: 10),
@@ -562,9 +561,9 @@ class _CollapsedGroup extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: U4.font,
+                  fontFamily: AppDesign.font,
                   fontSize: AppDesign.minorText,
-                  color: ConsolePalette.of(context).text10,
+                  color: ConsolePalette.of(context).textSubtle,
                 ),
               ),
             ),
@@ -628,9 +627,9 @@ class _LadderState extends State<_Ladder> {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: U4.font,
+              fontFamily: AppDesign.font,
               fontSize: AppDesign.caption,
-              color: ConsolePalette.of(context).text1,
+              color: ConsolePalette.of(context).text,
             ),
           ),
           if (widget.ladder.sub.isNotEmpty)
@@ -640,9 +639,9 @@ class _LadderState extends State<_Ladder> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: U4.font,
+                fontFamily: AppDesign.font,
                 fontSize: AppDesign.minorText,
-                color: ConsolePalette.of(context).text7,
+                color: ConsolePalette.of(context).mutedText,
               ),
             ),
         ],
@@ -660,8 +659,8 @@ class _LadderPainter extends CustomPainter {
         text: TextSpan(
           text: l,
           style: TextStyle(
-            fontFamily: U4.font,
-            color: palette.text10,
+            fontFamily: AppDesign.font,
+            color: palette.textSubtle,
             fontSize: AppDesign.tickLabel,
             fontFeatures: [FontFeature.tabularFigures()],
           ),
@@ -811,9 +810,9 @@ class _MonitorControls extends StatelessWidget {
           Text(
             'Monitor',
             style: TextStyle(
-              fontFamily: U4.font,
+              fontFamily: AppDesign.font,
               fontSize: AppDesign.controlLabel,
-              color: palette.text1,
+              color: palette.text,
             ),
           ),
           const SizedBox(height: AppDesign.spaceSm),
@@ -844,13 +843,13 @@ class _MonitorControls extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: palette.control,
                           border: Border.all(color: palette.lineCtl),
-                          borderRadius: U4.rBtn,
+                          borderRadius: AppDesign.radius,
                         ),
                         child: Text(
                           '${row.label}: ${row.valueLabel ?? '-'}',
                           style: AppDesign.type(
                             AppDesign.body,
-                            color: palette.text1,
+                            color: palette.text,
                             weight: FontWeight.w600,
                           ),
                         ),

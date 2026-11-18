@@ -51,20 +51,20 @@ class _Sidebar extends StatelessWidget {
                           s.icon,
                           size: 22,
                           color: s == active
-                              ? ConsolePalette.of(context).cyan
-                              : ConsolePalette.of(context).text7,
+                              ? ConsolePalette.of(context).accent
+                              : ConsolePalette.of(context).mutedText,
                         ),
                         const SizedBox(width: AppDesign.spaceLg),
                         Expanded(
                           child: Text(
                             s.label,
                             style: TextStyle(
-                              fontFamily: U4.font,
+                              fontFamily: AppDesign.font,
                               fontSize: AppDesign.controlLabel,
                               fontWeight: FontWeight.w500,
                               color: s == active
-                                  ? ConsolePalette.of(context).cyan
-                                  : ConsolePalette.of(context).text7,
+                                  ? ConsolePalette.of(context).accent
+                                  : ConsolePalette.of(context).mutedText,
                             ),
                           ),
                         ),
@@ -99,10 +99,10 @@ class _OverviewBrand extends StatelessWidget {
                 Text(
                   'OpenFader',
                   style: TextStyle(
-                    fontFamily: U4.font,
+                    fontFamily: AppDesign.font,
                     fontSize: AppDesign.controlLabel,
                     fontWeight: FontWeight.w600,
-                    color: ConsolePalette.of(context).text1,
+                    color: ConsolePalette.of(context).text,
                   ),
                 ),
               ],
@@ -144,24 +144,24 @@ class _OverviewCard extends StatelessWidget {
                 _SettingsIcon(
                   section.icon,
                   size: 24,
-                  color: ConsolePalette.of(context).text7,
+                  color: ConsolePalette.of(context).mutedText,
                 ),
                 const SizedBox(width: AppDesign.spaceLg),
                 Expanded(
                   child: Text(
                     section.label,
                     style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.rowLabel,
                       fontWeight: FontWeight.w500,
-                      color: ConsolePalette.of(context).text1,
+                      color: ConsolePalette.of(context).text,
                     ),
                   ),
                 ),
                 _SettingsIcon(
                   Icons.chevron_right,
                   size: 24,
-                  color: ConsolePalette.of(context).text7,
+                  color: ConsolePalette.of(context).mutedText,
                 ),
               ],
             ),

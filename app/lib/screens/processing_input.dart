@@ -604,7 +604,7 @@ class _InputSection extends StatelessWidget {
         decoration: BoxDecoration(
             color: palette.slot,
             border: Border.all(color: palette.slotBorder),
-            borderRadius: U4.rBtn),
+            borderRadius: AppDesign.radius),
         child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
             child: Column(
@@ -631,7 +631,7 @@ class _InputReadout extends StatelessWidget {
         decoration: BoxDecoration(
             color: palette.panel,
             border: Border.all(color: palette.linePanel),
-            borderRadius: U4.rBtn),
+            borderRadius: AppDesign.radius),
         child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -694,7 +694,7 @@ class _InputSendSurface extends StatelessWidget {
         decoration: BoxDecoration(
             color: palette.panel,
             border: Border.all(color: palette.linePanel),
-            borderRadius: U4.rBtn),
+            borderRadius: AppDesign.radius),
         child: Padding(padding: const EdgeInsets.all(10), child: child));
   }
 }

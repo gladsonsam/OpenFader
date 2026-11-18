@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ui/console.dart';
 import '../../core/control_reset.dart';
-import '../../theme.dart';
 import 'dart:math' as math;
 import '../../core/channel_views.dart';
 
@@ -88,8 +87,9 @@ class _U4KnobState extends State<U4Knob> {
             mainAxisSize: MainAxisSize.min,
             children: [
               CustomPaint(
-                size: Size(AppDesign.largeTargets ? 80 : 68,
-                    AppDesign.largeTargets ? 80 : 68),
+                size: ConsoleDensity.of(context).largeTargets
+                    ? const Size(80, 80)
+                    : const Size(68, 68),
                 painter: _KnobPainter(
                   palette: ConsolePalette.of(context),
                   n: toN(widget.min, widget.max, widget.value),
@@ -102,17 +102,17 @@ class _U4KnobState extends State<U4Knob> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.minorText,
-                      color: ConsolePalette.of(context).text7)),
+                      color: ConsolePalette.of(context).mutedText)),
               Text(widget.text,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.caption,
-                      color: ConsolePalette.of(context).text1,
+                      color: ConsolePalette.of(context).text,
                       fontFeatures: [FontFeature.tabularFigures()])),
             ],
           ),
@@ -156,7 +156,7 @@ class _KnobPainter extends CustomPainter {
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(c, c + Offset(math.cos(a), math.sin(a)) * (r - 4), p);
-    canvas.drawCircle(c, 3, Paint()..color = palette.text1);
+    canvas.drawCircle(c, 3, Paint()..color = palette.text);
   }
 
   @override

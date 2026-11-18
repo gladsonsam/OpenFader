@@ -69,20 +69,20 @@ class _PhoneOverviewPainter extends CustomPainter {
       p.paint(canvas, center - Offset(p.width / 2, p.height / 2));
     }
 
-    final ink = active ? palette.cyan : palette.text4;
+    final ink = active ? palette.accent : palette.textSecondary;
     if (tab == ChannelTab.input) {
       box(const Rect.fromLTWH(6, 26, 138, 20), palette.chip,
           edge: palette.lineCtl);
       final fill = 10 + gain.clamp(0, 60) / 60 * 120;
       box(Rect.fromLTWH(10, 31, fill, 10), palette.processingSelected,
-          edge: palette.cyan, radius: 3);
+          edge: palette.accent, radius: 3);
       box(Rect.fromLTWH((14 + fill).clamp(14, 130), 24, 9, 24), palette.panKnob,
           radius: 3);
       text('48V', const Offset(51, 85), 20,
-          phantom ? palette.phantom : palette.text7);
+          phantom ? palette.phantom : palette.mutedText);
       box(const Rect.fromLTWH(93, 68, 40, 34), palette.chip, radius: 10);
       text('Ø', const Offset(113, 85), 22,
-          invert ? palette.cyan : palette.text7);
+          invert ? palette.accent : palette.mutedText);
     } else {
       final axis = Path()
         ..moveTo(12, 10)

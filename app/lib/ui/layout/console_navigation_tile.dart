@@ -66,7 +66,7 @@ class ConsoleNavigationTile extends StatelessWidget {
                 ? BorderRadius.circular(AppDesign.panelRadius)
                 : AppDesign.radius,
             side: selected
-                ? BorderSide(color: palette.cyan)
+                ? BorderSide(color: palette.accent)
                 : outlined
                 ? BorderSide(color: palette.linePanel)
                 : BorderSide.none,

@@ -51,11 +51,13 @@ class OpenfaderApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: u4Theme(
                   brightness: Brightness.light,
-                  accent: PrefsService.instance.accent)
+                  accent: PrefsService.instance.accent,
+                  largeTargets: PrefsService.instance.largeTargets)
               .copyWith(visualDensity: density),
           darkTheme: u4Theme(
                   brightness: Brightness.dark,
-                  accent: PrefsService.instance.accent)
+                  accent: PrefsService.instance.accent,
+                  largeTargets: PrefsService.instance.largeTargets)
               .copyWith(visualDensity: density),
           themeMode: switch (PrefsService.instance.appearance) {
             'light' => ThemeMode.light,

@@ -222,7 +222,7 @@ class _GraphPainter extends CustomPainter {
       );
     }
     final ink = Paint()
-      ..color = palette.lime
+      ..color = palette.accent
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     double linearY(double value) =>

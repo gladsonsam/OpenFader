@@ -3,7 +3,6 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../theme.dart';
 import '../ui/console.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -75,7 +74,7 @@ class ChannelToolbar extends StatelessWidget {
                 ? null
                 : BoxDecoration(
                     color: ConsolePalette.of(context).panel,
-                    borderRadius: U4.rBtn,
+                    borderRadius: AppDesign.radius,
                     border: Border.all(
                         color: ConsolePalette.of(context).linePanel)),
             child: Stack(alignment: Alignment.center, children: [
@@ -125,7 +124,7 @@ class ChannelToolbar extends StatelessWidget {
                                                     compact ? 12 : 14,
                                                     color: ConsolePalette.of(
                                                             context)
-                                                        .text7)),
+                                                        .mutedText)),
                                             Text(
                                                 focus == null
                                                     ? 'Fader'
@@ -136,7 +135,7 @@ class ChannelToolbar extends StatelessWidget {
                                                     compact ? 12 : 14,
                                                     color: ConsolePalette.of(
                                                             context)
-                                                        .text7)),
+                                                        .mutedText)),
                                           ]))))))),
               Align(
                   alignment: compact ? Alignment.centerRight : Alignment.center,
@@ -310,7 +309,7 @@ class _FocusedValueState extends State<_FocusedValue> {
         widget.compact
             ? AppDesign.compactParameterValue
             : AppDesign.parameterValue,
-        color: ConsolePalette.of(context).cyan,
+        color: ConsolePalette.of(context).accent,
         weight: FontWeight.w700);
     if (_editing && focus.enabled) {
       return TextField(
@@ -440,7 +439,7 @@ class _HomeButton extends StatelessWidget {
                           width: 22,
                           height: 22,
                           colorFilter: ColorFilter.mode(
-                              ConsolePalette.of(context).text7,
+                              ConsolePalette.of(context).mutedText,
                               BlendMode.srcIn)))))));
 }
 

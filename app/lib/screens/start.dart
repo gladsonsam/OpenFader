@@ -465,7 +465,7 @@ class _Box extends StatelessWidget {
                       const SizedBox(height: 8),
                       LinearProgressIndicator(
                         minHeight: 3,
-                        color: ConsolePalette.of(context).lime,
+                        color: ConsolePalette.of(context).accent,
                         backgroundColor: ConsolePalette.of(context).line,
                       ),
                     ],
@@ -493,7 +493,7 @@ class _Box extends StatelessWidget {
                         ConsoleButton(
                           label: 'Retry connection',
                           variant: ConsoleButtonVariant.quiet,
-                          accent: ConsolePalette.of(context).lime,
+                          accent: ConsolePalette.of(context).accent,
                           onPressed: onRetry,
                         ),
                     ],
@@ -726,7 +726,7 @@ class _ChevronGlyph extends StatelessWidget {
   const _ChevronGlyph();
   @override
   Widget build(BuildContext context) => Icon(Icons.chevron_right,
-      size: 22, color: ConsolePalette.of(context).text7);
+      size: 22, color: ConsolePalette.of(context).mutedText);
 }
 
 class _CornerIcon extends StatelessWidget {
@@ -811,7 +811,7 @@ class _Dialog extends StatelessWidget {
                         tooltip: 'Close',
                         onTap: () => Navigator.pop(context),
                         child: Icon(Icons.close,
-                            size: 24, color: ConsolePalette.of(context).text7)),
+                            size: 24, color: ConsolePalette.of(context).mutedText)),
                   ]),
                   const SizedBox(height: 12),
                   child,
@@ -922,7 +922,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                 focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
                     borderSide:
-                        BorderSide(color: ConsolePalette.of(context).lime)),
+                        BorderSide(color: ConsolePalette.of(context).accent)),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
@@ -952,7 +952,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(5),
                       borderSide:
-                          BorderSide(color: ConsolePalette.of(context).lime)),
+                          BorderSide(color: ConsolePalette.of(context).accent)),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 ),

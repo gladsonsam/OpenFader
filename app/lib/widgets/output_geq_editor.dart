@@ -377,7 +377,7 @@ class _GeqDraftPainter extends CustomPainter {
     canvas.drawPath(
       curve,
       Paint()
-        ..color = palette.lime
+        ..color = palette.accent
         ..strokeWidth = 2
         ..style = PaintingStyle.stroke,
     );

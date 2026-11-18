@@ -545,14 +545,14 @@ mixin _AppStoreStrips on _AppStoreContext {
       MixerBank(
         key: 'view:all',
         label: 'All',
-        color: const ConsolePalette().lime,
+        color: const ConsolePalette().accent,
         text: const ConsolePalette().onAccent,
       ),
       for (final view in customMixerViews)
         MixerBank(
             key: 'custom:${view.id}',
             label: view.name,
-            color: const ConsolePalette().lime,
+            color: const ConsolePalette().accent,
             text: const ConsolePalette().onAccent),
       for (final entry in _bankRanges.entries)
         MixerBank(
@@ -566,7 +566,7 @@ mixin _AppStoreStrips on _AppStoreContext {
                               (f['count'] as num).toInt() >
                           entry.value.$1,
                 )['label'] as String,
-          color: const ConsolePalette().lime,
+          color: const ConsolePalette().accent,
           text: const ConsolePalette().onAccent,
         ),
       if (_viewLeaves.isNotEmpty) ...[
@@ -574,7 +574,7 @@ mixin _AppStoreStrips on _AppStoreContext {
           MixerBank(
             key: 'view:$leaf',
             label: _viewLabel(leaf),
-            color: const ConsolePalette().lime,
+            color: const ConsolePalette().accent,
             text: const ConsolePalette().onAccent,
           ),
       ],

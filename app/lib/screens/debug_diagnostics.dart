@@ -21,14 +21,14 @@ class DebugDiagnostics extends StatelessWidget {
       fontFamily: 'monospace',
       fontSize: AppDesign.minorText,
       height: 1.45,
-      color: palette.text1,
+      color: palette.text,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
           'Provider diagnostics${data == null ? '' : ' · ${data.driver}'}',
-          style: style.copyWith(fontSize: AppDesign.caption, color: palette.cyan),
+          style: style.copyWith(fontSize: AppDesign.caption, color: palette.accent),
         ),
         if (data == null)
           Text(

@@ -400,7 +400,7 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
                             enabledBorder: OutlineInputBorder(
                                 borderSide: BorderSide(color: p.line)),
                             focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: p.cyan))),
+                                borderSide: BorderSide(color: p.accent))),
                         onChanged: (_) => setState(() => _error = null),
                         onSubmitted: (_) {
                           if (unavailable == null) _apply();

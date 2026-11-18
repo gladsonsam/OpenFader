@@ -8,9 +8,6 @@ import '../u4law.dart';
 
 import '../design.dart';
 
-// Retain mixer call sites while every screen shares the same design tokens.
-typedef MixerDesign = AppDesign;
-
 abstract final class MixerStripMetrics {
   static const contentInset = 12.0;
 }
@@ -114,7 +111,7 @@ void mixerText(Canvas c, String text, Offset offset, double size,
   final p = TextPainter(
       text: TextSpan(
           text: text,
-          style: MixerDesign.type(size, color: color, weight: weight)),
+          style: AppDesign.type(size, color: color, weight: weight)),
       textDirection: TextDirection.ltr,
       textAlign: align,
       maxLines: 1)
@@ -124,7 +121,7 @@ void mixerText(Canvas c, String text, Offset offset, double size,
 
 TextStyle mixerType(BuildContext context, double size,
         {Color? color, FontWeight weight = FontWeight.w400}) =>
-    MixerDesign.type(size,
+    AppDesign.type(size,
         color: color ?? ConsolePalette.of(context).text, weight: weight);
 
 /// Brand assets are loaded separately and never pass through this mapper.

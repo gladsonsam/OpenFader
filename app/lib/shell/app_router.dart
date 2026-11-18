@@ -421,7 +421,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final prefs = PrefsService.instance;
     MeterTuning.peakHoldMs = prefs.peakHold * 1000;
     MeterTuning.holdClips = prefs.holdClips;
-    AppDesign.largeTargets = prefs.largeTargets;
   }
 
   void _restartLoop() {
@@ -749,7 +748,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Icon(recording ? Icons.fiber_manual_record : Icons.play_arrow,
               size: 16,
-              color: recording ? ConsolePalette.of(context).meterRed : ConsolePalette.of(context).lime),
+              color: recording ? ConsolePalette.of(context).meterRed : ConsolePalette.of(context).accent),
           const SizedBox(width: 8),
           Expanded(child: Text(recording ? 'Recording' : recovery ? 'Routing recovery' : 'Playback')),
           if (!recording)
@@ -885,7 +884,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         child: Text(
             'Scenes and shows are unavailable while local access limits are active. Bulk recalls can change restricted controls.',
             style: TextStyle(
-                color: ConsolePalette.of(context).text1, fontSize: AppDesign.sectionTitle)),
+                color: ConsolePalette.of(context).text, fontSize: AppDesign.sectionTitle)),
       ));
     }
     if (!store.engine.connected &&
@@ -896,7 +895,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text('Mixer disconnected',
             style: TextStyle(
-                color: ConsolePalette.of(context).text1, fontSize: AppDesign.sectionTitle)),
+                color: ConsolePalette.of(context).text, fontSize: AppDesign.sectionTitle)),
         ConsoleButton(
             label: 'Reconnect mixer',
             variant: ConsoleButtonVariant.quiet,

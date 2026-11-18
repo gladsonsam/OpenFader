@@ -39,7 +39,7 @@ class MixerToolbar extends StatelessWidget {
               height: AppDesign.touchTarget,
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).panel,
-                  borderRadius: MixerDesign.radius,
+                  borderRadius: AppDesign.radius,
                   border: Border.all(color: ConsolePalette.of(context).line)),
               child: readoutContent ??
                   (pageTitle != null
@@ -455,7 +455,7 @@ class _SelectedLevelState extends State<_SelectedLevel> {
                   compact
                       ? AppDesign.compactParameterValue
                       : AppDesign.parameterValue,
-                  color: ConsolePalette.of(context).lime,
+                  color: ConsolePalette.of(context).accent,
                   weight: FontWeight.w700),
               decoration: InputDecoration(
                   isDense: true,
@@ -496,7 +496,7 @@ class _SelectedLevelState extends State<_SelectedLevel> {
                                 compact
                                     ? AppDesign.compactParameterValue
                                     : AppDesign.parameterValue,
-                                color: ConsolePalette.of(context).lime,
+                                color: ConsolePalette.of(context).accent,
                                 weight: FontWeight.w700)))))));
   }
 }
@@ -610,7 +610,7 @@ class SelectedControlReadout extends StatelessWidget {
                                   compact
                                       ? AppDesign.compactParameterValue
                                       : AppDesign.parameterValue,
-                                  color: ConsolePalette.of(context).lime,
+                                  color: ConsolePalette.of(context).accent,
                                   weight: FontWeight.w700))),
                       if (data.unconfirmed)
                         Text('(unconfirmed)',

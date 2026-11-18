@@ -29,11 +29,11 @@ class _Section extends StatelessWidget {
           child: Text(
             title,
             style: TextStyle(
-              fontFamily: U4.font,
+              fontFamily: AppDesign.font,
               fontSize: wide ? 18 : 17,
               height: 1.3,
               fontWeight: FontWeight.w500,
-              color: ConsolePalette.of(context).text7,
+              color: ConsolePalette.of(context).mutedText,
             ),
           ),
         ),
@@ -78,7 +78,7 @@ class _Note extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          fontFamily: U4.font,
+          fontFamily: AppDesign.font,
           fontSize: wide ? 14 : 14,
           height: wide ? 1.5 : 22 / 15,
           color: ConsolePalette.of(context).panFill,
@@ -131,7 +131,7 @@ class _ActionRow extends StatelessWidget {
               foreground: danger ? ConsolePalette.of(context).mute : null,
               trailing: _SettingsIcon(Icons.chevron_right,
                   size: AppDesign.iconSize,
-                  color: ConsolePalette.of(context).text7))));
+                  color: ConsolePalette.of(context).mutedText))));
 }
 
 class _ValueText extends StatelessWidget {
@@ -147,10 +147,10 @@ class _ValueText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        fontFamily: U4.font,
+        fontFamily: AppDesign.font,
         fontSize: wide ? 17 : 16,
         height: wide ? 1.3 : 24 / 18,
-        color: ConsolePalette.of(context).text7,
+        color: ConsolePalette.of(context).mutedText,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

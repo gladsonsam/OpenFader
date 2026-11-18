@@ -181,7 +181,7 @@ class _EqTabState extends State<_EqTab> {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
           color: ConsolePalette.of(context).tileBg,
-          borderRadius: U4.rWell,
+          borderRadius: AppDesign.radius,
           border: Border.all(color: ConsolePalette.of(context).linePanel)),
       child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -312,7 +312,7 @@ class _EqTabState extends State<_EqTab> {
                         constraints: const BoxConstraints(minHeight: 44),
                         decoration: BoxDecoration(
                             color: ConsolePalette.of(context).chip,
-                            borderRadius: U4.rBtn),
+                            borderRadius: AppDesign.radius),
                         padding: const EdgeInsets.all(3),
                         child: Row(children: [
                           for (final band in eq.bands)
@@ -335,13 +335,13 @@ class _EqTabState extends State<_EqTab> {
                                                     ? ConsolePalette.of(context)
                                                         .processingSelected
                                                     : null,
-                                                borderRadius: U4.rBtn),
+                                                borderRadius: AppDesign.radius),
                                             child: Text(showMobileShapes ? '${band.band}' : 'Band ${band.band}',
                                                 style: AppDesign.type(AppDesign.body,
                                                     color: eq.selectedBand ==
                                                             band.band
-                                                        ? ConsolePalette.of(context).cyan
-                                                        : ConsolePalette.of(context).text7,
+                                                        ? ConsolePalette.of(context).accent
+                                                        : ConsolePalette.of(context).mutedText,
                                                     weight: FontWeight.w600)))))),
                         ]))),
                 if (showMobileShapes) ...[

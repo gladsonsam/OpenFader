@@ -58,7 +58,7 @@ Future<double?> showNumberEntry({
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
-                          BorderSide(color: ConsolePalette.of(context).lime)),
+                          BorderSide(color: ConsolePalette.of(context).accent)),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),

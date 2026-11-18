@@ -121,7 +121,7 @@ class WorkspaceHome extends StatelessWidget {
                       const SizedBox(height: AppDesign.spaceLg),
                       if (serverError.isNotEmpty) ...[
                         Text('Server connection: $serverError',
-                            style: TextStyle(color: palette.text1)),
+                            style: TextStyle(color: palette.text)),
                         if (onReloadServer != null)
                           Align(
                               alignment: Alignment.centerLeft,

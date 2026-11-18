@@ -79,7 +79,7 @@ class _IconBtnInline extends StatelessWidget {
           size: icon == Icons.close
               ? AppDesign.removeIconSize
               : AppDesign.iconSize,
-          color: ConsolePalette.of(context).text7));
+          color: ConsolePalette.of(context).mutedText));
 }
 
 class _PrimaryButton extends StatelessWidget {
@@ -135,7 +135,7 @@ class _SettingsIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = this.color ?? ConsolePalette.of(context).text7;
+    final color = this.color ?? ConsolePalette.of(context).mutedText;
     final body = switch (icon) {
       Icons.wifi =>
         '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h4M7 16h10"/>',

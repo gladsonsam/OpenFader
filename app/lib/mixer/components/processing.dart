@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../design.dart';
 import '../demo.dart';
+import '../../design.dart';
 
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
 /// opens the existing channel editor; hardware curves use actual parameters.
@@ -42,10 +43,10 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final sx = box.maxWidth / 178.2;
-        const insetY = MixerDesign.spaceXs;
+        const insetY = AppDesign.spaceXs;
         const gainHeight = 20.0;
         const dynamicsHeight = 16.0;
-        const eqTop = insetY + gainHeight + MixerDesign.spaceXs;
+        const eqTop = insetY + gainHeight + AppDesign.spaceXs;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
         Widget place(double top, double height, Widget child,
                 {double? inset}) =>
@@ -58,7 +59,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
         return DecoratedBox(
             decoration: BoxDecoration(
                 color: ConsolePalette.of(context).well,
-                borderRadius: MixerDesign.radius,
+                borderRadius: AppDesign.radius,
                 border: Border.all(color: ConsolePalette.of(context).line)),
             child: Stack(children: [
               place(
@@ -119,10 +120,10 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       widget.showPhantom)))))),
               place(
                   eqTop,
-                  math.max(0, dynamicsTop - MixerDesign.spaceXs - eqTop),
+                  math.max(0, dynamicsTop - AppDesign.spaceXs - eqTop),
                   MixerEqPreview(
                       channel: widget.channel, onOpen: widget.onOpen),
-                  inset: MixerDesign.spaceSm),
+                  inset: AppDesign.spaceSm),
               place(
                   dynamicsTop,
                   dynamicsHeight,
@@ -144,7 +145,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       ? mixerDemoStrips[widget.channel.artwork]
                                           .compression
                                       : null)))),
-                  inset: MixerDesign.spaceSm),
+                  inset: AppDesign.spaceSm),
             ]));
       });
 }
@@ -235,7 +236,7 @@ class _GainPainter extends CustomPainter {
     mixerBox(c, Rect.fromLTWH(left, trackY + 1, travel * amount, 4),
         palette.meterCover, radius: 2);
     mixerBox(c, Rect.fromLTWH(left + travel * amount, trackY, 3, 6),
-        palette.text4, radius: 1);
+        palette.textSecondary, radius: 1);
     // Text uses logical pixels, independently of the rack's aspect ratio.
     if (showPhantom) {
       final phantom = params['phantom'] == true || params['phantom'] == 1;
@@ -309,7 +310,7 @@ class _EqPainter extends CustomPainter {
     mixerBox(c, Offset.zero & s, palette.eqBg);
     final zeroY = s.height / 2;
     c.drawLine(Offset(0, zeroY), Offset(s.width, zeroY),
-        Paint()..color = palette.text7.withValues(alpha: .35));
+        Paint()..color = palette.mutedText.withValues(alpha: .35));
     final values = response;
     if (values == null || values.length < 2) return;
     final curve = Path();

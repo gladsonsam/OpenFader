@@ -397,7 +397,7 @@ class _MixerStripState extends State<MixerStrip> {
                                     child: Text(message,
                                         style: TextStyle(
                                             color: ConsolePalette.of(context)
-                                                .text1,
+                                                .text,
                                             fontSize: AppDesign.caption))),
                                 ConsoleButton(
                                     label: 'Dismiss',

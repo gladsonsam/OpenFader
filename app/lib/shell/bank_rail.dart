@@ -111,11 +111,11 @@ class _Segment extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     final bg = active ? bank.color : palette.bankOff;
-    final tint = _bankTint(palette)[bank.key] ?? palette.text1;
+    final tint = _bankTint(palette)[bank.key] ?? palette.text;
     final fg = active
         ? bank.text
         : palette.isLight
-            ? Color.lerp(tint, palette.text1, .55)!
+            ? Color.lerp(tint, palette.text, .55)!
             : tint;
     return GestureDetector(
       onTap: () => onSelect(bank.key),

@@ -35,7 +35,7 @@ class InlineFeedbackView extends StatelessWidget {
                           liveRegion: true,
                           child: Text(message,
                               style: TextStyle(
-                                  color: ConsolePalette.of(context).text1)));
+                                  color: ConsolePalette.of(context).text)));
                       final dismiss = ConsoleIconButton(
                           label: 'Dismiss message',
                           onPressed: controller.clear,

@@ -33,13 +33,13 @@ class ConsolePreferenceRow extends StatelessWidget {
           Text(label,
               style: AppDesign.type(
                       wide ? AppDesign.rowLabel : AppDesign.controlLabel,
-                      color: foreground ?? palette.text1,
+                      color: foreground ?? palette.text,
                       weight: FontWeight.w500)
                   .copyWith(height: 1.3)),
           if (description != null) ...[
             const SizedBox(height: AppDesign.spaceXs),
             Text(description!,
-                style: AppDesign.type(AppDesign.body, color: palette.text7)
+                style: AppDesign.type(AppDesign.body, color: palette.mutedText)
                     .copyWith(height: 1.4)),
           ],
         ])),

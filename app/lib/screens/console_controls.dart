@@ -289,7 +289,7 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
                   padding: AppDesign.pagePadding,
                   child: Text(
                     store.receipt!,
-                    style: AppDesign.type(AppDesign.body, color: palette.text1),
+                    style: AppDesign.type(AppDesign.body, color: palette.text),
                   ),
                 ),
               Expanded(
@@ -325,7 +325,7 @@ class _ConsoleControlsPageState extends State<ConsoleControlsPage> {
                               item.label,
                               style: AppDesign.type(
                                 AppDesign.rowLabel,
-                                color: palette.text1,
+                                color: palette.text,
                               ),
                             ),
                             subtitle: branch

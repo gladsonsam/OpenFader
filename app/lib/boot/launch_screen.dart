@@ -33,14 +33,14 @@ class LaunchScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                     Text('OpenFader',
                         style: TextStyle(
-                            color: ConsolePalette.of(context).text1,
+                            color: ConsolePalette.of(context).text,
                             fontSize: 30,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.5)),
                     const SizedBox(height: 4),
                     Text('CONSOLE REMOTE',
                         style: TextStyle(
-                            color: ConsolePalette.of(context).text7,
+                            color: ConsolePalette.of(context).mutedText,
                             fontSize: AppDesign.caption,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 3)),
@@ -64,14 +64,14 @@ class LaunchScreen extends StatelessWidget {
                               backgroundColor:
                                   ConsolePalette.of(context).control,
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                  ConsolePalette.of(context).cyan),
+                                  ConsolePalette.of(context).accent),
                             ),
                     ),
                     const SizedBox(height: 12),
                     Text(controller.status,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: ConsolePalette.of(context).text4,
+                            color: ConsolePalette.of(context).textSecondary,
                             fontSize: AppDesign.smallLabel)),
                     const SizedBox(height: 20),
                     _StepList(controller: controller),
@@ -79,7 +79,7 @@ class LaunchScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text('engine: ${controller.engineLabel}',
                           style: TextStyle(
-                              color: ConsolePalette.of(context).text7,
+                              color: ConsolePalette.of(context).mutedText,
                               fontSize: AppDesign.caption)),
                     ],
                     if (failed) ...[
@@ -152,7 +152,7 @@ class _StepRow extends StatelessWidget {
       case _StepState.done:
         icon = Icon(Icons.check_circle_outline,
             size: 16, color: ConsolePalette.of(context).meterGreen);
-        textColor = ConsolePalette.of(context).text4;
+        textColor = ConsolePalette.of(context).textSecondary;
         break;
       case _StepState.active:
         icon = SizedBox(
@@ -161,14 +161,14 @@ class _StepRow extends StatelessWidget {
           child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation<Color>(
-                  ConsolePalette.of(context).cyan)),
+                  ConsolePalette.of(context).accent)),
         );
-        textColor = ConsolePalette.of(context).text1;
+        textColor = ConsolePalette.of(context).text;
         break;
       case _StepState.pending:
         icon = Icon(Icons.radio_button_unchecked,
-            size: 16, color: ConsolePalette.of(context).text10);
-        textColor = ConsolePalette.of(context).text7;
+            size: 16, color: ConsolePalette.of(context).textSubtle);
+        textColor = ConsolePalette.of(context).mutedText;
         break;
       case _StepState.failed:
         icon = Icon(Icons.error_outline,

@@ -30,21 +30,21 @@ class _LayersSection extends StatelessWidget {
               title: Text(
                 'All',
                 style: TextStyle(
-                  fontFamily: U4.font,
+                  fontFamily: AppDesign.font,
                   fontSize: AppDesign.rowLabel,
-                  color: ConsolePalette.of(context).text1,
+                  color: ConsolePalette.of(context).text,
                 ),
               ),
               subtitle: Text(
                 'Follows bank paging',
                 style: TextStyle(
-                  fontFamily: U4.font,
+                  fontFamily: AppDesign.font,
                   fontSize: AppDesign.body,
-                  color: ConsolePalette.of(context).text7,
+                  color: ConsolePalette.of(context).mutedText,
                 ),
               ),
               trailing: state.activeLayer.isAll
-                  ? Icon(Icons.check, color: ConsolePalette.of(context).cyan)
+                  ? Icon(Icons.check, color: ConsolePalette.of(context).accent)
                   : null,
               onTap: () => _runSettingsAction(context, () async {
                 await activate(MixerLayer.allLayerId);
@@ -56,9 +56,9 @@ class _LayersSection extends StatelessWidget {
                 title: Text(
                   layer.name,
                   style: TextStyle(
-                    fontFamily: U4.font,
+                    fontFamily: AppDesign.font,
                     fontSize: AppDesign.rowLabel,
-                    color: ConsolePalette.of(context).text1,
+                    color: ConsolePalette.of(context).text,
                   ),
                 ),
                 subtitle: Text(
@@ -66,21 +66,21 @@ class _LayersSection extends StatelessWidget {
                   '${layer.effectiveStripsPerPage} per page'
                   '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
                   style: TextStyle(
-                    fontFamily: U4.font,
+                    fontFamily: AppDesign.font,
                     fontSize: AppDesign.body,
-                    color: ConsolePalette.of(context).text7,
+                    color: ConsolePalette.of(context).mutedText,
                   ),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (layer.id == state.activeLayerId)
-                      Icon(Icons.check, color: ConsolePalette.of(context).cyan),
+                      Icon(Icons.check, color: ConsolePalette.of(context).accent),
                     PopupMenuButton<String>(
                       popUpAnimationStyle: AnimationStyle.noAnimation,
                       tooltip: 'Layer actions',
                       icon: Icon(Icons.more_vert,
-                          color: ConsolePalette.of(context).text7),
+                          color: ConsolePalette.of(context).mutedText),
                       onSelected: (action) =>
                           _runSettingsAction(context, () async {
                         switch (action) {

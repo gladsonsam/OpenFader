@@ -1,19 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'design.dart';
 import 'palette.dart';
+import 'ui/density.dart';
 
-/// Shared geometry and fixed channel identity colors. Runtime UI colors
-/// belong to ConsolePalette so light/dark and accent stay coherent.
-abstract final class U4 {
-  static const font = AppDesign.font;
-  static const headerH = AppDesign.toolbarCompactHeight;
-  static const r3 = Radius.circular(AppDesign.panelRadius);
-  static const r5 = Radius.circular(AppDesign.panelRadius);
-  static const r8 = Radius.circular(AppDesign.panelRadius);
-  static const rStrip = AppDesign.radius;
-  static const rWell = AppDesign.radius;
-  static const rBtn = AppDesign.radius;
-
+/// Fixed channel identity colors (tape and bank). Runtime UI colors belong to
+/// ConsolePalette so light/dark and accent stay coherent; geometry is AppDesign.
+abstract final class ChannelIdentityColors {
   /// Console-tape palette for input channels (designData.ts CHAN_TAPE):
   /// one colour per channel position (mod 8).
   static const tape = <List<Color>>[
@@ -70,40 +62,42 @@ abstract final class U4 {
 
 /// One theme for the mixer, detail pages, dialogs, menus and startup screen.
 ThemeData u4Theme(
-    {Brightness brightness = Brightness.dark, String accent = 'lime'}) {
-  final p = ConsolePalette(brightness: brightness, accent: accent);
+    {Brightness brightness = Brightness.dark,
+    String accent = 'lime',
+    bool largeTargets = true}) {
+  final p = ConsolePalette(brightness: brightness, accentName: accent);
   final scheme = ColorScheme(
     brightness: brightness,
     surface: p.page,
     surfaceContainer: p.panel,
     surfaceContainerHighest: p.control,
-    primary: p.cyan,
+    primary: p.accent,
     onPrimary: p.onAccent,
-    secondary: p.cyan,
+    secondary: p.accent,
     onSecondary: p.onAccent,
     error: p.meterRed,
     onError: p.onDanger,
-    onSurface: p.text1,
-    onSurfaceVariant: p.text7,
+    onSurface: p.text,
+    onSurfaceVariant: p.mutedText,
     outline: p.lineCtl,
     outlineVariant: p.linePanel,
   );
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
-    extensions: [p],
+    extensions: [p, ConsoleDensity(largeTargets: largeTargets)],
     colorScheme: scheme,
     scaffoldBackgroundColor: p.page,
     canvasColor: p.page,
     cardColor: p.panel,
     dividerColor: p.divider,
-    fontFamily: U4.font,
+    fontFamily: AppDesign.font,
     splashFactory: NoSplash.splashFactory,
   );
-  final shape = RoundedRectangleBorder(borderRadius: U4.rBtn);
+  final shape = RoundedRectangleBorder(borderRadius: AppDesign.radius);
   return theme.copyWith(
     textTheme: theme.textTheme
-        .apply(bodyColor: p.text1, displayColor: p.text1)
+        .apply(bodyColor: p.text, displayColor: p.text)
         .copyWith(
             bodyMedium: AppDesign.type(AppDesign.body, color: p.text),
             bodySmall: AppDesign.type(AppDesign.caption, color: p.text),
@@ -115,7 +109,7 @@ ThemeData u4Theme(
     textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
-      foregroundColor: p.text1,
+      foregroundColor: p.text,
       backgroundColor: p.control,
       minimumSize: AppDesign.controlSize,
       padding: AppDesign.controlPadding,
@@ -133,7 +127,7 @@ ThemeData u4Theme(
     outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
-      foregroundColor: p.cyan,
+      foregroundColor: p.accent,
       minimumSize: AppDesign.controlSize,
       padding: AppDesign.controlPadding,
       visualDensity: VisualDensity.standard,
@@ -146,7 +140,7 @@ ThemeData u4Theme(
         style: FilledButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.onAccent,
-      backgroundColor: p.cyan,
+      backgroundColor: p.accent,
       minimumSize: AppDesign.controlSize,
       padding: AppDesign.controlPadding,
       visualDensity: VisualDensity.standard,
@@ -167,7 +161,7 @@ ThemeData u4Theme(
     iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
-      foregroundColor: p.text7,
+      foregroundColor: p.mutedText,
       iconSize: AppDesign.iconSize,
       minimumSize: AppDesign.controlSize,
       visualDensity: VisualDensity.standard,
@@ -177,15 +171,15 @@ ThemeData u4Theme(
     inputDecorationTheme: InputDecorationThemeData(
       filled: true,
       fillColor: p.well,
-      labelStyle: TextStyle(color: p.text7),
-      hintStyle: TextStyle(color: p.text10),
+      labelStyle: TextStyle(color: p.mutedText),
+      hintStyle: TextStyle(color: p.textSubtle),
       contentPadding: AppDesign.fieldPadding,
       border: OutlineInputBorder(
-          borderRadius: U4.rBtn, borderSide: BorderSide(color: p.lineCtl)),
+          borderRadius: AppDesign.radius, borderSide: BorderSide(color: p.lineCtl)),
       enabledBorder: OutlineInputBorder(
-          borderRadius: U4.rBtn, borderSide: BorderSide(color: p.lineCtl)),
+          borderRadius: AppDesign.radius, borderSide: BorderSide(color: p.lineCtl)),
       focusedBorder: OutlineInputBorder(
-          borderRadius: U4.rBtn, borderSide: BorderSide(color: p.cyan)),
+          borderRadius: AppDesign.radius, borderSide: BorderSide(color: p.accent)),
     ),
     popupMenuTheme: PopupMenuThemeData(
         color: p.selected,
@@ -199,13 +193,13 @@ ThemeData u4Theme(
     bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: p.page, surfaceTintColor: Colors.transparent),
     tooltipTheme: TooltipThemeData(
-        decoration: BoxDecoration(color: p.control, borderRadius: U4.rBtn),
+        decoration: BoxDecoration(color: p.control, borderRadius: AppDesign.radius),
         textStyle: AppDesign.type(12)),
     sliderTheme: theme.sliderTheme.copyWith(
-        activeTrackColor: p.cyan,
-        thumbColor: p.text1,
+        activeTrackColor: p.accent,
+        thumbColor: p.text,
         inactiveTrackColor: p.control,
-        overlayColor: p.cyan.withValues(alpha: .08)),
+        overlayColor: p.accent.withValues(alpha: .08)),
     scrollbarTheme: const ScrollbarThemeData(
         thumbVisibility: WidgetStatePropertyAll(false)),
   );

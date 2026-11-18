@@ -140,9 +140,9 @@ class _InputAssignments extends StatelessWidget {
               childrenPadding: const EdgeInsets.all(10),
               backgroundColor: ConsolePalette.of(context).slot,
               collapsedBackgroundColor: ConsolePalette.of(context).slot,
-              shape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
+              shape: const RoundedRectangleBorder(borderRadius: AppDesign.radius),
               collapsedShape:
-                  const RoundedRectangleBorder(borderRadius: U4.rBtn),
+                  const RoundedRectangleBorder(borderRadius: AppDesign.radius),
               title: Row(children: [
                 Text('Groups',
                     style: AppDesign.type(AppDesign.controlLabel, weight: FontWeight.w600)),
@@ -578,7 +578,7 @@ class _AutomixGainMeter extends StatelessWidget {
                                 .toDouble()
                                 .clamp(0.0, 1.0),
                             backgroundColor: palette.well,
-                            color: palette.lime,
+                            color: palette.accent,
                           )),
               ]),
             )),

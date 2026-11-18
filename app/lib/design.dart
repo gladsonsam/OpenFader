@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 /// Runtime colors live in ConsolePalette and are resolved from the widget tree.
 abstract final class AppDesign {
   static const radius = BorderRadius.all(Radius.circular(panelRadius));
+  static const cornerRadius = Radius.circular(panelRadius);
   static const font = 'Barlow';
 
   // One immutable scale for application chrome and forms. Keep graph geometry
@@ -72,9 +73,6 @@ abstract final class AppDesign {
   static const compactSelectMaxWidth = 174.0;
   static const feedbackDuration = Duration(milliseconds: 40);
 
-  /// Larger touch targets (Appearance setting). Read at build time so
-  /// pages listening to prefs apply it live.
-  static bool largeTargets = true;
   static TextStyle type(double size,
           {Color? color, FontWeight weight = FontWeight.w400}) =>
       TextStyle(

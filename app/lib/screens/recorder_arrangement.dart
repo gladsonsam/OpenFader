@@ -1047,7 +1047,7 @@ class _TimelinePainter extends CustomPainter {
           math.max(loopStart!, loopEnd!) * size.width,
           56,
         ),
-        Paint()..color = palette.lime,
+        Paint()..color = palette.accent,
       );
       canvas.drawRect(
         Rect.fromLTRB(
@@ -1152,12 +1152,12 @@ class _TimelinePainter extends CustomPainter {
       ..lineTo(x + 7, 0)
       ..lineTo(x, 10)
       ..close();
-    canvas.drawPath(triangle, Paint()..color = palette.lime);
+    canvas.drawPath(triangle, Paint()..color = palette.accent);
     canvas.drawLine(
       Offset(x, 0),
       Offset(x, size.height),
       Paint()
-        ..color = palette.lime
+        ..color = palette.accent
         ..strokeWidth = 2,
     );
   }
@@ -1261,7 +1261,7 @@ class _OverviewPainter extends CustomPainter {
       Offset(position * size.width, 0),
       Offset(position * size.width, size.height),
       Paint()
-        ..color = p.lime
+        ..color = p.accent
         ..strokeWidth = 2,
     );
   }

@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/access_limits.dart';
 import '../ui/console.dart';
-import '../theme.dart';
 import 'settings_access_passcode.dart';
 
 /// Reads only the injected policy contract; no engine or AppStore dependency.
@@ -45,14 +44,14 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
     final locked = widget.store.accessLocked;
     final blocked = widget.store.blockedAccess;
     final titleStyle = TextStyle(
-        fontFamily: U4.font,
+        fontFamily: AppDesign.font,
         fontSize: AppDesign.sectionTitle,
         fontWeight: FontWeight.w600,
-        color: palette.text1);
+        color: palette.text);
     final detailStyle = TextStyle(
-        fontFamily: U4.font, fontSize: AppDesign.body, color: palette.text7, height: 1.4);
+        fontFamily: AppDesign.font, fontSize: AppDesign.body, color: palette.mutedText, height: 1.4);
     return DefaultTextStyle(
-      style: TextStyle(fontFamily: U4.font, color: palette.text1, fontSize: AppDesign.controlLabel),
+      style: TextStyle(fontFamily: AppDesign.font, color: palette.text, fontSize: AppDesign.controlLabel),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('Control what can be edited on this device.', style: detailStyle),
         const SizedBox(height: 24),
@@ -66,7 +65,7 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Icon(locked ? Icons.lock_outline : Icons.lock_open_outlined,
-                  size: 20, color: palette.text7),
+                  size: 20, color: palette.mutedText),
               const SizedBox(width: 10),
               Expanded(
                   child: Text(locked ? 'Limits locked' : 'Limits unlocked',
@@ -144,8 +143,8 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
             activeThumbColor: palette.mute,
             title: Text(option.label,
                 style: TextStyle(
-                    color: palette.text1,
-                    fontFamily: U4.font,
+                    color: palette.text,
+                    fontFamily: AppDesign.font,
                     fontWeight: FontWeight.w500)),
             subtitle: Text(
                 '${option.coverage}${option.available ? '' : ' · Not currently available'}',

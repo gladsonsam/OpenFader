@@ -11,6 +11,8 @@ acyclic and avoid accidentally coupling primitives to the whole library.
 - `icons/`: the shared console icon vocabulary.
 - `../design.dart`: immutable spacing, type, shape, target and timing tokens.
 - `../palette.dart`: context-resolved theme colors.
+- `density.dart`: `ConsoleDensity` theme extension (large touch targets);
+  read with `ConsoleDensity.of(context)` and pass values into painters.
 
 ## Which component do I use?
 

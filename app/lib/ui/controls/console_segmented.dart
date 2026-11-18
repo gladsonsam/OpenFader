@@ -30,7 +30,7 @@ class ConsoleTabStrip<T> extends StatelessWidget {
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color: value == selected ? p.cyan : p.tileBorder,
+                      color: value == selected ? p.accent : p.tileBorder,
                       width: value == selected ? 3 : 1,
                     ),
                   ),
@@ -38,7 +38,7 @@ class ConsoleTabStrip<T> extends StatelessWidget {
                 child: TextButton(
                   style: TextButton.styleFrom(
                     minimumSize: const Size(0, AppDesign.controlHeight),
-                    foregroundColor: value == selected ? p.cyan : p.text4,
+                    foregroundColor: value == selected ? p.accent : p.textSecondary,
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppDesign.spaceMd,
                     ),

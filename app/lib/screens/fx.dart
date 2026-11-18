@@ -182,7 +182,7 @@ class _U4FxPageState extends State<U4FxPage> {
                                         Text(
                                             'No FX controls are available for this mixer.',
                                             style: TextStyle(
-                                                color: palette.text4)),
+                                                color: palette.textSecondary)),
                                       if (targets.isNotEmpty)
                                         SizedBox(
                                             height: 112,
@@ -398,7 +398,7 @@ class _FxCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: AppDesign.minorText, color: palette.text7))),
+                                    fontSize: AppDesign.minorText, color: palette.mutedText))),
                         Text(status,
                             style: consoleTextStyle(context, ConsoleTextRole.micro)
                                 .copyWith(
@@ -416,12 +416,12 @@ class _FxCard extends StatelessWidget {
                                   style: TextStyle(
                                       fontSize: AppDesign.controlLabel,
                                       fontWeight: FontWeight.w700,
-                                      color: palette.text1)))),
+                                      color: palette.text)))),
                       if (slot != null) ...[
                         Text(slot.ret,
                             maxLines: 1,
                             style: consoleTextStyle(context, ConsoleTextRole.micro)
-                                .copyWith(color: palette.text7)),
+                                .copyWith(color: palette.mutedText)),
                         const SizedBox(height: AppDesign.spaceXs),
                         ValueListenableBuilder<double>(
                             valueListenable: store.meterOf(slot.slot),
@@ -438,7 +438,7 @@ class _FxCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style:
-                                TextStyle(fontSize: AppDesign.minorText, color: palette.text7)),
+                                TextStyle(fontSize: AppDesign.minorText, color: palette.mutedText)),
                     ]))));
   }
 }
@@ -507,7 +507,7 @@ class _NativeFxDetail extends StatelessWidget {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text(controls.first.destinationName,
           style: TextStyle(
-              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text1)),
+              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text)),
       const SizedBox(height: AppDesign.spaceMd),
       if (selector != null) ...[
         Builder(
@@ -628,7 +628,7 @@ class _LegacyFxDetail extends StatelessWidget {
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
           style: TextStyle(
-              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text1)),
+              fontSize: AppDesign.sectionTitle, fontWeight: FontWeight.w600, color: palette.text)),
       if (store.stateControlsSupported) ...[
         const SizedBox(height: 8),
         ConsoleActionGroup(children: [
@@ -849,7 +849,7 @@ class _FxRotaryState extends State<_FxRotary> {
                       const SizedBox(height: AppDesign.spaceSm),
                       Text(widget.label,
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: AppDesign.caption, color: palette.text7)),
+                          style: TextStyle(fontSize: AppDesign.caption, color: palette.mutedText)),
                       const SizedBox(height: AppDesign.spaceXs),
                       Text(widget.text,
                           textAlign: TextAlign.center,
@@ -858,7 +858,7 @@ class _FxRotaryState extends State<_FxRotary> {
                           style: TextStyle(
                               fontSize: AppDesign.smallLabel,
                               fontWeight: FontWeight.w600,
-                              color: palette.text1)),
+                              color: palette.text)),
                     ]))));
   }
 }
@@ -896,7 +896,7 @@ class _FxKnobPainter extends CustomPainter {
         center + needle * 7,
         center + needle * (radius - 14),
         Paint()
-          ..color = palette.text4
+          ..color = palette.textSecondary
           ..strokeWidth = 2.5
           ..strokeCap = StrokeCap.round);
   }

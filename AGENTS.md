@@ -27,8 +27,10 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 - `app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
   with `ConsolePalette.of(context)` in widgets; pass snapshots into painters and
   compare them in `shouldRepaint`. UI colors must not be global mutable state.
-- `app/lib/{theme.dart,design.dart,u4law.dart}` — shared geometry/type (`U4`/`AppDesign`),
-  fader law. Never hardcode colors; never touch the fader law casually
+- `app/lib/{theme.dart,design.dart,u4law.dart}` — theme build and
+  `ChannelIdentityColors` (tape/bank), shared geometry/type (`AppDesign`),
+  fader law. `ConsoleDensity` (`ui/density.dart`) carries the large-targets
+  setting; resolve with `ConsoleDensity.of(context)`, never a static. Never hardcode colors; never touch the fader law casually
   (protocol values depend on it).
 - `app/lib/engine.dart` — `Cmds` protocol + `EngineState`. `FakeSimEngine`
   must speak the same protocol as the native engine.

@@ -44,7 +44,7 @@ class ConsoleIconButton extends StatelessWidget {
                     borderRadius: AppDesign.radius,
                     side: filled
                         ? BorderSide(
-                            color: selected ? palette.cyan : palette.line)
+                            color: selected ? palette.accent : palette.line)
                         : BorderSide.none),
                 child: InkWell(
                     onTap: onPressed,

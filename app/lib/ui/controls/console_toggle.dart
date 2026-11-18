@@ -39,10 +39,10 @@ class ConsoleToggle extends StatelessWidget {
             width: width,
             height: height,
             decoration: BoxDecoration(
-                color: value ? palette.cyan : palette.control,
+                color: value ? palette.accent : palette.control,
                 borderRadius: BorderRadius.circular(height / 2),
                 border:
-                    Border.all(color: value ? palette.cyan : palette.lineCtl)),
+                    Border.all(color: value ? palette.accent : palette.lineCtl)),
             child: Stack(children: [
               Positioned(
                 left: value

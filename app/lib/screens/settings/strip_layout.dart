@@ -109,9 +109,9 @@ class _StripLayoutSection extends StatelessWidget {
               child: Text(
                 'Strip order (top to bottom)',
                 style: TextStyle(
-                  fontFamily: U4.font,
+                  fontFamily: AppDesign.font,
                   fontSize: AppDesign.body,
-                  color: ConsolePalette.of(context).text7,
+                  color: ConsolePalette.of(context).mutedText,
                 ),
               ),
             ),
@@ -131,19 +131,19 @@ class _StripLayoutSection extends StatelessWidget {
                   title: Text(
                     el.label,
                     style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.rowLabel,
                       color: layout.visible.contains(el) ||
                               el == StripElement.fader
-                          ? ConsolePalette.of(context).text1
-                          : ConsolePalette.of(context).text7,
+                          ? ConsolePalette.of(context).text
+                          : ConsolePalette.of(context).mutedText,
                     ),
                   ),
                   trailing: ReorderableDragStartListener(
                     index: i,
                     child: Icon(
                       Icons.drag_handle,
-                      color: ConsolePalette.of(context).text7,
+                      color: ConsolePalette.of(context).mutedText,
                     ),
                   ),
                 );
@@ -186,24 +186,24 @@ class _PresetChip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: selected
-                  ? ConsolePalette.of(context).cyan
+                  ? ConsolePalette.of(context).accent
                   : ConsolePalette.of(context).control,
               borderRadius: BorderRadius.circular(9),
               border: Border.all(
                 color: selected
-                    ? ConsolePalette.of(context).cyan
+                    ? ConsolePalette.of(context).accent
                     : ConsolePalette.of(context).lineCtl,
               ),
             ),
             child: Text(
               label,
               style: TextStyle(
-                fontFamily: U4.font,
+                fontFamily: AppDesign.font,
                 fontSize: AppDesign.rowLabel,
                 fontWeight: FontWeight.w500,
                 color: selected
                     ? ConsolePalette.of(context).onAccent
-                    : ConsolePalette.of(context).text1,
+                    : ConsolePalette.of(context).text,
               ),
             ),
           ),

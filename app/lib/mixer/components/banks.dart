@@ -25,7 +25,7 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
             Expanded(child: Text(bank.label)),
             if (bank.key == controller.store.bank)
               Icon(Icons.check,
-                  color: ConsolePalette.of(context).cyan, size: 18),
+                  color: ConsolePalette.of(context).accent, size: 18),
           ])),
     const PopupMenuDivider(),
     PopupMenuItem(
@@ -69,7 +69,7 @@ Future<void> showMixerBuses(
                 ])),
             if (bus.active)
               Icon(Icons.check,
-                  color: ConsolePalette.of(context).lime, size: 20),
+                  color: ConsolePalette.of(context).accent, size: 20),
           ])),
   ]);
   if (context.mounted &&
@@ -115,7 +115,7 @@ class MixerBanks extends StatelessWidget {
             style: mixerType(context, 10,
                 color: controller.demo
                     ? ConsolePalette.of(context).amber
-                    : ConsolePalette.of(context).lime,
+                    : ConsolePalette.of(context).accent,
                 weight: FontWeight.w600));
     return Material(
         color: ConsolePalette.of(context).panel,
@@ -168,7 +168,7 @@ class MixerBanks extends StatelessWidget {
                                     visualDensity: VisualDensity.standard),
                                 child: fittedLabel(label, size,
                                     color: active
-                                        ? ConsolePalette.of(context).lime
+                                        ? ConsolePalette.of(context).accent
                                         : color ??
                                             ConsolePalette.of(context)
                                                 .mutedText,
@@ -406,7 +406,7 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
                                 Text(bank.label, style: mixerType(context, 17)),
                             trailing: bank.key == controller.store.bank
                                 ? Icon(Icons.check,
-                                    color: ConsolePalette.of(context).lime)
+                                    color: ConsolePalette.of(context).accent)
                                 : null,
                             onTap: () {
                               controller.setBank(bank.key);

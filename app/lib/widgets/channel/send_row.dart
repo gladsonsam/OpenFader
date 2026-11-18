@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../ui/console.dart';
-import '../../theme.dart';
 import '../../core/channel_views.dart';
 
 class U4SendRow extends StatelessWidget {
@@ -25,7 +24,7 @@ class U4SendRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: ConsolePalette.of(context).tileBg,
         border: Border.all(color: ConsolePalette.of(context).tileBorder),
-        borderRadius: U4.rBtn,
+        borderRadius: AppDesign.radius,
       ),
       child: Row(
         children: [
@@ -37,10 +36,10 @@ class U4SendRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontFamily: U4.font,
+                        fontFamily: AppDesign.font,
                         fontSize: AppDesign.smallLabel,
                         fontWeight: FontWeight.w600,
-                        color: ConsolePalette.of(context).text1)),
+                        color: ConsolePalette.of(context).text)),
                 const SizedBox(height: 6),
                 _MiniLevel(
                   value: send.level,
@@ -63,19 +62,19 @@ class U4SendRow extends StatelessWidget {
                     color: send.muted
                         ? ConsolePalette.of(context).muteOnBd
                         : ConsolePalette.of(context).tileBorder),
-                borderRadius: U4.rBtn,
+                borderRadius: AppDesign.radius,
               ),
               child: Text(send.muted ? 'MUTED' : 'open',
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: U4.font,
+                      fontFamily: AppDesign.font,
                       fontSize: AppDesign.minorText,
                       fontWeight: FontWeight.w700,
                       color: send.muted
                           ? ConsolePalette.of(context).onDanger
-                          : ConsolePalette.of(context).text7)),
+                          : ConsolePalette.of(context).mutedText)),
             ),
           ),
           const SizedBox(width: 6),
@@ -88,7 +87,7 @@ class U4SendRow extends StatelessWidget {
                 color: ConsolePalette.of(context).panel,
                 border:
                     Border.all(color: ConsolePalette.of(context).railBorder),
-                borderRadius: U4.rBtn,
+                borderRadius: AppDesign.radius,
               ),
               child: Text(
                 send.tap == null
@@ -98,10 +97,10 @@ class U4SendRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontFamily: U4.font,
+                    fontFamily: AppDesign.font,
                     fontSize: AppDesign.minorText,
                     fontWeight: FontWeight.w700,
-                    color: ConsolePalette.of(context).cyan),
+                    color: ConsolePalette.of(context).accent),
               ),
             ),
           ),
@@ -163,10 +162,10 @@ class _MiniLevelPainter extends CustomPainter {
     final fill = Rect.fromLTWH(0, 7, size.width * value.clamp(0.0, 1.0), 4);
     canvas.drawRRect(
       RRect.fromRectAndRadius(fill, const Radius.circular(2)),
-      Paint()..color = palette.cyan,
+      Paint()..color = palette.accent,
     );
     final x = size.width * value.clamp(0.0, 1.0);
-    canvas.drawCircle(Offset(x, 9), 7, Paint()..color = palette.text1);
+    canvas.drawCircle(Offset(x, 9), 7, Paint()..color = palette.text);
     canvas.drawCircle(
         Offset(x, 9),
         7,

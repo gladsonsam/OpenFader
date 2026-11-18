@@ -16,7 +16,9 @@ Follow the existing responsibility before adding a new abstraction or folder.
 | `settings/` | Persisted preferences and local mix/connection services. |
 
 `design.dart` owns the shared geometry and type tokens. `palette.dart` owns
-immutable theme colors, resolved from context. `theme.dart` maps those choices
+immutable theme colors (`accent`, `text`, `mutedText`, `textSecondary`,
+`textSubtle`, ...), resolved from context; `ui/density.dart` carries the
+large-targets setting the same way. `theme.dart` maps those choices
 onto Flutter's Material controls. See `ui/README.md` for component conventions.
 
 Keep UI primitives independent of stores and engine data. Inject screen stores

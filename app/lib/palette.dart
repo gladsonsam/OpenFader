@@ -5,9 +5,9 @@ import 'package:material_ui/material_ui.dart';
 @immutable
 class ConsolePalette extends ThemeExtension<ConsolePalette> {
   final Brightness brightness;
-  final String accent;
+  final String accentName;
   const ConsolePalette(
-      {this.brightness = Brightness.dark, this.accent = 'lime'});
+      {this.brightness = Brightness.dark, this.accentName = 'lime'});
   static ConsolePalette of(BuildContext context) =>
       Theme.of(context).extension<ConsolePalette>() ?? const ConsolePalette();
   bool get isLight => brightness == Brightness.light;
@@ -40,12 +40,12 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get processingPanel => pair(0xff242424, 0xffbfc8d0);
   Color get navigationTile => pair(0xff181818, 0xffbfc8d0);
   Color get processingSelected =>
-      !isLight && accent == 'lime' ? const Color(0xff262b14) : selectionFill;
+      !isLight && accentName == 'lime' ? const Color(0xff262b14) : selectionFill;
   Color get stripDivider => pair(0xff101010, 0xff9aa6b1);
   Color get line => pair(0xff2c2c2c, 0xff9aa6b1);
   Color get text => pair(0xffebebeb, 0xff131c24);
   Color get mutedText => pair(0xffa0a0a0, 0xff354350);
-  Color get lime => switch (accent) {
+  Color get accent => switch (accentName) {
         'ocean' => pair(0xff6bc9ff, 0xff00669a),
         'violet' => pair(0xffc5a4ff, 0xff7040b5),
         'amber' => pair(0xffffce66, 0xff855800),
@@ -53,8 +53,8 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
       };
   Color get onAccent =>
       isLight ? const Color(0xffffffff) : const Color(0xff101510);
-  Color get selectionFill => lime.withValues(alpha: isLight ? .12 : .09);
-  Color get selectedLine => lime;
+  Color get selectionFill => accent.withValues(alpha: isLight ? .12 : .09);
+  Color get selectedLine => accent;
   // Physical controls and signal bars keep their console colors in both modes.
   // Only the surrounding UI surfaces and readable text adapt to brightness.
   Color get meter => const Color(0xffa8e05f);
@@ -97,7 +97,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get capBorder => const Color(0xff555555);
   Color get faderSlot => const Color(0xff161616);
   Color get faderSlotBorder => const Color(0xff2a2a2a);
-  Color get faderAccent => ConsolePalette(accent: accent).lime;
+  Color get faderAccent => ConsolePalette(accentName: accentName).accent;
   Color get meterClipBack => const Color(0xff3d1006);
   Color get meterAmberBack => const Color(0xff3a2600);
   Color get meterGreenBack => const Color(0xff1a2a00);
@@ -138,11 +138,8 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get bankOff => panel;
   Color get tileBg => control;
   Color get tileBorder => line;
-  Color get text1 => text;
-  Color get text4 => pair(0xffc8c8c8, 0xff293743);
-  Color get text7 => mutedText;
-  Color get text10 => pair(0xff808080, 0xff475662);
-  Color get cyan => lime;
+  Color get textSecondary => pair(0xffc8c8c8, 0xff293743);
+  Color get textSubtle => pair(0xff808080, 0xff475662);
   Color get masterLine => selectedLine;
   Color get meterGreen => meter;
   Color get meterAmber => const Color(0xffe0a400);
@@ -164,10 +161,10 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get panFill => mutedText;
 
   @override
-  ConsolePalette copyWith({Brightness? brightness, String? accent}) =>
+  ConsolePalette copyWith({Brightness? brightness, String? accentName}) =>
       ConsolePalette(
           brightness: brightness ?? this.brightness,
-          accent: accent ?? this.accent);
+          accentName: accentName ?? this.accentName);
   @override
   ConsolePalette lerp(covariant ConsolePalette? other, double t) =>
       other == null || t < .5 ? this : other;
@@ -175,7 +172,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   bool operator ==(Object other) =>
       other is ConsolePalette &&
       other.brightness == brightness &&
-      other.accent == accent;
+      other.accentName == accentName;
   @override
-  int get hashCode => Object.hash(brightness, accent);
+  int get hashCode => Object.hash(brightness, accentName);
 }

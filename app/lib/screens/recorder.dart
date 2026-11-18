@@ -141,7 +141,7 @@ class _GoToTimeDialogState extends State<_GoToTimeDialog> {
       content: TextField(
         controller: controller,
         autofocus: true,
-        style: TextStyle(color: p.text1),
+        style: TextStyle(color: p.text),
         decoration: InputDecoration(
           labelText: 'Seconds or mm:ss',
           labelStyle: TextStyle(color: p.mutedText),
@@ -246,7 +246,7 @@ class _LoopDialogState extends State<_LoopDialog> {
             TextField(
               controller: start,
               autofocus: true,
-              style: TextStyle(color: p.text1),
+              style: TextStyle(color: p.text),
               decoration: InputDecoration(
                 labelText: 'Start (seconds or mm:ss)',
                 errorText: error,
@@ -255,7 +255,7 @@ class _LoopDialogState extends State<_LoopDialog> {
             ),
             TextField(
               controller: end,
-              style: TextStyle(color: p.text1),
+              style: TextStyle(color: p.text),
               decoration: const InputDecoration(
                 labelText: 'End (seconds or mm:ss)',
               ),
@@ -1774,7 +1774,7 @@ class _RecorderPageState extends State<RecorderPage> {
           rate,
         ),
         style: TextStyle(
-          color: recording ? p.meterRed : p.text1,
+          color: recording ? p.meterRed : p.text,
           fontFamily: 'Barlow Condensed',
           fontSize: narrow ? 28 : 30,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -1816,7 +1816,7 @@ class _RecorderPageState extends State<RecorderPage> {
                     )
                   : Icon(
                       transport == 'playing' ? Icons.pause : Icons.play_arrow,
-                      color: canPlay ? p.lime : p.mutedText,
+                      color: canPlay ? p.accent : p.mutedText,
                     ),
             ),
           if (soundcheck)
@@ -1933,7 +1933,7 @@ class _RecorderPageState extends State<RecorderPage> {
                   const SizedBox(height: 8),
                   Text(
                     'Restore the mixer’s live inputs yourself. Playback remains unavailable until you confirm.',
-                    style: TextStyle(color: p.text1),
+                    style: TextStyle(color: p.text),
                   ),
                   ConsoleButton(
                     variant: ConsoleButtonVariant.primary,
@@ -1963,12 +1963,12 @@ class _RecorderPageState extends State<RecorderPage> {
                             const SizedBox(height: 8),
                             Text(
                               'A routing journal is pending. Recording remains blocked until recovery completes. The host does not display the journal details or independently identify the physical mixer.',
-                              style: TextStyle(color: p.text1),
+                              style: TextStyle(color: p.text),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'Rebind checks a fresh routing snapshot against the journal. It does not change mixer routing. Return to live is a separate step.',
-                              style: TextStyle(color: p.text1),
+                              style: TextStyle(color: p.text),
                             ),
                             const SizedBox(height: 12),
                             ConsoleButton(
@@ -2518,7 +2518,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
           children: [
             Text(
               '${_device?['name'] ?? 'No interface selected'}',
-              style: TextStyle(color: p.text1, fontWeight: FontWeight.w600),
+              style: TextStyle(color: p.text, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
@@ -2954,7 +2954,7 @@ class _TakeBrowserState extends State<_TakeBrowser> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: p.text1,
+                                  color: p.text,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -3056,7 +3056,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           store.remoteStatus['password_required'] == true
               ? 'Password required'
               : 'No password required',
-          style: TextStyle(color: p.text1),
+          style: TextStyle(color: p.text),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -3065,7 +3065,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           enableSuggestions: false,
           autocorrect: false,
           enabled: !store.remotePending,
-          style: TextStyle(color: p.text1),
+          style: TextStyle(color: p.text),
           decoration: const InputDecoration(
             labelText: 'Optional server password',
           ),
@@ -3139,7 +3139,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           Text(store.remoteError!, style: TextStyle(color: p.amber)),
         Text(
           'Authorized clients',
-          style: TextStyle(color: p.text1, fontWeight: FontWeight.bold),
+          style: TextStyle(color: p.text, fontWeight: FontWeight.bold),
         ),
         if (store.remoteClients.isEmpty)
           Text('No authorized clients', style: TextStyle(color: p.mutedText)),
@@ -3147,7 +3147,7 @@ class _RemoteAdminPanelState extends State<_RemoteAdminPanel> {
           Row(
             children: [
               Expanded(
-                child: SelectableText(client, style: TextStyle(color: p.text1)),
+                child: SelectableText(client, style: TextStyle(color: p.text)),
               ),
               ConsoleButton(
                 variant: ConsoleButtonVariant.quiet,
@@ -3268,7 +3268,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
           const SizedBox(height: 12),
           Text(
             'Open in a browser',
-            style: TextStyle(color: palette.text1, fontWeight: FontWeight.w600),
+            style: TextStyle(color: palette.text, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           if (urls.isEmpty)
@@ -3282,7 +3282,7 @@ class _WebHostingSettingsState extends State<_WebHostingSettings> {
                 Expanded(
                   child: SelectableText(
                     url,
-                    style: TextStyle(color: palette.text1),
+                    style: TextStyle(color: palette.text),
                   ),
                 ),
                 ConsoleIconButton(

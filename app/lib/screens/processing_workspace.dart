@@ -23,7 +23,7 @@ class _ProcessingButton extends StatelessWidget {
       label: semanticsLabel ?? label,
       child: InkWell(
           onTap: onTap,
-          borderRadius: U4.rBtn,
+          borderRadius: AppDesign.radius,
           child: Container(
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               padding: AppDesign.controlPadding,
@@ -31,11 +31,11 @@ class _ProcessingButton extends StatelessWidget {
                   color: active
                       ? ConsolePalette.of(context).processingSelected
                       : ConsolePalette.of(context).chip,
-                  borderRadius: U4.rBtn,
+                  borderRadius: AppDesign.radius,
                   border: Border.all(
                       color: active
                           ? ConsolePalette.of(context)
-                              .cyan
+                              .accent
                               .withValues(alpha: .27)
                           : ConsolePalette.of(context).linePanel)),
               child: Column(
@@ -48,17 +48,17 @@ class _ProcessingButton extends StatelessWidget {
                     Text(label,
                         style: AppDesign.type(fontSize,
                             color: active
-                                ? ConsolePalette.of(context).cyan
+                                ? ConsolePalette.of(context).accent
                                 : !(enabled ?? onTap != null)
-                                    ? ConsolePalette.of(context).text7
-                                    : ConsolePalette.of(context).text1,
+                                    ? ConsolePalette.of(context).mutedText
+                                    : ConsolePalette.of(context).text,
                             weight: FontWeight.w600)),
                     if (detail != null) ...[
                       const SizedBox(height: 3),
                       Text(detail!,
                           style: AppDesign.type(AppDesign.body, color: active
-                                  ? ConsolePalette.of(context).cyan
-                                  : ConsolePalette.of(context).text7))
+                                  ? ConsolePalette.of(context).accent
+                                  : ConsolePalette.of(context).mutedText))
                     ]
                   ]))));
 }
@@ -115,7 +115,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.color ?? ConsolePalette.of(context).cyan;
+    final color = widget.color ?? ConsolePalette.of(context).accent;
     final v = _drag ?? widget.value;
     final candidate =
         widget.resetValue ?? numericResetValue(widget.min, widget.max);
@@ -224,13 +224,13 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
               Expanded(
                   child: Text(widget.label,
                       style: AppDesign.type(widget.fontSize,
-                          color: ConsolePalette.of(context).text7))),
+                          color: ConsolePalette.of(context).mutedText))),
               if (widget.showValue)
                 Text(widget.text,
                     style: AppDesign.type(widget.fontSize,
                         color: widget.enabled
                             ? (widget.valueColor ?? color)
-                            : ConsolePalette.of(context).text7,
+                            : ConsolePalette.of(context).mutedText,
                         weight: FontWeight.w600)),
             ])));
     if (!widget.showLabel) return track;
@@ -311,7 +311,7 @@ class _ProcessingTrackPainter extends CustomPainter {
           Offset(x + dx, 13),
           Offset(x + dx, 31),
           Paint()
-            ..color = palette.text10
+            ..color = palette.textSubtle
             ..strokeWidth = 2);
     }
   }

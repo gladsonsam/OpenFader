@@ -2,6 +2,7 @@ import '../../palette.dart';
 import 'package:material_ui/material_ui.dart';
 import '../design.dart';
 import '../../ui/motion.dart';
+import '../../design.dart';
 
 /// Shared mute/solo control. A minimum 44-point hit target is independent of
 /// the strip density, and screen readers receive both name and toggle state.
@@ -60,7 +61,7 @@ class MixerToggle extends StatelessWidget {
                                       tapTargetSize:
                                           MaterialTapTargetSize.shrinkWrap,
                                       shape: const RoundedRectangleBorder(
-                                          borderRadius: MixerDesign.radius),
+                                          borderRadius: AppDesign.radius),
                                       textStyle: mixerType(context, fontSize,
                                           weight: FontWeight.w600))
                                   .copyWith(

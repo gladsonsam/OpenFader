@@ -22,7 +22,6 @@ import '../settings/recents.dart';
 import '../mixer/components/layers.dart';
 import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
-import '../theme.dart';
 import '../ui/console.dart';
 
 part 'settings/navigation.dart';
@@ -222,7 +221,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               child: _SettingsIcon(
                 Icons.arrow_back,
                 size: 22,
-                color: ConsolePalette.of(context).text7,
+                color: ConsolePalette.of(context).mutedText,
               ),
             ),
           if (!wide && showBack) const SizedBox(width: 14),
@@ -232,10 +231,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: U4.font,
+                fontFamily: AppDesign.font,
                 fontSize: wide ? 34 : 22,
                 fontWeight: FontWeight.w600,
-                color: ConsolePalette.of(context).text1,
+                color: ConsolePalette.of(context).text,
               ),
             ),
           ),
@@ -245,7 +244,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             child: _SettingsIcon(
               Icons.close,
               size: 22,
-              color: ConsolePalette.of(context).text7,
+              color: ConsolePalette.of(context).mutedText,
             ),
           ),
         ],
@@ -366,11 +365,11 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             child: Text(
               s.label,
               style: TextStyle(
-                fontFamily: U4.font,
+                fontFamily: AppDesign.font,
                 fontSize: AppDesign.pageTitle,
                 height: 1.22,
                 fontWeight: FontWeight.w600,
-                color: ConsolePalette.of(context).text1,
+                color: ConsolePalette.of(context).text,
               ),
             ),
           ),

@@ -2,7 +2,6 @@
 // Screens stay constructor-injected so Area A can implement the store.
 import 'package:material_ui/material_ui.dart';
 
-import '../theme.dart';
 import '../ui/console.dart';
 
 // Automatic asks every registered hardware driver to identify the host.
@@ -50,7 +49,7 @@ class MixerTypeField extends StatelessWidget {
           borderRadius: BorderRadius.circular(5),
         ),
         focusedBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: palette.lime),
+          borderSide: BorderSide(color: palette.accent),
           borderRadius: BorderRadius.circular(5),
         ),
         contentPadding:
@@ -171,13 +170,13 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       style: TextStyle(
                           fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
-                          color: palette.text4)),
+                          color: palette.textSecondary)),
                   const SizedBox(height: AppDesign.spaceXs),
                   Text(
                     store.isOffline
                         ? 'Find a mixer on this network or connect directly by IP.'
                         : 'Find a mixer on this network, or continue without hardware.',
-                    style: TextStyle(fontSize: AppDesign.caption, color: palette.text7),
+                    style: TextStyle(fontSize: AppDesign.caption, color: palette.mutedText),
                   ),
                   const SizedBox(height: AppDesign.spaceMd),
                   Row(
@@ -215,7 +214,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                     Padding(
                       padding: const EdgeInsets.only(top: AppDesign.spaceXs),
                       child: Text('Last search: ${store.lastScan}',
-                          style: TextStyle(fontSize: AppDesign.minorText, color: palette.text7)),
+                          style: TextStyle(fontSize: AppDesign.minorText, color: palette.mutedText)),
                     ),
                   if (store.scanning)
                     Padding(
@@ -223,7 +222,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       child: Text('Waiting for mixers to reply…',
                           style: TextStyle(
                               fontSize: AppDesign.caption,
-                              color: ConsolePalette.of(context).text4)),
+                              color: ConsolePalette.of(context).textSecondary)),
                     ),
                   if (store.scanError != null) _ErrorBanner(store: store),
                   const SizedBox(height: AppDesign.spaceLg),
@@ -231,7 +230,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       style: TextStyle(
                           fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
-                          color: ConsolePalette.of(context).text4)),
+                          color: ConsolePalette.of(context).textSecondary)),
                   const SizedBox(height: 6),
                   if (store.devices.isEmpty)
                     Text(
@@ -239,7 +238,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                           'Scan this network to find available mixers.',
                       style: TextStyle(
                           fontSize: AppDesign.caption,
-                          color: ConsolePalette.of(context).text7),
+                          color: ConsolePalette.of(context).mutedText),
                     )
                   else
                     for (final d in store.devices)
@@ -252,7 +251,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       style: TextStyle(
                           fontSize: AppDesign.caption,
                           fontWeight: FontWeight.w700,
-                          color: ConsolePalette.of(context).text4)),
+                          color: ConsolePalette.of(context).textSecondary)),
                   const SizedBox(height: 6),
                   MixerTypeField(
                     value: _mixerType,
@@ -270,14 +269,14 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                             color: ConsolePalette.of(context).well,
                             border: Border.all(
                                 color: ConsolePalette.of(context).railBorder),
-                            borderRadius: U4.rBtn,
+                            borderRadius: AppDesign.radius,
                           ),
                           child: TextField(
                             controller: _ipCtl,
                             keyboardType: TextInputType.text,
                             style: TextStyle(
                                 fontSize: AppDesign.smallLabel,
-                                color: ConsolePalette.of(context).text1),
+                                color: ConsolePalette.of(context).text),
                             decoration: InputDecoration(
                               isDense: true,
                               border: InputBorder.none,
@@ -285,13 +284,13 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                               disabledBorder: InputBorder.none,
                               focusedBorder: UnderlineInputBorder(
                                   borderSide: BorderSide(
-                                      color: ConsolePalette.of(context).cyan)),
+                                      color: ConsolePalette.of(context).accent)),
                               filled: false,
                               contentPadding:
                                   EdgeInsets.symmetric(vertical: 12),
                               hintText: '192.168.1.120',
                               hintStyle: TextStyle(
-                                  color: ConsolePalette.of(context).text10),
+                                  color: ConsolePalette.of(context).textSubtle),
                             ),
                             onSubmitted: (v) {
                               final a = v.trim();
@@ -323,7 +322,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       child: Text(store.connectionProgress,
                           style: TextStyle(
                               fontSize: AppDesign.caption,
-                              color: ConsolePalette.of(context).text4)),
+                              color: ConsolePalette.of(context).textSecondary)),
                     ),
                   const SizedBox(height: AppDesign.spaceLg),
                   ExpansionTile(
@@ -407,7 +406,7 @@ class _StatusCard extends StatelessWidget {
         color: ConsolePalette.of(context).panel,
         border: Border.all(
             color: store.isConnected
-                ? ConsolePalette.of(context).cyan
+                ? ConsolePalette.of(context).accent
                 : ConsolePalette.of(context).mute),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
@@ -430,7 +429,7 @@ class _StatusCard extends StatelessWidget {
                     style: TextStyle(
                         fontSize: AppDesign.body,
                         fontWeight: FontWeight.w700,
-                        color: ConsolePalette.of(context).text1)),
+                        color: ConsolePalette.of(context).text)),
                 Text(
                     store.isOffline
                         ? 'No hardware mixer connected. Mixer controls remain available.'
@@ -438,7 +437,7 @@ class _StatusCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: AppDesign.caption, color: ConsolePalette.of(context).text7)),
+                        fontSize: AppDesign.caption, color: ConsolePalette.of(context).mutedText)),
               ],
             ),
           ),
@@ -463,9 +462,9 @@ class _DeviceRow extends StatelessWidget {
         color: ConsolePalette.of(context).panel,
         border: Border.all(
             color: device.connected
-                ? ConsolePalette.of(context).cyan
+                ? ConsolePalette.of(context).accent
                 : ConsolePalette.of(context).tileBorder),
-        borderRadius: U4.rBtn,
+        borderRadius: AppDesign.radius,
       ),
       child: Row(
         children: [
@@ -479,12 +478,12 @@ class _DeviceRow extends StatelessWidget {
                     style: TextStyle(
                         fontSize: AppDesign.body,
                         fontWeight: FontWeight.w700,
-                        color: ConsolePalette.of(context).text1)),
+                        color: ConsolePalette.of(context).text)),
                 Text(device.sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text7)),
+                        fontSize: AppDesign.minorText, color: ConsolePalette.of(context).mutedText)),
               ],
             ),
           ),
@@ -502,7 +501,7 @@ class _DeviceRow extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: device.connected
                   ? ConsolePalette.of(context).meterGreen
-                  : ConsolePalette.of(context).text4,
+                  : ConsolePalette.of(context).textSecondary,
             ),
           ),
           const SizedBox(width: AppDesign.spaceSm),
@@ -513,8 +512,8 @@ class _DeviceRow extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).cyan,
-                  borderRadius: U4.rBtn,
+                  color: ConsolePalette.of(context).accent,
+                  borderRadius: AppDesign.radius,
                 ),
                 child: Text('Connect',
                     textAlign: TextAlign.center,
@@ -560,7 +559,7 @@ class _InfoCard extends StatelessWidget {
                 style: TextStyle(
                     fontSize: AppDesign.minorText,
                     fontWeight: FontWeight.w700,
-                    color: ConsolePalette.of(context).cyan)),
+                    color: ConsolePalette.of(context).accent)),
           ),
           if (onOpenDebug != null) ...[
             const SizedBox(height: AppDesign.spaceXs),
@@ -570,7 +569,7 @@ class _InfoCard extends StatelessWidget {
                   style: TextStyle(
                       fontSize: AppDesign.minorText,
                       fontWeight: FontWeight.w700,
-                      color: ConsolePalette.of(context).cyan)),
+                      color: ConsolePalette.of(context).accent)),
             ),
           ],
         ],
@@ -588,12 +587,12 @@ class _InfoCard extends StatelessWidget {
             width: 56,
             child: Text(k,
                 style: TextStyle(
-                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text7)),
+                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).mutedText)),
           ),
           Expanded(
             child: Text(v.isEmpty ? '-' : v,
                 style: TextStyle(
-                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).text4)),
+                    fontSize: AppDesign.minorText, color: ConsolePalette.of(context).textSecondary)),
           ),
         ],
       ),

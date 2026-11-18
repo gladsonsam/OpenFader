@@ -374,12 +374,12 @@ class NativeLibrarySection extends StatelessWidget {
         children: [
           Text(
             view?.label ?? 'Provider show / snapshot library',
-            style: TextStyle(color: palette.text1, fontWeight: FontWeight.w700),
+            style: TextStyle(color: palette.text, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
             'Separate from the OpenFader local library.',
-            style: TextStyle(color: palette.text7),
+            style: TextStyle(color: palette.mutedText),
           ),
           const SizedBox(height: 8),
           ConsoleActionGroup(
@@ -459,7 +459,7 @@ class NativeLibrarySection extends StatelessWidget {
           ),
           if (store.nativeBusy) const LinearProgressIndicator(minHeight: 2),
           if (store.nativeStatus != null)
-            Text(store.nativeStatus!, style: TextStyle(color: palette.text4)),
+            Text(store.nativeStatus!, style: TextStyle(color: palette.textSecondary)),
           if (view != null) ...[
             if (view.supports('read_show'))
               ConsoleButton(
@@ -473,13 +473,13 @@ class NativeLibrarySection extends StatelessWidget {
             Text(
               '${view.authority} · ${view.complete ? 'complete provider index' : 'partial observed index'} · '
               '${view.capacityLabel}',
-              style: TextStyle(color: palette.text7),
+              style: TextStyle(color: palette.mutedText),
             ),
             for (final header in view.headers)
-              Text(header, style: TextStyle(color: palette.text7)),
+              Text(header, style: TextStyle(color: palette.mutedText)),
             Text(
               view.limitations,
-              style: TextStyle(color: palette.text7, fontSize: AppDesign.caption),
+              style: TextStyle(color: palette.mutedText, fontSize: AppDesign.caption),
             ),
             if (view.banks.isEmpty) ...[
               if (view.guard['default_slot'] != null)
@@ -502,7 +502,7 @@ class NativeLibrarySection extends StatelessWidget {
               if (view.slots.isEmpty)
                 Text(
                   view.complete ? 'No captured slots.' : 'No names reported. This does not prove the show is empty.',
-                  style: TextStyle(color: palette.text7),
+                  style: TextStyle(color: palette.mutedText),
                 ),
               for (final slot in view.slots)
                 Padding(
@@ -514,7 +514,7 @@ class NativeLibrarySection extends StatelessWidget {
                       Text(
                         '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
                         '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
-                        style: TextStyle(color: palette.text1),
+                        style: TextStyle(color: palette.text),
                       ),
                       if (view.supports('set_scope'))
                         if (view.scopeFields != null && view.hasScope(slot))
@@ -530,7 +530,7 @@ class NativeLibrarySection extends StatelessWidget {
                         else
                           Text(
                             'Recall scope unavailable',
-                            style: TextStyle(color: palette.text7),
+                            style: TextStyle(color: palette.mutedText),
                           ),
                       if (view.supports('recall'))
                         ConsoleButton(
@@ -700,10 +700,10 @@ class _DescriptorBanks extends StatelessWidget {
     bool writable = enabled && view.connected && view.complete;
     Future<void> act(Map<String, dynamic> a) => onAction(a);
     TextStyle head = TextStyle(
-      color: palette.text1,
+      color: palette.text,
       fontWeight: FontWeight.w700,
     );
-    TextStyle sub = TextStyle(color: palette.text7, fontSize: AppDesign.caption);
+    TextStyle sub = TextStyle(color: palette.mutedText, fontSize: AppDesign.caption);
     Widget bankTitle(String t, String? extra) => Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Text(extra == null ? t : '$t · $extra', style: head),
@@ -712,7 +712,7 @@ class _DescriptorBanks extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppDesign.spaceSm),
       child: ConsoleActionGroup(
         children: [
-          Text(label, style: TextStyle(color: palette.text1)),
+          Text(label, style: TextStyle(color: palette.text)),
           ...buttons,
         ],
       ),

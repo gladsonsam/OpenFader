@@ -4,9 +4,9 @@ library;
 import 'package:material_ui/material_ui.dart';
 import '../palette.dart';
 
-import '../theme.dart';
 import '../ui/controls/console_icon_button.dart';
 import '../mixer/design.dart';
+import '../design.dart';
 
 // Console toolbar modes for the active tile state.
 enum ShellMode { mixer, channel, scenes, fx, routing, connect, settings }
@@ -104,7 +104,7 @@ class U4ShellHeader extends StatelessWidget {
               label: 'Back to mixer',
               onPressed: onBack,
               child: Icon(Icons.chevron_left,
-                  color: ConsolePalette.of(context).text1)),
+                  color: ConsolePalette.of(context).text)),
           const SizedBox(width: 6),
         ],
         Expanded(
@@ -113,7 +113,7 @@ class U4ShellHeader extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
               color: ConsolePalette.of(context).panel,
-              borderRadius: U4.rBtn,
+              borderRadius: AppDesign.radius,
               border: Border.all(color: ConsolePalette.of(context).linePanel)),
           child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -122,12 +122,12 @@ class U4ShellHeader extends StatelessWidget {
                 Text(heading,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: MixerDesign.type(17, weight: FontWeight.w600)),
+                    style: AppDesign.type(AppDesign.rowLabel, weight: FontWeight.w600)),
                 Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: MixerDesign.type(11,
-                        color: ConsolePalette.of(context).text7)),
+                    style: AppDesign.type(AppDesign.minorText,
+                        color: ConsolePalette.of(context).mutedText)),
               ]),
         )),
         const SizedBox(width: 4),
@@ -165,7 +165,7 @@ class U4ShellHeader extends StatelessWidget {
             popUpAnimationStyle: AnimationStyle.noAnimation,
             tooltip: 'More',
             icon:
-                Icon(Icons.more_horiz, color: ConsolePalette.of(context).text7),
+                Icon(Icons.more_horiz, color: ConsolePalette.of(context).mutedText),
             onSelected: (index) => actions[index].$3?.call(),
             itemBuilder: (_) => [
               for (var i = 0; i < actions.length; i++)
@@ -201,11 +201,11 @@ class _HeaderTool extends StatelessWidget {
           selected: active,
           child: Stack(clipBehavior: Clip.none, children: [
             if (artwork == 'meters')
-              Icon(Icons.graphic_eq, color: ConsolePalette.of(context).text7)
+              Icon(Icons.graphic_eq, color: ConsolePalette.of(context).mutedText)
             else if (artwork == 'FX')
               Text('FX',
-                  style: MixerDesign.type(17,
-                      color: ConsolePalette.of(context).text7))
+                  style: AppDesign.type(AppDesign.rowLabel,
+                      color: ConsolePalette.of(context).mutedText))
             else
               MixerArtwork(artwork, width: 28, height: 28),
             if (dot != null)

@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../theme.dart';
 import '../../ui/console.dart';
 
 class U4Section extends StatelessWidget {
@@ -23,9 +22,9 @@ class U4Section extends StatelessWidget {
               Expanded(
                 child: Text(title,
                     style: TextStyle(
-                        fontFamily: U4.font,
+                        fontFamily: AppDesign.font,
                         fontSize: AppDesign.caption,
-                        color: ConsolePalette.of(context).text7)),
+                        color: ConsolePalette.of(context).mutedText)),
               ),
               ?trailing,
             ],

@@ -103,7 +103,7 @@ class ConsoleButton extends StatelessWidget {
         variant == ConsoleButtonVariant.danger ||
         variant == ConsoleButtonVariant.destructive;
     final quiet = variant == ConsoleButtonVariant.quiet;
-    final active = danger ? p.mute : accent ?? p.lime;
+    final active = danger ? p.mute : accent ?? p.accent;
     final filled =
         selected ||
         variant == ConsoleButtonVariant.primary ||

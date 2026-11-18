@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../palette.dart';
-import '../../theme.dart';
 import 'dart:math' as math;
 import '../../design.dart';
 import '../../core/channel_views.dart';
@@ -85,7 +84,7 @@ class EqCurvePainter extends CustomPainter {
           text: TextSpan(
               text: text,
               style: AppDesign.type(font,
-                  color: color ?? palette.text7, weight: FontWeight.w500)),
+                  color: color ?? palette.mutedText, weight: FontWeight.w500)),
           textDirection: TextDirection.ltr)
         ..layout();
       painter.paint(
@@ -111,7 +110,7 @@ class EqCurvePainter extends CustomPainter {
           Offset(0, y),
           Offset(size.width, y),
           db == 0
-              ? (Paint()..color = palette.text7.withValues(alpha: .35))
+              ? (Paint()..color = palette.mutedText.withValues(alpha: .35))
               : grid);
       label(db.toStringAsFixed(0), Offset(-24, y));
     }
@@ -188,7 +187,7 @@ class EqCurvePainter extends CustomPainter {
       }
       if (audioSpectrumPeaks.matches(frame)) {
         final marker = Paint()
-          ..color = palette.text1
+          ..color = palette.text
           ..strokeWidth = 1;
         for (var i = 0; i < audioSpectrumPeaks.binsDb.length; i++) {
           final low = frame.bandEdgesHz[i].clamp(20.0, 20000.0);
@@ -253,11 +252,11 @@ class EqCurvePainter extends CustomPainter {
       fill.lineTo(lastX, zeroY);
       fill.close();
       canvas.drawPath(
-          fill, Paint()..color = palette.text7.withValues(alpha: .12));
+          fill, Paint()..color = palette.mutedText.withValues(alpha: .12));
       canvas.drawPath(
         curve,
         Paint()
-          ..color = palette.text1
+          ..color = palette.text
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
@@ -277,7 +276,7 @@ class EqCurvePainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = eq.selectedBand == band ? 3 : 2);
       label(band == 0 ? 'HPF' : '$band', point,
-          color: palette.text1, font: band == 0 ? 9 : 14, centered: true);
+          color: palette.text, font: band == 0 ? 9 : 14, centered: true);
     }
 
     for (final band in [
@@ -366,7 +365,7 @@ class U4EqGraph extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(28, 14, 16, 30),
                 decoration: BoxDecoration(
                     color: ConsolePalette.of(context).panel,
-                    borderRadius: U4.rWell,
+                    borderRadius: AppDesign.radius,
                     border: Border.all(
                         color: ConsolePalette.of(context).linePanel)),
                 child: _EqGraphGesture(

@@ -63,7 +63,7 @@ class _DynTab extends StatelessWidget {
                   horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).processingPanel,
-                  borderRadius: U4.rWell),
+                  borderRadius: AppDesign.radius),
               child: _ProcessingSlider(
                   label: k.label,
                   text: controlText(k),
@@ -82,8 +82,8 @@ class _DynTab extends StatelessWidget {
                       : ConsolePalette.of(context).processingPurple,
                   solidFill: true,
                   valueColor: threshold
-                      ? ConsolePalette.of(context).cyan
-                      : ConsolePalette.of(context).text1,
+                      ? ConsolePalette.of(context).accent
+                      : ConsolePalette.of(context).text,
                   enabled: d.ranges[k.prop] != null,
                   onFocus: () => focus(k),
                   onChanged: (v) => apply(k, v)));
@@ -219,7 +219,7 @@ class _DynTab extends StatelessWidget {
                       minHeight: (200 * scale).clamp(128.0, 200.0)),
                   decoration: BoxDecoration(
                       color: ConsolePalette.of(context).processingPanel,
-                      borderRadius: U4.rWell),
+                      borderRadius: AppDesign.radius),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Row(children: [
                     for (var i = 0; i < visibleKnobs.length; i++) ...[
@@ -298,7 +298,7 @@ class _AdvancedDynamics extends StatelessWidget {
       controls.add(Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-              color: palette.processingPanel, borderRadius: U4.rWell),
+              color: palette.processingPanel, borderRadius: AppDesign.radius),
           child: Row(children: [
             Expanded(
                 child: Text(label,
@@ -331,7 +331,7 @@ class _AdvancedDynamics extends StatelessWidget {
       controls.add(Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-              color: palette.processingPanel, borderRadius: U4.rWell),
+              color: palette.processingPanel, borderRadius: AppDesign.radius),
           child: _ProcessingSlider(
               label: label,
               text: '${value.toStringAsFixed(value < 10 ? 1 : 0)} $unit',
@@ -439,7 +439,7 @@ class _ParameterChoices extends StatelessWidget {
               constraints: BoxConstraints(minHeight: !compact ? 64 : 44),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                  color: palette.processingPanel, borderRadius: U4.rWell),
+                  color: palette.processingPanel, borderRadius: AppDesign.radius),
               child: Row(children: [
                 Expanded(
                     child: Column(
@@ -448,12 +448,12 @@ class _ParameterChoices extends StatelessWidget {
                         children: [
                       Text(label,
                           style: AppDesign.type(compact ? 12 : 14,
-                              color: palette.text7)),
+                              color: palette.mutedText)),
                       Text(_choiceText(store, leaf, fallback),
                           style: AppDesign.type(compact ? 15 : 18,
-                              color: palette.text1)),
+                              color: palette.text)),
                     ])),
-                Icon(Icons.arrow_drop_down, color: palette.text7),
+                Icon(Icons.arrow_drop_down, color: palette.mutedText),
               ])),
         ));
   }
@@ -550,7 +550,7 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
             height: widget.height,
             decoration: BoxDecoration(
                 color: ConsolePalette.of(context).panel,
-                borderRadius: U4.rWell,
+                borderRadius: AppDesign.radius,
                 border:
                     Border.all(color: ConsolePalette.of(context).linePanel)),
             child: Stack(clipBehavior: Clip.none, children: [
@@ -657,7 +657,7 @@ class _DynamicsPainter extends CustomPainter {
           text: TextSpan(
               text: value,
               style: AppDesign.type(font ?? (compact ? 10 : 14),
-                  color: color ?? palette.text7, weight: FontWeight.w500)),
+                  color: color ?? palette.mutedText, weight: FontWeight.w500)),
           textDirection: TextDirection.ltr)
         ..layout();
       t.paint(canvas, at - Offset(t.width / 2, t.height / 2));
@@ -716,7 +716,7 @@ class _DynamicsPainter extends CustomPainter {
     canvas.drawPath(
         curve,
         Paint()
-          ..color = palette.cyan
+          ..color = palette.accent
           ..strokeWidth = 2
           ..style = PaintingStyle.stroke);
     for (final prop in g.handles(dyn)) {
@@ -736,12 +736,12 @@ class _DynamicsPainter extends CustomPainter {
           p,
           r,
           Paint()
-            ..color = palette.cyan
+            ..color = palette.accent
             ..strokeWidth = 2
             ..style = PaintingStyle.stroke);
       text(switch (prop) { 'thr' => 'T', 'ratio' || 'range' => 'R', _ => 'G' },
           p,
-          color: palette.text1, font: compact ? 17 : r * .8);
+          color: palette.text, font: compact ? 17 : r * .8);
     }
     // No synthetic detector: missing GR also leaves derived OUT unavailable.
     final out = measured
@@ -777,7 +777,7 @@ class _DynamicsPainter extends CustomPainter {
               ? '-'
               : value.toStringAsFixed(compact ? 0 : 1),
           Offset(x + w / 2, size.height * .95),
-          color: palette.text1);
+          color: palette.text);
     }
   }
 
@@ -803,7 +803,7 @@ class _EqPreviewPainter extends CustomPainter {
         Paint()..color = palette.eqBg);
     final zeroY = size.height / 2;
     canvas.drawLine(Offset(0, zeroY), Offset(size.width, zeroY),
-        Paint()..color = palette.text7.withValues(alpha: .35));
+        Paint()..color = palette.mutedText.withValues(alpha: .35));
     final response = eqResponseDb(eq);
     if (response.isEmpty) return;
     final curve = Path();
