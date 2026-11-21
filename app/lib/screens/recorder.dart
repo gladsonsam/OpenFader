@@ -2859,7 +2859,7 @@ class _CaptureNamesDialogState extends State<_CaptureNamesDialog> {
               child: ConsoleButton(
                 variant: ConsoleButtonVariant.quiet,
                 onPressed: _saving ? null : _useAutoNames,
-                icon: Icons.auto_fix_high_outlined,
+                icon: Icons.usb,
                 label: 'Auto from USB patch',
               ),
             ),

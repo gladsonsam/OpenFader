@@ -281,7 +281,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
         return ConsoleButton(
             variant: ConsoleButtonVariant.quiet,
             onPressed: action,
-            icon: Icons.auto_fix_high_outlined,
+            icon: Icons.alt_route,
             label: 'Map');
       });
 

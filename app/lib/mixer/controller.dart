@@ -585,7 +585,8 @@ class MixerController extends ChangeNotifier {
     } else if (key != null && banks.any((bank) => bank.key == key)) {
       return;
     }
-    if (!banks.any((bank) => bank.key == store.bank)) {
+    if (store.bank != 'view:all' &&
+        (key != null || !banks.any((bank) => bank.key == store.bank))) {
       _sanitizingSelection = true;
       store.setBank('view:all');
       _sanitizingSelection = false;
@@ -796,8 +797,7 @@ class MixerController extends ChangeNotifier {
 
   /// Switch the active layer. Unknown ids are ignored (the All fallback in
   /// [activeLayer] would otherwise silently change the view). The selection is
-  /// saved for this mixer connection only, and the previously chosen native
-  /// bank is kept so leaving the layer returns to it instead of resetting.
+  /// saved for this mixer connection only. Choosing All opens the All bank.
   Future<void> setActiveLayer(String id) async {
     final prefs = PrefsService.instance;
     final known = id == MixerLayer.allLayerId ||

@@ -117,7 +117,7 @@ class _LayersSection extends StatelessWidget {
                   ],
                 ),
                 onTap: () => _runSettingsAction(context, () async {
-                  if (layer.id != state.activeLayerId) {
+                  if (layer.id != activeLayerId) {
                     await activate(layer.id);
                   }
                 }),

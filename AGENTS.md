@@ -105,6 +105,8 @@ Read this before changing a screen, panel or mixer strip.
 - Semantics are part of the layout: every action and toggle exposes its role
   and name, a disabled control exposes why it is disabled, and the visible body
   is not the only pointer target. Do not rely on color alone.
+- Use icons that depict the action or object. Avoid sparkle and magic-wand
+  icons, including for templates and automatic actions.
 - Verify with realistic content, not placeholder strings: long channel,
   preset, destination and provider names; the narrow window; large targets on
   and off; the shortest supported height. Inspect the default window and at

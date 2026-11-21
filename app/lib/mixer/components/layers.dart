@@ -213,10 +213,13 @@ Future<void> showMixerLayers(
             height: wide
                 ? double.infinity
                 : MediaQuery.sizeOf(context).height * .9,
-            child: _MixerLayersWorkspace(
-              controller: controller,
-              startCreateLayer: createLayer,
-              startEditActive: editActive,
+            child: InlineFeedbackScope(
+              expand: true,
+              builder: (context) => _MixerLayersWorkspace(
+                controller: controller,
+                startCreateLayer: createLayer,
+                startEditActive: editActive,
+              ),
             ),
           ),
         ),
@@ -685,7 +688,7 @@ class _MixerLayersWorkspaceState extends State<_MixerLayersWorkspace> {
       ),
       for (final template in MixerLayerTemplate.all)
         ListTile(
-          leading: Icon(Icons.auto_awesome, color: palette.mutedText),
+          leading: Icon(Icons.layers_outlined, color: palette.mutedText),
           title: Text(template.name, style: mixerType(context, 17)),
           subtitle: Text('From channel names',
               style: mixerType(context, 13, color: palette.mutedText)),
