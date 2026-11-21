@@ -27,7 +27,7 @@ class MixerPanCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = channel.name;
-    final visualHeight = math.min(AppDesign.space2xl, allocatedHeight);
+    final visualHeight = math.min(AppDesign.spaceXl, allocatedHeight);
     final chIndex = channel.channel;
     if (channel.master || chIndex == null) {
       return MixerPan(
@@ -59,7 +59,7 @@ class MixerPan extends StatefulWidget {
       {super.key,
       required this.name,
       required this.value,
-      this.visualHeight = 44,
+      this.visualHeight = AppDesign.spaceXl,
       this.onTouch,
       this.onChanged});
   @override
@@ -111,7 +111,7 @@ class _MixerPanState extends State<MixerPan> {
                   onDoubleTap: widget.onChanged == null ? null : () => _send(0),
                   child: SizedBox(
                       height:
-                          widget.visualHeight < 44 ? 44 : widget.visualHeight,
+                          math.max(AppDesign.touchTarget, widget.visualHeight),
                       width: double.infinity,
                       child: Center(
                           child: SizedBox(
@@ -134,10 +134,11 @@ class _PanPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size s) {
     c.save();
-    c.scale(1, s.height / 44);
-    s = Size(s.width, 44);
+    c.scale(1, s.height / AppDesign.touchTarget);
+    s = Size(s.width, AppDesign.touchTarget);
     mixerBox(c, Offset.zero & s, palette.well,
-        radius: 12, border: held ? palette.selectedLine : null);
+        radius: AppDesign.actionRadius,
+        border: held ? palette.selectedLine : null);
     final left = MixerStripMetrics.contentInset,
         right = s.width - MixerStripMetrics.contentInset,
         center = s.width / 2;
@@ -159,9 +160,11 @@ class _PanPainter extends CustomPainter {
           palette.panFill);
       c.restore();
     }
-    mixerBox(c, Rect.fromLTWH(x - 10, 5, 20, 34), palette.panKnob, radius: 6);
+    const knobWidth = AppDesign.spaceLg;
+    mixerBox(c, Rect.fromLTWH(x - knobWidth / 2, 5, knobWidth, 34),
+        palette.panKnob, radius: 6);
     for (var n = 0; n < 3; n++) {
-      mixerBox(c, Rect.fromLTWH(x - 5 + n * 4, 11, 1, 22), palette.panGrip,
+      mixerBox(c, Rect.fromLTWH(x - 4 + n * 4, 11, 1, 22), palette.panGrip,
           radius: 1);
     }
     c.restore();

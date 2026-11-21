@@ -73,17 +73,15 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final sx = box.maxWidth / 178.2;
         const insetY = AppDesign.spaceXs;
         const gainHeight = 20.0;
         const dynamicsHeight = 16.0;
         const eqTop = insetY + gainHeight + AppDesign.spaceXs;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
-        Widget place(double top, double height, Widget child,
-                {double? inset}) =>
+        Widget place(double top, double height, Widget child) =>
             Positioned(
-                left: inset ?? 5 * sx,
-                right: inset ?? 5 * sx,
+                left: AppDesign.spaceSm,
+                right: AppDesign.spaceSm,
                 top: top,
                 height: height,
                 child: child);
@@ -153,8 +151,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                   eqTop,
                   math.max(0, dynamicsTop - AppDesign.spaceXs - eqTop),
                   MixerEqPreview(
-                      channel: widget.channel, onOpen: widget.onOpen),
-                  inset: AppDesign.spaceSm),
+                      channel: widget.channel, onOpen: widget.onOpen)),
               place(
                   dynamicsTop,
                   dynamicsHeight,
@@ -175,8 +172,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                               .containsKey('comp_gr')
                                       ? mixerDemoStrips[widget.channel.artwork]
                                           .compression
-                                      : null)))),
-                  inset: AppDesign.spaceSm),
+                                      : null))))),
             ]));
       });
 }
@@ -252,10 +248,29 @@ class _GainPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size s) {
     mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
-    const left = 4.0;
-    final width = math.max(0.0, s.width - 40);
+    const inset = AppDesign.spaceXs;
+    final phantom = params['phantom'] == true || params['phantom'] == 1;
+    final label = showPhantom
+        ? (TextPainter(
+            text: TextSpan(
+                text: '48V',
+                style: AppDesign.type(AppDesign.microText,
+                    color: phantom ? palette.phantom : palette.mutedText,
+                    weight: FontWeight.w700)),
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+          )..layout(maxWidth: math.max(0, s.width - 2 * inset)))
+        : null;
+    final labelX = s.width - inset - (label?.width ?? 0);
+    final trackEnd = labelX - (label == null ? 0 : inset);
+    final width = math.max(0.0, trackEnd - inset);
     final trackY = (s.height - 6) / 2;
-    mixerBox(c, Rect.fromLTWH(left, trackY, width, 6), palette.control,
+    if (label != null) {
+      label.paint(c, Offset(labelX, (s.height - label.height) / 2));
+      label.dispose();
+    }
+    if (width < 3) return;
+    mixerBox(c, Rect.fromLTWH(inset, trackY, width, 6), palette.control,
         radius: 3, border: palette.lineCtl);
     final amount = gainRange == null
         ? 0.0
@@ -264,17 +279,10 @@ class _GainPainter extends CustomPainter {
                 (gainRange!.last - gainRange!.first))
             .clamp(0.0, 1.0);
     final travel = math.max(0.0, width - 5);
-    mixerBox(c, Rect.fromLTWH(left, trackY + 1, travel * amount, 4),
+    mixerBox(c, Rect.fromLTWH(inset, trackY + 1, travel * amount, 4),
         palette.meterCover, radius: 2);
-    mixerBox(c, Rect.fromLTWH(left + travel * amount, trackY, 3, 6),
+    mixerBox(c, Rect.fromLTWH(inset + travel * amount, trackY, 3, 6),
         palette.textSecondary, radius: 1);
-    // Text uses logical pixels, independently of the rack's aspect ratio.
-    if (showPhantom) {
-      final phantom = params['phantom'] == true || params['phantom'] == 1;
-      mixerText(c, '48V', Offset(s.width - 31, (s.height - 12) / 2), 10,
-          color: phantom ? palette.phantom : palette.mutedText,
-          width: 28, align: TextAlign.right, weight: FontWeight.w700);
-    }
   }
 
   @override

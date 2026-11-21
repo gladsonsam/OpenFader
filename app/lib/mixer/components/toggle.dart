@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../design.dart';
@@ -81,8 +82,8 @@ class MixerToggle extends StatelessWidget {
       required this.channelName,
       this.unavailableReason,
       required this.on,
-      this.visualHeight = 44,
-      this.fontSize = 21,
+      this.visualHeight = AppDesign.touchTarget,
+      this.fontSize = AppDesign.sectionTitle,
       required this.activeColor,
       required this.activeForeground,
       required this.onPressed});
@@ -101,13 +102,11 @@ class MixerToggle extends StatelessWidget {
           child: ConsolePressFeedback(
               enabled: onPressed != null,
               child: SizedBox(
-                  height: visualHeight < 44 ? 44 : visualHeight,
+                  height: math.max(AppDesign.touchTarget, visualHeight),
                   width: double.infinity,
                   child: Center(
-                      child: SizedBox(
-                          height: visualHeight,
-                          width: double.infinity,
-                          child: TextButton(
+                      child: LayoutBuilder(
+                          builder: (context, bounds) => TextButton(
                               onPressed: onPressed,
                               style: TextButton.styleFrom(
                                       backgroundColor: on
@@ -117,11 +116,12 @@ class MixerToggle extends StatelessWidget {
                                           ? activeForeground
                                           : ConsolePalette.of(context).text,
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 4),
-                                      minimumSize: Size(44, visualHeight),
+                                          horizontal: AppDesign.spaceXs),
+                                      minimumSize:
+                                          Size(bounds.maxWidth, visualHeight),
                                       visualDensity: VisualDensity.standard,
                                       tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
+                                          MaterialTapTargetSize.padded,
                                       shape: const RoundedRectangleBorder(
                                           borderRadius: AppDesign.radius),
                                       textStyle: mixerType(context, fontSize,

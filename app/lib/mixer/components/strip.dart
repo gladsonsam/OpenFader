@@ -86,6 +86,11 @@ class _MixerStripState extends State<MixerStrip> {
         final layout = PrefsService.instance.stripLayout;
         final ch = channel;
         final shortSurface = box.maxHeight < 800;
+        final toggleHeight = shortSurface
+            ? AppDesign.actionDenseHeight
+            : AppDesign.actionCompactHeight;
+        final toggleFontSize =
+            shortSurface ? AppDesign.body : AppDesign.controlLabel;
         final hasArtwork = ch.showsArtwork;
         var showArtwork = layout.showArtwork &&
             (reserveArtwork ?? hasArtwork) &&
@@ -98,12 +103,18 @@ class _MixerStripState extends State<MixerStrip> {
         final gap = shortSurface ? AppDesign.spaceXs : AppDesign.spaceSm;
         var compactRack =
             compact || layout.compactProcessing || box.maxHeight < 520;
+        // The pan target now has its own full row. Reclaim that space from the
+        // full rack rather than shortening the fader or replacing the rack.
+        final panTargetAllowance = layout.shows(StripElement.pan)
+            ? AppDesign.touchTarget - AppDesign.space2xl
+            : 0.0;
         final heights = <StripElement, double>{
           StripElement.processing: compactRack
               ? AppDesign.touchTarget
               : (g.rackH * (3 / layout.faderWeight).clamp(.6, 1.5))
-                  .clamp(88.0, shortSurface ? 88.0 : 120.0),
-          StripElement.pan: AppDesign.space2xl,
+                      .clamp(88.0, shortSurface ? 88.0 : 120.0) -
+                  panTargetAllowance,
+          StripElement.pan: AppDesign.touchTarget,
           StripElement.mute: AppDesign.touchTarget,
           StripElement.solo: AppDesign.touchTarget,
           StripElement.nameplate: identityHeight + nameHeight,
@@ -217,11 +228,8 @@ class _MixerStripState extends State<MixerStrip> {
                               controller: controller,
                               kind: MixerToggleKind.mute,
                               ready: ready,
-                              visualHeight: math.min(AppDesign.toggleHeight,
-                                  allocated(StripElement.mute)),
-                              fontSize: g
-                                  .x(compact ? 22 : 32)
-                                  .clamp(AppDesign.controlLabel, 20.0))),
+                              visualHeight: toggleHeight,
+                              fontSize: toggleFontSize)),
                       place(
                           StripElement.fader,
                           MixerFaderCell(
@@ -238,11 +246,8 @@ class _MixerStripState extends State<MixerStrip> {
                               controller: controller,
                               kind: MixerToggleKind.solo,
                               ready: ready,
-                              visualHeight: math.min(AppDesign.toggleHeight,
-                                  allocated(StripElement.solo)),
-                              fontSize: g
-                                  .x(compact ? 22 : 32)
-                                  .clamp(AppDesign.controlLabel, 20.0))),
+                              visualHeight: toggleHeight,
+                              fontSize: toggleFontSize)),
                       if (visible.contains(StripElement.nameplate))
                         Positioned(
                             left: 0,

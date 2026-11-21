@@ -140,7 +140,8 @@
       "shared_paths": [
         "crates/core/src/lib.rs",
         "app/lib/mixer/store.dart",
-        "app/lib/mixer/components/strip.dart"
+        "app/lib/mixer/components/strip.dart",
+        "app/lib/mixer/components/toggle.dart"
       ],
       "engine_contracts": [
         "get_bus_fader",
@@ -159,7 +160,7 @@
       "required_hooks": [],
       "acceptance": {
         "controls": "Read/write input, destination and main levels/mutes with independent native readback and provider ranges.",
-        "fader_space": "At short and tall viewport sizes, prioritize fader travel over artwork, labels and processing previews; secondary controls must not overlap the fader or safe area."
+        "fader_space": "At short and tall viewport sizes, prioritize fader travel over artwork, labels and processing previews; compact control visuals keep full hit targets and must not overlap the fader or safe area."
       },
       "required_evidence": [
         "unit",
@@ -176,7 +177,8 @@
       "shared_paths": [
         "crates/core/src/lib.rs",
         "app/lib/screens/channel.dart",
-        "app/lib/mixer/components/strip.dart"
+        "app/lib/mixer/components/strip.dart",
+        "app/lib/mixer/components/pan.dart"
       ],
       "engine_contracts": [],
       "required_hooks": [],
@@ -241,7 +243,8 @@
       "scope": "provider",
       "shared_paths": [
         "crates/core/src/lib.rs",
-        "app/lib/screens/channel.dart"
+        "app/lib/screens/channel.dart",
+        "app/lib/mixer/components/processing.dart"
       ],
       "engine_contracts": [
         "guarded_preamp_writes",
@@ -475,7 +478,8 @@
       "scope": "provider",
       "shared_paths": [
         "crates/core/src/lib.rs",
-        "app/lib/screens/channel.dart"
+        "app/lib/screens/channel.dart",
+        "app/lib/mixer/components/toggle.dart"
       ],
       "engine_contracts": [
         "clear_solo",
