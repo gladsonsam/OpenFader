@@ -143,7 +143,8 @@
         "app/lib/mixer/components/strip.dart",
         "app/lib/mixer/components/fader.dart",
         "app/lib/mixer/components/nameplate.dart",
-        "app/lib/mixer/components/toggle.dart"
+        "app/lib/mixer/components/toggle.dart",
+        "app/lib/mixer/components/toolbar.dart"
       ],
       "engine_contracts": [
         "get_bus_fader",
@@ -162,7 +163,7 @@
       "required_hooks": [],
       "acceptance": {
         "controls": "Read/write input, destination and main levels/mutes with independent native readback and provider ranges.",
-        "fader_space": "At short and tall heights, preserve channel identity in a compact nameplate, give remaining height to usable fader travel, and show EQ and dynamics previews only when space allows. Keep full hit targets clear of adjacent rows and safe areas."
+        "fader_space": "At short and tall heights, preserve channel identity and usable fader travel. Fit EQ before gate and compressor previews, and add gain with more height. Keep full hit targets clear of adjacent rows and safe areas, and keep the selected level centered in the toolbar readout."
       },
       "required_evidence": [
         "unit",
@@ -222,6 +223,7 @@
       "shared_paths": [
         "crates/core/src/lib.rs",
         "app/lib/screens/channel.dart",
+        "app/lib/mixer/components/processing.dart",
         "app/lib/mixer/components/strip.dart"
       ],
       "engine_contracts": [

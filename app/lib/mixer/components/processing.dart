@@ -7,23 +7,23 @@ import '../design.dart';
 import '../demo.dart';
 import '../../design.dart';
 
-/// Strip-level processing row: either the compact EQ preview or the full
-/// gain/EQ/dynamics rack. Gain range and phantom availability come from the
-/// controller, so an unsupported provider yields a read-only preview.
+enum MixerProcessingMode { eq, dynamics, full }
+
+/// Strip-level processing preview, sized by the strip's available height.
 class MixerProcessingCell extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
-  final bool compact;
+  final MixerProcessingMode mode;
   final VoidCallback onOpen;
   const MixerProcessingCell(
       {super.key,
       required this.channel,
       required this.controller,
-      required this.compact,
+      required this.mode,
       required this.onOpen});
 
   @override
-  Widget build(BuildContext context) => compact
+  Widget build(BuildContext context) => mode == MixerProcessingMode.eq
       ? MixerEqPreview(
           channel: channel,
           compact: true,
@@ -31,6 +31,7 @@ class MixerProcessingCell extends StatelessWidget {
           onOpen: onOpen)
       : MixerProcessingRack(
           channel: channel,
+          showGain: mode == MixerProcessingMode.full,
           gainRange: controller.gainRangeOf(channel),
           showPhantom: controller.hasPhantomOf(channel),
           demo: controller.demo,
@@ -41,8 +42,16 @@ class MixerProcessingCell extends StatelessWidget {
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
 /// opens the existing channel editor; hardware curves use actual parameters.
 class MixerProcessingRack extends StatefulWidget {
+  static const _inset = AppDesign.spaceXs;
+  static const _gainHeight = 20.0;
+  static const _dynamicsHeight = AppDesign.spaceLg;
+  static const dynamicsMinHeight =
+      AppDesign.touchTarget + _dynamicsHeight + 3 * _inset;
+  static const fullMinHeight = dynamicsMinHeight + _gainHeight + _inset;
+
   final MixerChannel channel;
   final bool demo;
+  final bool showGain;
   final List<double>? gainRange;
   final bool showPhantom;
   final VoidCallback onOpen;
@@ -51,6 +60,7 @@ class MixerProcessingRack extends StatefulWidget {
       {super.key,
       required this.channel,
       required this.demo,
+      required this.showGain,
       this.gainRange,
       this.showPhantom = false,
       required this.onOpen,
@@ -73,10 +83,11 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        const insetY = AppDesign.spaceXs;
-        const gainHeight = 20.0;
-        const dynamicsHeight = 16.0;
-        const eqTop = insetY + gainHeight + AppDesign.spaceXs;
+        const insetY = MixerProcessingRack._inset;
+        const gainHeight = MixerProcessingRack._gainHeight;
+        const dynamicsHeight = MixerProcessingRack._dynamicsHeight;
+        final eqTop =
+            widget.showGain ? insetY + gainHeight + insetY : insetY;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
         Widget place(double top, double height, Widget child) =>
             Positioned(
@@ -91,7 +102,8 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                 borderRadius: AppDesign.radius,
                 border: Border.all(color: ConsolePalette.of(context).line)),
             child: Stack(children: [
-              place(
+              if (widget.showGain)
+                place(
                   insetY,
                   gainHeight,
                   widget.channel.master || widget.gainRange == null
@@ -151,7 +163,10 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                   eqTop,
                   math.max(0, dynamicsTop - AppDesign.spaceXs - eqTop),
                   MixerEqPreview(
-                      channel: widget.channel, onOpen: widget.onOpen)),
+                      channel: widget.channel,
+                      compact: !widget.showGain,
+                      showPhantom: widget.showPhantom,
+                      onOpen: widget.onOpen)),
               place(
                   dynamicsTop,
                   dynamicsHeight,

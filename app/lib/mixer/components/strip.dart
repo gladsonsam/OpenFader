@@ -88,34 +88,25 @@ class _MixerStripState extends State<MixerStrip> {
         // Tape grows by the system bottom inset so names clear the nav bar.
         final nameHeight = AppDesign.spaceXl + bottomInset;
         final gap = shortSurface ? AppDesign.spaceXs : AppDesign.spaceSm;
-        var compactRack =
-            compact || layout.compactProcessing || box.maxHeight < 520;
-        // The pan target now has its own full row. Reclaim that space from the
-        // full rack rather than shortening the fader or replacing the rack.
-        final panTargetAllowance = layout.shows(StripElement.pan)
-            ? AppDesign.touchTarget - AppDesign.space2xl
-            : 0.0;
+        var processingMode = layout.compactProcessing
+            ? MixerProcessingMode.eq
+            : MixerProcessingMode.full;
+        final fullRackHeight =
+            (g.rackH * (3 / layout.faderWeight).clamp(.6, 1.5))
+                .clamp(MixerProcessingRack.fullMinHeight, 120.0);
         final heights = <StripElement, double>{
-          StripElement.processing: compactRack
+          StripElement.processing: layout.compactProcessing
               ? AppDesign.touchTarget
-              : (g.rackH * (3 / layout.faderWeight).clamp(.6, 1.5))
-                      .clamp(88.0, shortSurface ? 88.0 : 120.0) -
-                  panTargetAllowance,
+              : fullRackHeight,
           StripElement.pan: AppDesign.touchTarget,
           StripElement.mute: AppDesign.touchTarget,
           StripElement.solo: AppDesign.touchTarget,
           StripElement.nameplate: identityHeight + nameHeight,
         };
         final visible = [...layout.visibleOrder];
-        // Reserve most of the usable strip for level control. A fixed minimum
-        // alone lets secondary rows consume too much of landscape windows.
-        // Keep a logical-pixel floor because the cap needs endpoint clearance;
-        // 200 still leaves a usable travel, and a taller floor pushes the
-        // nameplate past the bottom on the shortest windows.
-        final minimumFaderHeight = math.max(200.0, box.maxHeight * .55);
-        final preferredFaderHeight = math.max(200.0, box.maxHeight * .60);
-        final fullRackFaderHeight = math.max(200.0, box.maxHeight * .65);
-        final hasFader = visible.contains(StripElement.fader);
+        // The cap needs room at both ends of the rail. Keep a usable well
+        // while still allowing the compact dynamics rack at short heights.
+        final minimumFaderHeight = math.max(200.0, box.maxHeight * .45);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
         // Pan and the toggles already have clear space inside their
@@ -139,27 +130,29 @@ class _MixerStripState extends State<MixerStrip> {
               bottom, (sum, row) => sum + gapBefore(row.$1));
         }
 
-        bool faderNeedsSpace(double target) =>
-            hasFader && box.maxHeight - fixedHeight() - rowSpacing() < target;
-        // Processing stays available from the channel screen. Prefer a small
-        // EQ preview, then remove the preview entirely before reducing travel.
-        if (faderNeedsSpace(fullRackFaderHeight) &&
-            visible.contains(StripElement.processing)) {
-          compactRack = true;
-          heights[StripElement.processing] = AppDesign.touchTarget;
-        }
-        if (faderNeedsSpace(preferredFaderHeight)) {
-          visible.remove(StripElement.processing);
+        bool faderNeedsSpace() =>
+            box.maxHeight - fixedHeight() - rowSpacing() < minimumFaderHeight;
+        if (visible.contains(StripElement.processing)) {
+          if (faderNeedsSpace() && processingMode == MixerProcessingMode.full) {
+            processingMode = MixerProcessingMode.dynamics;
+            heights[StripElement.processing] =
+                MixerProcessingRack.dynamicsMinHeight;
+          }
+          if (faderNeedsSpace()) {
+            processingMode = MixerProcessingMode.eq;
+            heights[StripElement.processing] = AppDesign.touchTarget;
+          }
+          if (faderNeedsSpace()) visible.remove(StripElement.processing);
         }
         // Pan is secondary to level control on the shortest surfaces; it is
         // still accessible by opening the channel. Mute and Solo stay at hand.
-        if (faderNeedsSpace(minimumFaderHeight)) {
+        if (faderNeedsSpace()) {
           visible.remove(StripElement.pan);
         }
         final fixed = fixedHeight();
         final spacing = rowSpacing();
         final contentHeight = math.max(box.maxHeight,
-            fixed + spacing + (hasFader ? minimumFaderHeight : 0));
+            fixed + spacing + minimumFaderHeight);
         final positions = <StripElement, Rect>{};
         var y = 0.0;
         for (final (index, element) in visible.indexed) {
@@ -215,7 +208,7 @@ class _MixerStripState extends State<MixerStrip> {
                           MixerProcessingCell(
                               channel: ch,
                               controller: controller,
-                              compact: compactRack,
+                              mode: processingMode,
                               onOpen: _openProcessing)),
                       place(
                           StripElement.pan,

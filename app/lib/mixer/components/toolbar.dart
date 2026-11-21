@@ -126,64 +126,62 @@ class MixerToolbar extends StatelessWidget {
                                       channel: channel,
                                       control: focus.control,
                                       compact: compact))),
-                          if (controller.error.isNotEmpty)
-                            ConsoleIconButton(
-                              label: 'Connection issue',
-                              onPressed: () async {
-                                final openConnections =
-                                    await showConsoleChoice<bool>(
-                                  context,
-                                  title: 'Connection issue',
-                                  message: controller.error,
-                                  actions: const [
-                                    ConsoleDialogAction(
-                                      label: 'Close',
-                                      value: false,
-                                      variant: ConsoleButtonVariant.quiet,
-                                    ),
-                                    ConsoleDialogAction(
-                                      label: 'Connections',
-                                      value: true,
-                                      variant: ConsoleButtonVariant.primary,
-                                    ),
-                                  ],
-                                );
-                                if (context.mounted &&
-                                    openConnections == true) {
-                                  onNavigate(MixerDestination.connect);
-                                }
-                              },
-                              child: Icon(
-                                Icons.info_outline,
-                                color: ConsolePalette.of(context).over,
-                              ),
-                            )
-                          else if (!compact)
-                            Expanded(
-                                child: controller.connected && !controller.demo
-                                    ? Semantics(
-                                        button: true,
-                                        label:
-                                            'Connected to ${controller.connectionDisplayName}',
-                                        child: Tooltip(
-                                            message: controller
-                                                .connectionDisplayName,
-                                            child: InkWell(
-                                                onTap: () => onNavigate(
-                                                    MixerDestination.connect),
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child: FittedBox(
-                                                    fit: BoxFit.scaleDown,
-                                                    child:
-                                                        _MixerConnectionStatus(
-                                                            controller:
-                                                                controller,
-                                                            compact: compact),
-                                                  ),
-                                                ))))
-                                    : const SizedBox.shrink()),
+                          Expanded(
+                              child: controller.error.isNotEmpty
+                                  ? Align(
+                                      alignment: Alignment.centerRight,
+                                      child: ConsoleIconButton(
+                                        label: 'Connection issue',
+                                        onPressed: () async {
+                                          final openConnections =
+                                              await showConsoleChoice<bool>(
+                                            context,
+                                            title: 'Connection issue',
+                                            message: controller.error,
+                                            actions: const [
+                                              ConsoleDialogAction(
+                                                label: 'Close',
+                                                value: false,
+                                                variant: ConsoleButtonVariant.quiet,
+                                              ),
+                                              ConsoleDialogAction(
+                                                label: 'Connections',
+                                                value: true,
+                                                variant: ConsoleButtonVariant.primary,
+                                              ),
+                                            ],
+                                          );
+                                          if (context.mounted &&
+                                              openConnections == true) {
+                                            onNavigate(MixerDestination.connect);
+                                          }
+                                        },
+                                        child: Icon(
+                                          Icons.info_outline,
+                                          color: ConsolePalette.of(context).over,
+                                        ),
+                                      ))
+                                  : !compact &&
+                                          controller.connected &&
+                                          !controller.demo
+                                      ? Semantics(
+                                          button: true,
+                                          label:
+                                              'Connected to ${controller.connectionDisplayName}',
+                                          child: Tooltip(
+                                              message: controller.connectionDisplayName,
+                                              child: InkWell(
+                                                  onTap: () => onNavigate(
+                                                      MixerDestination.connect),
+                                                  child: Align(
+                                                    alignment: Alignment.centerRight,
+                                                    child: FittedBox(
+                                                        fit: BoxFit.scaleDown,
+                                                        child: _MixerConnectionStatus(
+                                                            controller: controller,
+                                                            compact: compact)),
+                                                  ))))
+                                      : const SizedBox.shrink()),
                         ])));
         });
     return Container(
