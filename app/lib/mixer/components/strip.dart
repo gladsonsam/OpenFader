@@ -149,6 +149,19 @@ class _MixerStripState extends State<MixerStrip> {
         if (faderNeedsSpace()) {
           visible.remove(StripElement.pan);
         }
+        final panIndex = visible.indexOf(StripElement.pan);
+        // Extend Pan's drag area into the meter lane above it. A tap in
+        // that lane still opens processing. EQ and the toggles stay separate.
+        final panOverhang = panIndex > 0 &&
+                visible[panIndex - 1] == StripElement.processing &&
+                processingMode != MixerProcessingMode.eq
+            ? AppDesign.touchTarget - AppDesign.spaceXl - AppDesign.spaceXs
+            : 0.0;
+        if (panOverhang > 0) {
+          heights[StripElement.processing] =
+              heights[StripElement.processing]! + panOverhang;
+          heights[StripElement.pan] = AppDesign.touchTarget - panOverhang;
+        }
         final fixed = fixedHeight();
         final spacing = rowSpacing();
         final contentHeight = math.max(box.maxHeight,
@@ -163,9 +176,8 @@ class _MixerStripState extends State<MixerStrip> {
           positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
           y += height;
         }
-        double allocated(StripElement element) =>
-            positions[element]?.height ?? 0;
-        Widget place(StripElement element, Widget child) {
+        Widget place(StripElement element, Widget child,
+            {double leadingHitInset = 0}) {
           // Hidden rows must stay positioned children. A plain zero-size
           // child would be a non-positioned Stack child, and the Stack would
           // then size itself to that child whenever its width is loose (the
@@ -178,14 +190,12 @@ class _MixerStripState extends State<MixerStrip> {
           if (rect == null) {
             return const Positioned.fill(child: SizedBox.shrink());
           }
-          // Rows already reserve their full touch targets. Expanding them
-          // independently here can cover an adjacent fader's outline.
           const inset = AppDesign.spaceXs;
           return Positioned(
               left: inset,
               right: inset,
-              top: rect.top,
-              height: rect.height,
+              top: rect.top - leadingHitInset,
+              height: rect.height + leadingHitInset,
               child: child);
         }
 
@@ -209,6 +219,7 @@ class _MixerStripState extends State<MixerStrip> {
                               channel: ch,
                               controller: controller,
                               mode: processingMode,
+                              dynamicsExtraHeight: panOverhang,
                               onOpen: _openProcessing)),
                       place(
                           StripElement.pan,
@@ -216,8 +227,11 @@ class _MixerStripState extends State<MixerStrip> {
                               channel: ch,
                               controller: controller,
                               ready: ready,
-                              allocatedHeight: allocated(StripElement.pan),
-                              onControlFocus: onControlFocus)),
+                              leadingHitInset: panOverhang,
+                              onMeterTap:
+                                  panOverhang > 0 ? _openProcessing : null,
+                              onControlFocus: onControlFocus),
+                          leadingHitInset: panOverhang),
                       place(
                           StripElement.mute,
                           MixerToggleCell(

@@ -7,6 +7,8 @@ import '../design.dart';
 import '../demo.dart';
 import '../../design.dart';
 
+const _phantomLabelSize = 9.0;
+
 enum MixerProcessingMode { eq, dynamics, full }
 
 /// Strip-level processing preview, sized by the strip's available height.
@@ -14,12 +16,14 @@ class MixerProcessingCell extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final MixerProcessingMode mode;
+  final double dynamicsExtraHeight;
   final VoidCallback onOpen;
   const MixerProcessingCell(
       {super.key,
       required this.channel,
       required this.controller,
       required this.mode,
+      required this.dynamicsExtraHeight,
       required this.onOpen});
 
   @override
@@ -31,6 +35,7 @@ class MixerProcessingCell extends StatelessWidget {
           onOpen: onOpen)
       : MixerProcessingRack(
           channel: channel,
+          dynamicsExtraHeight: dynamicsExtraHeight,
           showGain: mode == MixerProcessingMode.full,
           gainRange: controller.gainRangeOf(channel),
           showPhantom: controller.hasPhantomOf(channel),
@@ -52,6 +57,7 @@ class MixerProcessingRack extends StatefulWidget {
   final MixerChannel channel;
   final bool demo;
   final bool showGain;
+  final double dynamicsExtraHeight;
   final List<double>? gainRange;
   final bool showPhantom;
   final VoidCallback onOpen;
@@ -61,6 +67,7 @@ class MixerProcessingRack extends StatefulWidget {
       required this.channel,
       required this.demo,
       required this.showGain,
+      required this.dynamicsExtraHeight,
       this.gainRange,
       this.showPhantom = false,
       required this.onOpen,
@@ -85,7 +92,8 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         const insetY = MixerProcessingRack._inset;
         const gainHeight = MixerProcessingRack._gainHeight;
-        const dynamicsHeight = MixerProcessingRack._dynamicsHeight;
+        final dynamicsHeight =
+            MixerProcessingRack._dynamicsHeight + widget.dynamicsExtraHeight;
         final eqTop =
             widget.showGain ? insetY + gainHeight + insetY : insetY;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
@@ -226,7 +234,7 @@ class MixerEqPreview extends StatelessWidget {
                       child: IgnorePointer(
                           child: ExcludeSemantics(
                               child: Text('48V',
-                                  style: mixerType(context, 10,
+                                  style: mixerType(context, _phantomLabelSize,
                                           color: (channel.params['phantom'] ==
                                                       true ||
                                                   channel.params['phantom'] ==
@@ -269,7 +277,7 @@ class _GainPainter extends CustomPainter {
         ? (TextPainter(
             text: TextSpan(
                 text: '48V',
-                style: AppDesign.type(AppDesign.microText,
+                style: AppDesign.type(_phantomLabelSize,
                     color: phantom ? palette.phantom : palette.mutedText,
                     weight: FontWeight.w700)),
             textDirection: TextDirection.ltr,

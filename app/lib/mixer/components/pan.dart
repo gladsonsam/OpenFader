@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import '../../design.dart';
 import '../../palette.dart';
 import 'package:material_ui/material_ui.dart';
@@ -14,24 +12,28 @@ class MixerPanCell extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final int ready;
-  final double allocatedHeight;
+  final double leadingHitInset;
+  final VoidCallback? onMeterTap;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
   const MixerPanCell(
       {super.key,
       required this.channel,
       required this.controller,
       required this.ready,
-      required this.allocatedHeight,
+      required this.leadingHitInset,
+      this.onMeterTap,
       this.onControlFocus});
 
   @override
   Widget build(BuildContext context) {
     final name = channel.name;
-    final visualHeight = math.min(AppDesign.spaceXl, allocatedHeight);
     final chIndex = channel.channel;
     if (channel.master || chIndex == null) {
       return MixerPan(
-          name: name, value: 0, visualHeight: visualHeight, onChanged: null);
+          name: name,
+          value: 0,
+          leadingHitInset: leadingHitInset,
+          onMeterTap: onMeterTap);
     }
     return ValueListenableBuilder<double>(
         valueListenable: controller.panNoteOf(chIndex),
@@ -39,7 +41,8 @@ class MixerPanCell extends StatelessWidget {
             name: name,
             value: pan,
             onTouch: () => onControlFocus?.call(MixerReadoutControl.pan),
-            visualHeight: visualHeight,
+            leadingHitInset: leadingHitInset,
+            onMeterTap: onMeterTap,
             onChanged: ready & 4 != 0
                 ? (v) {
                     onControlFocus?.call(MixerReadoutControl.pan);
@@ -52,15 +55,17 @@ class MixerPanCell extends StatelessWidget {
 class MixerPan extends StatefulWidget {
   final String name;
   final double value;
-  final double visualHeight;
+  final double leadingHitInset;
   final ValueChanged<double>? onChanged;
   final VoidCallback? onTouch;
+  final VoidCallback? onMeterTap;
   const MixerPan(
       {super.key,
       required this.name,
       required this.value,
-      this.visualHeight = AppDesign.spaceXl,
+      this.leadingHitInset = 0,
       this.onTouch,
+      this.onMeterTap,
       this.onChanged});
   @override
   State<MixerPan> createState() => _MixerPanState();
@@ -72,12 +77,7 @@ class _MixerPanState extends State<MixerPan> {
   void _release() => setState(() => _drag = null);
   void _send(double value) => widget.onChanged?.call(_snap(value));
   @override
-  Widget build(BuildContext context) => Listener(
-      onPointerDown:
-          widget.onChanged == null ? null : (_) => widget.onTouch?.call(),
-      child: _pan(context));
-
-  Widget _pan(BuildContext context) => LayoutBuilder(
+  Widget build(BuildContext context) => LayoutBuilder(
       builder: (context, box) => Semantics(
           label: '${widget.name} pan',
           value: panText(widget.value),
@@ -94,6 +94,7 @@ class _MixerPanState extends State<MixerPan> {
               triggerMode: TooltipTriggerMode.manual,
               child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
+                  excludeFromSemantics: true,
                   onHorizontalDragStart: widget.onChanged == null
                       ? null
                       : (_) => setState(() => _drag = widget.value),
@@ -108,22 +109,37 @@ class _MixerPanState extends State<MixerPan> {
                         },
                   onHorizontalDragEnd: (_) => _release(),
                   onHorizontalDragCancel: _release,
-                  onDoubleTap: widget.onChanged == null ? null : () => _send(0),
                   child: SizedBox(
-                      height:
-                          math.max(AppDesign.touchTarget, widget.visualHeight),
+                      height: AppDesign.touchTarget,
                       width: double.infinity,
-                      child: Center(
-                          child: SizedBox(
-                              width: double.infinity,
-                              height: widget.visualHeight,
-                              child: CustomPaint(
-                                  painter: _PanPainter(
-                                      ConsolePalette.of(context),
-                                      _drag == null
-                                          ? widget.value
-                                          : _snap(_drag!),
-                                      _drag != null)))))))));
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (widget.leadingHitInset > 0)
+                              GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  excludeFromSemantics: true,
+                                  onTap: widget.onMeterTap,
+                                  child: SizedBox(height: widget.leadingHitInset)),
+                            Expanded(child: _panFace(context)),
+                          ]))))));
+
+  Widget _panFace(BuildContext context) => Listener(
+      onPointerDown:
+          widget.onChanged == null ? null : (_) => widget.onTouch?.call(),
+      child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onDoubleTap: widget.onChanged == null ? null : () => _send(0),
+          child: Center(
+              child: SizedBox(
+                  width: double.infinity,
+                  height: AppDesign.spaceXl,
+                  child: CustomPaint(
+                      painter: _PanPainter(
+                          ConsolePalette.of(context),
+                          _drag == null ? widget.value : _snap(_drag!),
+                          _drag != null))))));
 }
 
 class _PanPainter extends CustomPainter {
