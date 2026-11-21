@@ -75,6 +75,11 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 
 Read this before changing a screen, panel or mixer strip.
 
+- Reserve mixer height for channel strips and live controls. Keep secondary
+  labels, layout management and error details in Tools, Settings or a detail
+  surface. Use the existing toolbar for a compact, actionable status indicator.
+  Add a full-width row only while a task needs it, and check fader travel at
+  the shortest supported window.
 - Visual bounds and hit areas are separate. Input keeps at least
   `AppDesign.touchTarget` (44); painted content stays inside the space it is
   given. A row that cannot hold both is a layout bug: shrink the visual body,

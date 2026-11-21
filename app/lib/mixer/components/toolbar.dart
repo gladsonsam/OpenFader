@@ -126,7 +126,39 @@ class MixerToolbar extends StatelessWidget {
                                       channel: channel,
                                       control: focus.control,
                                       compact: compact))),
-                          if (!compact)
+                          if (controller.error.isNotEmpty)
+                            ConsoleIconButton(
+                              label: 'Connection issue',
+                              onPressed: () async {
+                                final openConnections =
+                                    await showConsoleChoice<bool>(
+                                  context,
+                                  title: 'Connection issue',
+                                  message: controller.error,
+                                  actions: const [
+                                    ConsoleDialogAction(
+                                      label: 'Close',
+                                      value: false,
+                                      variant: ConsoleButtonVariant.quiet,
+                                    ),
+                                    ConsoleDialogAction(
+                                      label: 'Connections',
+                                      value: true,
+                                      variant: ConsoleButtonVariant.primary,
+                                    ),
+                                  ],
+                                );
+                                if (context.mounted &&
+                                    openConnections == true) {
+                                  onNavigate(MixerDestination.connect);
+                                }
+                              },
+                              child: Icon(
+                                Icons.info_outline,
+                                color: ConsolePalette.of(context).over,
+                              ),
+                            )
+                          else if (!compact)
                             Expanded(
                                 child: controller.connected && !controller.demo
                                     ? Semantics(

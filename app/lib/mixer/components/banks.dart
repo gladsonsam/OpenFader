@@ -30,10 +30,6 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
     const PopupMenuDivider(),
     PopupMenuItem(
         height: 48,
-        value: () => showMixerLayers(context, controller),
-        child: const Text('Layers')),
-    PopupMenuItem(
-        height: 48,
         value: () => showMixerGroupMembership(context, controller),
         child: const Text('Group members')),
     PopupMenuItem(

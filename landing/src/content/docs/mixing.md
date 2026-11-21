@@ -52,15 +52,15 @@ On a computer, select a channel and use:
 
 Banks are groups of channels, such as inputs 1 to 16 or the effects returns. The banks you see come from the mixer you are connected to, so their names and number change from mixer to mixer. The **All** bank shows every input and return.
 
-To switch bank, tap **Tools**, then **Mixer layout**, then pick a bank. The current one has a check mark.
+To switch bank, tap **Tools**, then **Banks & groups**, then pick a bank. The current one has a check mark.
 
 ## Layers
 
 A layer is your own set of channels in your own order, for example just the vocal mics. Each layer can show 4, 6, 8 or 12 strips per page. The master strip is never part of a layer and stays on the right.
 
-1. Tap **Tools**, then **Mixer layout**, then **Layers**.
-2. Under **New from template**, tap **Vocals**, **Drums**, **Band** or **Stream**. The template picks channels by name, so a channel called "Lead Vox" or "Choir" lands in Vocals. If no names match, it starts with the first few channels.
-3. In the editor, tick channels under **Channels**, drag them into order, and choose the **Strips per page**.
+1. Tap **Tools**, then **Layers**.
+2. Tap **New layer**, or choose **Vocals**, **Drums**, **Band** or **Stream** under **Templates**. Templates pick channels by name.
+3. Add channels, drag them into order, choose **Strips per page**, then tap **Save & use**. To arrange the active app layer directly on the mixer, choose **Edit on mixer** from **Layers**.
 
 ![The Layers sheet](/screenshots/ipad-2026-11-07/layers-framed.png)
 
@@ -80,7 +80,7 @@ This only works for buses. Picking a subgroup does not turn the faders into send
 
 ## Mute groups and DCAs
 
-If your mixer has mute groups, they appear as numbered buttons under **MUTE** on the side rail. Tap a number to mute that whole group. On a phone, use **Tools**, **Mixer layout**, **Mute groups**.
+If your mixer has mute groups, they appear as numbered buttons under **MUTE** on the side rail. Tap a number to mute that whole group. On a phone, use **Tools**, **Banks & groups**, **Mute groups**.
 
 To change which channels are in a group, open **Mute groups** and tap **Edit group members**. You can also assign a channel to mute groups and DCAs from the **Input** page of [channel processing](/docs/channel-processing).
 

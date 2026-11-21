@@ -21,12 +21,14 @@ class MixerPage extends StatefulWidget {
   /// Return to the Mixer workspace home.
   final VoidCallback? onHome;
   final bool embedded;
+  final bool openLayersOnStart;
   const MixerPage(
       {super.key,
       required this.controller,
       required this.onNavigate,
       this.onHome,
-      this.embedded = false});
+      this.embedded = false,
+      this.openLayersOnStart = false});
   @override
   State<MixerPage> createState() => _MixerPageState();
 }
@@ -58,6 +60,15 @@ class _MixerPageState extends State<MixerPage> {
     _bank = widget.controller.store.bank;
     _layerId = widget.controller.activeLayer.id;
     _page = widget.controller.page;
+    if (widget.openLayersOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final controller = widget.controller;
+        showMixerLayers(context, controller, onEditLayout: () {
+          if (mounted) _startLayoutEdit(controller);
+        });
+      });
+    }
   }
 
   @override
@@ -69,10 +80,7 @@ class _MixerPageState extends State<MixerPage> {
   }
 
   void _startLayoutEdit(MixerController controller) {
-    if (!controller.canEditLayout) {
-      showMixerLayers(context, controller);
-      return;
-    }
+    if (!controller.canEditLayout) return;
     setState(() {
       _draftKeys = controller.editableChannelKeys;
       _draftChannels = controller.channelsForKeys(_draftKeys!);
@@ -383,15 +391,9 @@ class _MixerPageState extends State<MixerPage> {
                     final view = controller.activeCustomView;
                     final palette = ConsolePalette.of(context);
                     if (controller.isCustomLayerActive || view != null) {
-                      final name =
-                          controller.isCustomLayerActive ? controller.activeLayer.name : view!.name;
                       return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(name,
-                                style: mixerType(context, 18,
-                                    weight: FontWeight.w600)),
-                            const SizedBox(height: 8),
                             Padding(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 32),
@@ -451,44 +453,11 @@ class _MixerPageState extends State<MixerPage> {
                                   height: mobile ? 6 : 8,
                                   color: controller
                                       .masterColor(ConsolePalette.of(context))),
-                            // Always-visible layers picker: names the current
-                            // selection and exposes Edit layout without
-                            // hiding the entry behind Tools.
-                            _MixerLayerBar(
-                                controller: controller,
-                                editing: editing,
-                                onStartEdit: () =>
-                                    _startLayoutEdit(controller),
-                                onCancelEdit: _cancelLayoutEdit,
-                                onSaveEdit: () =>
-                                    _saveLayoutEdit(controller),
-                                onCreate: () => showMixerLayers(context,
-                                    controller,
-                                    createLayer: true)),
-                            if (controller.error.isNotEmpty)
-                              Material(
-                                  color: ConsolePalette.of(context).over,
-                                  child: InkWell(
-                                      onTap: () => widget
-                                          .onNavigate(MixerDestination.connect),
-                                      child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 6),
-                                          child: Row(children: [
-                                            Icon(Icons.info_outline,
-                                                size: 16,
-                                                color:
-                                                    ConsolePalette.of(context)
-                                                        .text),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                                child: Text(controller.error,
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style:
-                                                        mixerType(context, 12)))
-                                          ])))),
+                            if (editing)
+                              _MixerEditBar(
+                                onCancel: _cancelLayoutEdit,
+                                onSave: () => _saveLayoutEdit(controller),
+                              ),
                             Expanded(
                                 child: Row(
                                     crossAxisAlignment:
@@ -540,95 +509,55 @@ class _MixerPageState extends State<MixerPage> {
           })));
 }
 
-/// Persistent selection bar. It always names the active layer/view and opens
-/// the full Layers workspace, so creation and management are never hidden
-/// behind a Tools menu. In Edit layout mode it becomes the draft action bar:
-/// Cancel discards the draft and Save & use commits it.
-class _MixerLayerBar extends StatelessWidget {
-  final MixerController controller;
-  final bool editing;
-  final VoidCallback onStartEdit;
-  final VoidCallback onCancelEdit;
-  final VoidCallback onSaveEdit;
-  final VoidCallback onCreate;
-  const _MixerLayerBar(
-      {required this.controller,
-      required this.editing,
-      required this.onStartEdit,
-      required this.onCancelEdit,
-      required this.onSaveEdit,
-      required this.onCreate});
+/// Actions for the temporary layout draft.
+class _MixerEditBar extends StatelessWidget {
+  final VoidCallback onCancel;
+  final VoidCallback onSave;
+
+  const _MixerEditBar({
+    required this.onCancel,
+    required this.onSave,
+  });
+
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
-    final wide = MediaQuery.sizeOf(context).width >=
-        AppDesign.compactToolbarBreakpoint;
     return Material(
-        color: palette.panel,
-        child: Container(
-            height: MixerLayerMetrics.barHeight,
-            padding: MixerLayerMetrics.barPadding,
-            decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: palette.line))),
-            child: editing
-                ? Row(children: [
-                    Icon(Icons.layers_outlined,
-                        size: 18, color: palette.mutedText),
-                    const SizedBox(width: MixerLayerMetrics.gap),
-                    Expanded(
-                        child: Text('Editing ${controller.selectionLabel}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: mixerType(context, 14,
-                                weight: FontWeight.w600))),
-                    ConsoleButton(
-                        label: 'Cancel',
-                        variant: ConsoleButtonVariant.quiet,
-                        size: ConsoleButtonSize.dense,
-                        onPressed: onCancelEdit),
-                    const SizedBox(width: MixerLayerMetrics.gap),
-                    ConsoleButton(
-                        label: 'Save & use',
-                        variant: ConsoleButtonVariant.primary,
-                        size: ConsoleButtonSize.dense,
-                        onPressed: onSaveEdit),
-                  ])
-                : Tooltip(
-                    message: 'Layers',
-                    child: InkWell(
-                        onTap: () => showMixerLayers(context, controller),
-                        child: Row(children: [
-                          Icon(Icons.layers_outlined,
-                              size: 18, color: palette.mutedText),
-                          const SizedBox(width: MixerLayerMetrics.gap),
-                          Expanded(
-                              child: Text(controller.selectionLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: mixerType(context, 14,
-                                      weight: FontWeight.w600))),
-                          if (wide)
-                            Text(
-                                '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
-                                style: mixerType(context, 12,
-                                    color: palette.mutedText)),
-                          if (controller.canEditLayout)
-                            ConsoleIconButton(
-                                label: 'Edit layout',
-                                onPressed: onStartEdit,
-                                child: Icon(Icons.edit_outlined,
-                                    size: 18, color: palette.mutedText)),
-                          ConsoleIconButton(
-                              label: 'New layer',
-                              onPressed: onCreate,
-                              child: Icon(Icons.add,
-                                  size: 20, color: palette.accent)),
-                          ConsoleIconButton(
-                              label: 'Open layers',
-                              onPressed: () =>
-                                  showMixerLayers(context, controller),
-                              child: Icon(Icons.expand_more,
-                                  size: 20, color: palette.mutedText)),
-                        ])))));
+      color: palette.panel,
+      child: Container(
+        height: MixerLayerMetrics.barHeight,
+        padding: MixerLayerMetrics.barPadding,
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: palette.line)),
+        ),
+        child: Row(children: [
+          Icon(Icons.layers_outlined,
+              size: AppDesign.iconSize, color: palette.mutedText),
+          const SizedBox(width: MixerLayerMetrics.gap),
+          const Expanded(
+            child: ConsoleText(
+              'Edit layout',
+              role: ConsoleTextRole.body,
+              weight: FontWeight.w600,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ConsoleButton(
+            label: 'Cancel',
+            variant: ConsoleButtonVariant.quiet,
+            size: ConsoleButtonSize.dense,
+            onPressed: onCancel,
+          ),
+          const SizedBox(width: MixerLayerMetrics.gap),
+          ConsoleButton(
+            label: 'Save & use',
+            variant: ConsoleButtonVariant.primary,
+            size: ConsoleButtonSize.dense,
+            onPressed: onSave,
+          ),
+        ]),
+      ),
+    );
   }
 }

@@ -183,8 +183,8 @@ Future<void> showMixerLayerRename(
 Future<void> showMixerLayers(
   BuildContext context,
   MixerController controller, {
-  bool createLayer = false,
   bool editActive = false,
+  VoidCallback? onEditLayout,
 }) {
   final wide = MediaQuery.sizeOf(context).width >=
       AppDesign.compactToolbarBreakpoint;
@@ -217,8 +217,8 @@ Future<void> showMixerLayers(
               expand: true,
               builder: (context) => _MixerLayersWorkspace(
                 controller: controller,
-                startCreateLayer: createLayer,
                 startEditActive: editActive,
+                onEditLayout: onEditLayout,
               ),
             ),
           ),
@@ -266,12 +266,12 @@ enum _LayerMode { browse, layer, view }
 
 class _MixerLayersWorkspace extends StatefulWidget {
   final MixerController controller;
-  final bool startCreateLayer;
   final bool startEditActive;
+  final VoidCallback? onEditLayout;
   const _MixerLayersWorkspace(
       {required this.controller,
-      this.startCreateLayer = false,
-      this.startEditActive = false});
+      this.startEditActive = false,
+      this.onEditLayout});
   @override
   State<_MixerLayersWorkspace> createState() => _MixerLayersWorkspaceState();
 }
@@ -294,9 +294,7 @@ class _MixerLayersWorkspaceState extends State<_MixerLayersWorkspace> {
   @override
   void initState() {
     super.initState();
-    if (widget.startCreateLayer) {
-      _beginNewLayer();
-    } else if (widget.startEditActive) {
+    if (widget.startEditActive) {
       _beginEditActive();
     }
   }
@@ -597,6 +595,15 @@ class _MixerLayersWorkspaceState extends State<_MixerLayersWorkspace> {
             overflow: TextOverflow.ellipsis,
             style: mixerType(context, 13, color: palette.accent)),
       ),
+      if (widget.onEditLayout case final edit? when _controller.canEditLayout)
+        ListTile(
+          leading: Icon(Icons.edit_outlined, color: palette.mutedText),
+          title: Text('Edit on mixer', style: mixerType(context, 17)),
+          onTap: () {
+            Navigator.pop(context);
+            edit();
+          },
+        ),
       ListTile(
         title: Text('All', style: mixerType(context, 17)),
         subtitle: Text('All channels',

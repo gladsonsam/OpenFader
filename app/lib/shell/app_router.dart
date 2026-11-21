@@ -99,6 +99,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late AppTab _tab;
+  bool _openLayersOnMixer = false;
 
   // Soft-close resume: host stashed while backgrounded, verdict after return.
   Timer? _resumeVerdict;
@@ -631,7 +632,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
-  void _go(AppTab t) {
+  void _go(AppTab t, {bool openLayers = false}) {
     if (t != _tab) {
       _channelFocus.value = null;
       _fxReadout.value = null;
@@ -643,8 +644,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _prevTab = _tab;
       }
       _tab = t;
+      _openLayersOnMixer = openLayers;
       if (t != AppTab.settings) _showStart = false;
     });
+    if (openLayers) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openLayersOnMixer = false;
+      });
+    }
   }
 
   void _openConnectionsHome({bool canReturn = true}) {
@@ -653,6 +660,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _fxReadoutSession = null;
     setState(() {
       _tab = AppTab.mixer;
+      _openLayersOnMixer = false;
       _canReturnFromStart = canReturn;
       _showStart = true;
     });
@@ -870,6 +878,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Widget _mixerPage() => MixerPage(
       controller: _mixer,
       embedded: true,
+      openLayersOnStart: _openLayersOnMixer,
       onHome: () => _openConnectionsHome(),
       onNavigate: _navigateMixer);
 
@@ -911,6 +920,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           leaveServerLabel: kIsWeb ? 'Sign out' : 'Disconnect server',
           onQuit: widget.desktop?.requestQuit,
           onMixer: () => _go(AppTab.mixer),
+          onLayers: () => _go(AppTab.mixer, openLayers: true),
           onConnections: () => _openConnectionsHome(),
           onConsoleControls: () => _go(AppTab.consoleControls),
           onRecorder:

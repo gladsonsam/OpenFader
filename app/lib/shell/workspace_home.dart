@@ -11,6 +11,7 @@ class WorkspaceHome extends StatelessWidget {
   final VoidCallback onMixer;
   final VoidCallback onConnections;
   final VoidCallback onConsoleControls;
+  final VoidCallback onLayers;
   final VoidCallback? onRecorder;
   final VoidCallback? onQuit;
   final VoidCallback? onLeaveServer;
@@ -24,6 +25,7 @@ class WorkspaceHome extends StatelessWidget {
       required this.onMixer,
       required this.onConnections,
       required this.onConsoleControls,
+      required this.onLayers,
       this.onRecorder,
       this.onQuit,
       this.onLeaveServer,
@@ -94,12 +96,14 @@ class WorkspaceHome extends StatelessWidget {
                             tile(
                                 'Scenes',
                                 'Save and recall mixes',
-                                Icons.layers_outlined,
+                                Icons.bookmarks_outlined,
                                 () => onNavigate(MixerDestination.scenes)),
+                            tile('Layers', 'Switch or edit mixer layers',
+                                Icons.layers_outlined, onLayers),
                             Builder(
                                 builder: (anchor) => tile(
-                                    'Mixer layout',
-                                    'Banks, layers and master bus',
+                                    'Banks & groups',
+                                    'Banks, groups and master bus',
                                     Icons.view_column_outlined,
                                     () => onLayout(anchor))),
                             tile(
@@ -112,11 +116,6 @@ class WorkspaceHome extends StatelessWidget {
                                 'Connect a mixer or work offline',
                                 Icons.router_outlined,
                                 onConnections),
-                            tile(
-                                'Settings',
-                                'Appearance and app preferences',
-                                Icons.settings_outlined,
-                                () => onNavigate(MixerDestination.settings)),
                           ]),
                       const SizedBox(height: AppDesign.spaceLg),
                       if (serverError.isNotEmpty) ...[
