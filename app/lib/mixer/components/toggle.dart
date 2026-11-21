@@ -40,8 +40,7 @@ class MixerToggleCell extends StatelessWidget {
                 unavailableReason:
                     ready & 2 != 0 ? null : 'Mute unavailable',
                 visualHeight: visualHeight,
-                square: true,
-                fontSize: AppDesign.minorText,
+                fontSize: AppDesign.body,
                 channelName: ch.name,
                 on: ready & 2 != 0 && muted,
                 activeColor: ConsolePalette.of(context).mute,
@@ -57,8 +56,7 @@ class MixerToggleCell extends StatelessWidget {
                 unavailableReason:
                     ready & 8 != 0 ? null : 'Solo unavailable',
                 visualHeight: visualHeight,
-                square: true,
-                fontSize: AppDesign.minorText,
+                fontSize: AppDesign.body,
                 channelName: ch.name,
                 on: ready & 8 != 0 && solo,
                 activeColor: ConsolePalette.of(context).solo,
@@ -75,7 +73,6 @@ class MixerToggle extends StatelessWidget {
   final String label, channelName;
   final String? unavailableReason;
   final bool on;
-  final bool square;
   final Color activeColor, activeForeground;
   final double visualHeight, fontSize;
   final VoidCallback? onPressed;
@@ -85,7 +82,6 @@ class MixerToggle extends StatelessWidget {
       required this.channelName,
       this.unavailableReason,
       required this.on,
-      this.square = false,
       this.visualHeight = AppDesign.touchTarget,
       this.fontSize = AppDesign.sectionTitle,
       required this.activeColor,
@@ -119,25 +115,15 @@ class MixerToggle extends StatelessWidget {
                                       foregroundColor: on
                                           ? activeForeground
                                           : ConsolePalette.of(context).text,
-                                      padding: square
-                                          ? EdgeInsets.zero
-                                          : const EdgeInsets.symmetric(
-                                              horizontal: AppDesign.spaceXs),
-                                      minimumSize: Size(
-                                          square
-                                              ? visualHeight
-                                              : bounds.maxWidth,
-                                          visualHeight),
-                                      fixedSize: square
-                                          ? Size.square(visualHeight)
-                                          : null,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: AppDesign.spaceXs),
+                                      minimumSize:
+                                          Size(bounds.maxWidth, visualHeight),
                                       visualDensity: VisualDensity.standard,
                                       tapTargetSize:
                                           MaterialTapTargetSize.padded,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: square
-                                              ? BorderRadius.zero
-                                              : AppDesign.radius),
+                                      shape: const RoundedRectangleBorder(
+                                          borderRadius: AppDesign.radius),
                                       textStyle: mixerType(context, fontSize,
                                           weight: FontWeight.w600))
                                   .copyWith(

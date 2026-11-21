@@ -118,7 +118,7 @@ class _MixerStripState extends State<MixerStrip> {
         final hasFader = visible.contains(StripElement.fader);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
-        // Pan and the square toggles already have clear space inside their
+        // Pan and the toggles already have clear space inside their
         // touch rows. Only add a gap between rows whose paint fills the box.
         bool hasPaintInset(StripElement element) =>
             element == StripElement.pan ||
