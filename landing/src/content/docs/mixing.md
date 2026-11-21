@@ -72,7 +72,7 @@ Layers are saved per mixer. If a channel in a layer no longer exists on the mixe
 
 Pick a bus and the faders turn into sends to that bus, so you can mix someone's monitors with the same faders.
 
-1. Tap a bus in the **OUTPUTS** list on the side rail, or tap the master strip and pick a bus.
+1. Pick a bus under **OUTPUTS**. In a short window, tap **More outputs** for the full list. You can also pick a bus from the master strip.
 2. The top bar now reads **Send → BUS1** (or whatever the bus is called), and the master strip becomes that bus's master.
 3. To go back to the main mix, pick **MAIN**.
 
@@ -80,7 +80,7 @@ This only works for buses. Picking a subgroup does not turn the faders into send
 
 ## Mute groups and DCAs
 
-If your mixer has mute groups, they appear as numbered buttons under **MUTE** on the side rail. Tap a number to mute that whole group. On a phone, use **Tools**, **Banks & groups**, **Mute groups**.
+If your mixer has mute groups, tap a group under **MUTE** to toggle it. In a short window, open **Mute groups** in the side rail. On a phone, use **Tools**, **Banks & groups**, **Mute groups**.
 
 To change which channels are in a group, open **Mute groups** and tap **Edit group members**. You can also assign a channel to mute groups and DCAs from the **Input** page of [channel processing](/docs/channel-processing).
 

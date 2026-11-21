@@ -395,7 +395,8 @@
       "scope": "provider",
       "shared_paths": [
         "crates/engine/src/drivers.rs",
-        "app/lib/mixer/store.dart"
+        "app/lib/mixer/store.dart",
+        "app/lib/mixer/components/banks.dart"
       ],
       "engine_contracts": [
         "canonical_send_field",
@@ -409,7 +410,8 @@
         "send_destination"
       ],
       "acceptance": {
-        "destinations": "Expose every advertised bus/aux/matrix/main send with actual destination labels, ranges, tap choices and stereo behaviour."
+        "destinations": "Expose every advertised bus/aux/matrix/main send with actual destination labels, ranges, tap choices and stereo behaviour.",
+        "mix_selector": "Keep all accessible outputs selectable in the mixer rail or its compact output menu at short viewport heights."
       },
       "required_evidence": [
         "unit",
@@ -457,7 +459,8 @@
       ],
       "required_hooks": [],
       "acceptance": {
-        "assignments": "Distinguish subgroup, mute-group and DCA/VCA domains; verify advertised memberships and group masters."
+        "assignments": "Distinguish subgroup, mute-group and DCA/VCA domains; verify advertised memberships and group masters.",
+        "compact_rail": "Keep all advertised mute groups reachable from the mixer rail or its compact group menu without scrolling the rail."
       },
       "required_evidence": [
         "unit",

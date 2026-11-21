@@ -117,154 +117,204 @@ class MixerBanks extends StatelessWidget {
         color: ConsolePalette.of(context).panel,
         child: vertical
             ? LayoutBuilder(builder: (context, box) {
-                final sx = box.maxWidth / 93;
-                final sy = box.maxHeight / 1259;
-                // Keep the authored visual scale separate from the hit target.
-                // Short viewports scroll rather than compressing/overlapping rows.
-                double h(double value) =>
-                    (value * sy).clamp(44.0, double.infinity);
-                Widget fittedLabel(String text, double size,
+                final palette = ConsolePalette.of(context);
+                final outputs = controller.store.busRows;
+                final hasOutputs = outputs.isNotEmpty;
+                final hasGroups = count > 0;
+                final hasPages = controller.pageCount > 1;
+                final hasSolo = controller.hasSolo;
+                const rowHeight = AppDesign.touchTarget;
+                const headingHeight = AppDesign.spaceXl;
+                const outputPadding = AppDesign.spaceXs;
+                final headingSpace = headingHeight *
+                        (1 + (hasGroups ? 1 : 0) + (hasOutputs ? 1 : 0)) +
+                    AppDesign.spaceLg;
+                final fixedSpace = rowHeight +
+                    (hasSolo ? rowHeight : 0) +
+                    (hasPages ? rowHeight * 2 + AppDesign.spaceLg : 0) +
+                    (hasOutputs ? outputPadding * 2 : 0);
+                final compactRows = (hasGroups ? 1 : 0) + (hasOutputs ? 1 : 0);
+                final showHeadings =
+                    fixedSpace + headingSpace + compactRows * rowHeight <=
+                        box.maxHeight;
+                final availableRows = (box.maxHeight -
+                        fixedSpace -
+                        (showHeadings ? headingSpace : 0)) /
+                    rowHeight;
+                final compactGroups = hasGroups &&
+                    count + outputs.length > availableRows;
+                final outputSlots =
+                    (availableRows.floor() - (compactGroups ? 1 : count))
+                        .clamp(0, outputs.length);
+                final visibleOutputs = outputSlots < outputs.length
+                    ? (outputSlots - 1).clamp(0, outputs.length)
+                    : outputs.length;
+
+                Widget text(String label, double size,
                         {Color? color, FontWeight weight = FontWeight.w400}) =>
                     FittedBox(
                         fit: BoxFit.scaleDown,
-                        child: Text(text,
+                        child: Text(label,
                             maxLines: 1,
                             softWrap: false,
-                            style: mixerType(context, size * sx,
+                            style: mixerType(context, size,
                                 color: color, weight: weight)));
-                Widget title(String text, double height, {double size = 25}) =>
-                    SizedBox(
-                        height: height * sy,
-                        child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4 * sx),
-                            child: Center(child: fittedLabel(text, size))));
+
+                Widget heading(String label) => SizedBox(
+                    height: headingHeight,
+                    child: Center(child: text(label, AppDesign.body)));
+
                 Widget button(String label, VoidCallback? onTap,
                         {bool active = false,
-                        double size = 30,
-                        double height = 43,
+                        double size = AppDesign.controlLabel,
                         Color? color,
                         FontWeight weight = FontWeight.w400}) =>
                     SizedBox(
-                        height: h(height),
-                        width: double.infinity,
-                        child: Semantics(
-                            selected: active,
-                            child: TextButton(
-                                onPressed: onTap,
-                                style: TextButton.styleFrom(
-                                    // Override the app's filled, rounded buttons:
-                                    // the reference rail has flat text rows.
-                                    backgroundColor: Colors.transparent,
-                                    shape: const RoundedRectangleBorder(),
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 4 * sx),
-                                    minimumSize: const Size(44, 44),
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    visualDensity: VisualDensity.standard),
-                                child: fittedLabel(label, size,
-                                    color: active
-                                        ? ConsolePalette.of(context).accent
-                                        : color ??
-                                            ConsolePalette.of(context)
-                                                .mutedText,
-                                    weight: weight))));
-                return Column(children: [
-                  Expanded(
-                      child: Scrollbar(
-                          child: SingleChildScrollView(
-                              child: Column(children: [
-                    title('MUTE', 58),
-                    Container(
-                        constraints: BoxConstraints(minHeight: 256 * sy),
-                        color: ConsolePalette.of(context).background,
+                      height: rowHeight,
+                      width: double.infinity,
+                      child: Semantics(
+                        selected: active,
+                        child: TextButton(
+                          onPressed: onTap,
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shape: const RoundedRectangleBorder(),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppDesign.spaceXs),
+                            minimumSize: const Size(rowHeight, rowHeight),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.standard,
+                          ),
+                          child: text(label, size,
+                              color: active ? palette.accent
+                                  : color ?? palette.mutedText,
+                              weight: weight),
+                        ),
+                      ),
+                    );
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (hasGroups) ...[
+                      if (showHeadings) heading('MUTE'),
+                      ColoredBox(
+                        color: palette.background,
                         child: Column(children: [
-                          for (var g = 0; g < count; g++)
-                            button(
-                                controller.muteGroupLabel(g),
-                                () => controller.toggleMuteGroup(g),
-                                active: controller.store.engine.muteGroups[g] ==
-                                    true),
-                        ])),
-                    title('MIX', 49),
-                    SizedBox(
-                        height:
-                            (149 * sy).clamp(59 * sy + h(54), double.infinity),
-                        width: double.infinity,
-                        child: ColoredBox(
-                            color: ConsolePalette.of(context).background,
-                            child: Stack(children: [
-                              Positioned(
-                                  left: 7 * sx,
-                                  top: 8 * sy,
-                                  right: 7 * sx,
-                                  child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: fittedLabel(
-                                          controller.master.number, 16,
-                                          color: controller.masterColor(
-                                              ConsolePalette.of(context)),
-                                          weight: FontWeight.w700))),
-                              Positioned(
-                                  top: 59 * sy,
-                                  left: 0,
-                                  right: 0,
-                                  child: Builder(
-                                      builder: (anchor) => button(
-                                          controller.master.name,
-                                          () => showMixerBuses(
-                                              anchor, controller),
-                                          size: 36,
-                                          height: 54,
-                                          color:
-                                              ConsolePalette.of(context).text,
-                                          weight: FontWeight.w600))),
-                            ]))),
-                    title('OUTPUTS', 40, size: 20),
-                    Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8 * sy),
-                        decoration: BoxDecoration(
-                            color: ConsolePalette.of(context).background,
-                            border: Border.all(
-                                color: ConsolePalette.of(context).cap,
-                                width: 2),
-                            borderRadius: BorderRadius.circular(14 * sx)),
-                        child: Column(children: [
-                          for (final bus in controller.store.busRows)
-                            button(bus.name,
-                                () => controller.store.selectBus(bus.id),
-                                active: bus.active, size: 28, height: 56),
-                        ])),
-                    if (controller.pageCount > 1) ...[
-                      button(
-                          '‹',
-                          controller.page > 0
-                              ? () => controller.nextPage(-1)
-                              : null),
-                      title(
-                          '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
-                          24,
-                          size: 16),
-                      button(
-                          '›',
-                          controller.page + 1 < controller.pageCount
-                              ? () => controller.nextPage(1)
-                              : null),
+                          if (compactGroups)
+                            Builder(builder: (anchor) => button(
+                                'Mute groups',
+                                () => showMixerMuteGroups(anchor, controller),
+                                active: controller.store.engine.muteGroups.values
+                                    .any((on) => on),
+                                size: AppDesign.smallLabel))
+                          else
+                            for (var group = 0; group < count; group++)
+                              button(controller.muteGroupLabel(group),
+                                  () => controller.toggleMuteGroup(group),
+                                  active: controller.store.engine
+                                          .muteGroups[group] ==
+                                      true),
+                        ]),
+                      ),
                     ],
-                    title('MASTERS', 31, size: 16),
-                  ])))),
-                  // Keep monitoring recovery reachable even when the provider
-                  // exposes enough banks/buses to fill the scrolling rail.
-                  if (controller.hasSolo)
-                    button(
+                    if (showHeadings) heading('MIX'),
+                    ColoredBox(
+                      color: palette.background,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showHeadings)
+                            SizedBox(
+                              height: AppDesign.spaceLg,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppDesign.spaceSm),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: text(controller.master.number,
+                                      AppDesign.smallLabel,
+                                      color: controller.masterColor(palette),
+                                      weight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          Builder(builder: (anchor) => button(
+                              controller.master.name,
+                              hasOutputs
+                                  ? () => showMixerBuses(anchor, controller)
+                                  : null,
+                              color: palette.text,
+                              size: AppDesign.sectionTitle,
+                              weight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                    if (hasOutputs) ...[
+                      if (showHeadings) heading('OUTPUTS'),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: palette.background,
+                          border: Border.all(color: palette.cap),
+                          borderRadius: AppDesign.radius,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: outputPadding),
+                          child: Column(children: [
+                            for (final output in outputs.take(visibleOutputs))
+                              button(output.name,
+                                  () => controller.store.selectBus(output.id),
+                                  active: output.active),
+                            if (visibleOutputs < outputs.length)
+                              Builder(builder: (anchor) => button(
+                                  visibleOutputs == 0
+                                      ? 'Select output'
+                                      : 'More outputs',
+                                  () => showMixerBuses(anchor, controller),
+                                  size: AppDesign.smallLabel)),
+                          ]),
+                        ),
+                      ),
+                    ],
+                    if (hasPages) ...[
+                      Center(
+                        child: ConsoleIconButton(
+                          label: 'Previous channels',
+                          onPressed: controller.page > 0
+                              ? () => controller.nextPage(-1)
+                              : null,
+                          child: const Icon(Icons.chevron_left),
+                        ),
+                      ),
+                      SizedBox(
+                        height: AppDesign.spaceLg,
+                        child: Center(child: text(
+                            '${controller.page + 1}/${controller.pageCount}',
+                            AppDesign.smallLabel)),
+                      ),
+                      Center(
+                        child: ConsoleIconButton(
+                          label: 'Next channels',
+                          onPressed: controller.page + 1 < controller.pageCount
+                              ? () => controller.nextPage(1)
+                              : null,
+                          child: const Icon(Icons.chevron_right),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    if (hasSolo)
+                      button(
                         'Clear solos',
                         controller.store.canClearSolos
                             ? controller.store.clearSolos
                             : null,
-                        size: 18,
-                        color: ConsolePalette.of(context).solo),
-                ]);
+                        size: AppDesign.smallLabel,
+                        color: palette.solo,
+                      ),
+                  ],
+                );
               })
             : SizedBox(
                 height: 54,
