@@ -97,18 +97,23 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
         final eqTop =
             widget.showGain ? insetY + gainHeight + insetY : insetY;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
-        Widget place(double top, double height, Widget child) =>
+        Widget place(double top, double height, Widget child,
+                {double horizontalInset = AppDesign.spaceSm}) =>
             Positioned(
-                left: AppDesign.spaceSm,
-                right: AppDesign.spaceSm,
+                left: horizontalInset,
+                right: horizontalInset,
                 top: top,
                 height: height,
                 child: child);
-        return DecoratedBox(
+        final palette = ConsolePalette.of(context);
+        return Container(
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-                color: ConsolePalette.of(context).well,
+                color: palette.well,
+                borderRadius: AppDesign.radius),
+            foregroundDecoration: BoxDecoration(
                 borderRadius: AppDesign.radius,
-                border: Border.all(color: ConsolePalette.of(context).line)),
+                border: Border.all(color: palette.line)),
             child: Stack(children: [
               if (widget.showGain)
                 place(
@@ -174,7 +179,8 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                       channel: widget.channel,
                       compact: !widget.showGain,
                       showPhantom: widget.showPhantom,
-                      onOpen: widget.onOpen)),
+                      onOpen: widget.onOpen),
+                  horizontalInset: 0),
               place(
                   dynamicsTop,
                   dynamicsHeight,
@@ -221,8 +227,7 @@ class MixerEqPreview extends StatelessWidget {
       label: '${channel.name} EQ and processing',
       child: Tooltip(
           message: 'Open ${channel.name} processing',
-          child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+          child: ClipRect(
               child: Stack(fit: StackFit.expand, children: [
                 CustomPaint(
                     painter:
