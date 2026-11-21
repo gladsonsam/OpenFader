@@ -75,6 +75,7 @@ class MixerToggle extends StatelessWidget {
   final bool on;
   final Color activeColor, activeForeground;
   final double visualHeight, fontSize;
+  final double horizontalInset;
   final VoidCallback? onPressed;
   const MixerToggle(
       {super.key,
@@ -84,6 +85,7 @@ class MixerToggle extends StatelessWidget {
       required this.on,
       this.visualHeight = AppDesign.touchTarget,
       this.fontSize = AppDesign.sectionTitle,
+      this.horizontalInset = 0,
       required this.activeColor,
       required this.activeForeground,
       required this.onPressed});
@@ -106,7 +108,10 @@ class MixerToggle extends StatelessWidget {
                   width: double.infinity,
                   child: Center(
                       child: LayoutBuilder(
-                          builder: (context, bounds) => TextButton(
+                          builder: (context, bounds) {
+                            final faceWidth = math.max(
+                                0.0, bounds.maxWidth - 2 * horizontalInset);
+                            return TextButton(
                               onPressed: onPressed,
                               style: TextButton.styleFrom(
                                       backgroundColor: on
@@ -118,7 +123,10 @@ class MixerToggle extends StatelessWidget {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: AppDesign.spaceXs),
                                       minimumSize:
-                                          Size(bounds.maxWidth, visualHeight),
+                                          Size(faceWidth, visualHeight),
+                                      maximumSize: horizontalInset > 0
+                                          ? Size(faceWidth, double.infinity)
+                                          : null,
                                       visualDensity: VisualDensity.standard,
                                       tapTargetSize:
                                           MaterialTapTargetSize.padded,
@@ -158,5 +166,6 @@ class MixerToggle extends StatelessWidget {
                                   ExcludeSemantics(
                                       child: Text(label,
                                           maxLines: 1,
-                                          overflow: TextOverflow.ellipsis)))))))));
+                                          overflow: TextOverflow.ellipsis)));
+                          }))))));
 }

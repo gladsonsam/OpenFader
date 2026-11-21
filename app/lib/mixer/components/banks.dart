@@ -121,6 +121,7 @@ class MixerBanks extends StatelessWidget {
                 final outputs = controller.store.busRows;
                 final hasOutputs = outputs.isNotEmpty;
                 final hasGroups = count > 0;
+                final groupRows = (count + 1) ~/ 2;
                 final hasPages = controller.pageCount > 1;
                 final hasSolo = controller.hasSolo;
                 const rowHeight = AppDesign.touchTarget;
@@ -141,11 +142,15 @@ class MixerBanks extends StatelessWidget {
                         fixedSpace -
                         (showHeadings ? headingSpace : 0)) /
                     rowHeight;
-                final compactGroups = hasGroups &&
-                    count + outputs.length > availableRows;
-                final outputSlots =
-                    (availableRows.floor() - (compactGroups ? 1 : count))
-                        .clamp(0, outputs.length);
+                final groupSlots =
+                    (availableRows.floor() - (hasOutputs ? 1 : 0))
+                        .clamp(0, groupRows);
+                final showMoreGroups = groupSlots < groupRows && groupSlots > 0;
+                final visibleGroups =
+                    ((groupSlots - (showMoreGroups ? 1 : 0)) * 2)
+                        .clamp(0, count);
+                final outputSlots = (availableRows.floor() - groupSlots)
+                    .clamp(0, outputs.length);
                 final visibleOutputs = outputSlots < outputs.length
                     ? (outputSlots - 1).clamp(0, outputs.length)
                     : outputs.length;
@@ -196,25 +201,41 @@ class MixerBanks extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (hasGroups) ...[
+                    if (groupSlots > 0) ...[
                       if (showHeadings) heading('MUTE'),
                       ColoredBox(
                         color: palette.background,
                         child: Column(children: [
-                          if (compactGroups)
+                          for (var first = 0; first < visibleGroups; first += 2)
+                            Row(children: [
+                              for (var group = first; group < first + 2; group++)
+                                Expanded(
+                                    child: group >= visibleGroups
+                                        ? const SizedBox.shrink()
+                                        : MixerToggle(
+                                            label: controller.muteGroupLabel(group),
+                                            channelName: 'Mute group ${group + 1}',
+                                            on: controller.store.engine
+                                                    .muteGroups[group] ==
+                                                true,
+                                            visualHeight:
+                                                AppDesign.actionDenseHeight,
+                                            fontSize: AppDesign.smallLabel,
+                                            horizontalInset: AppDesign.spaceXs,
+                                            activeColor: palette.mute,
+                                            activeForeground: palette.onDanger,
+                                            onPressed: () => controller
+                                                .toggleMuteGroup(group))),
+                            ]),
+                          if (showMoreGroups)
                             Builder(builder: (anchor) => button(
-                                'Mute groups',
+                                visibleGroups == 0 ? 'Mute groups' : 'More groups',
                                 () => showMixerMuteGroups(anchor, controller),
-                                active: controller.store.engine.muteGroups.values
-                                    .any((on) => on),
-                                size: AppDesign.smallLabel))
-                          else
-                            for (var group = 0; group < count; group++)
-                              button(controller.muteGroupLabel(group),
-                                  () => controller.toggleMuteGroup(group),
-                                  active: controller.store.engine
-                                          .muteGroups[group] ==
-                                      true),
+                                color: controller.store.engine.muteGroups.values
+                                        .any((on) => on)
+                                    ? palette.mute
+                                    : null,
+                                size: AppDesign.smallLabel)),
                         ]),
                       ),
                     ],
@@ -250,7 +271,7 @@ class MixerBanks extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (hasOutputs) ...[
+                    if (outputSlots > 0) ...[
                       if (showHeadings) heading('OUTPUTS'),
                       DecoratedBox(
                         decoration: BoxDecoration(

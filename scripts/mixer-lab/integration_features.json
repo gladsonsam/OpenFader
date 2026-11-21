@@ -436,7 +436,8 @@
         "crates/core/src/lib.rs",
         "app/lib/screens/channel.dart",
         "app/lib/engine.dart",
-        "app/lib/mixer/components/banks.dart"
+        "app/lib/mixer/components/banks.dart",
+        "app/lib/mixer/components/toggle.dart"
       ],
       "engine_contracts": [
         "get_mute_group",
@@ -467,7 +468,7 @@
       "required_hooks": [],
       "acceptance": {
         "assignments": "Distinguish subgroup, mute-group and DCA/VCA domains; verify advertised memberships and group masters.",
-        "compact_rail": "Keep all advertised mute groups reachable from the mixer rail or its compact group menu without scrolling the rail."
+        "compact_rail": "Show advertised mute groups in two columns with red active states. Keep remaining groups reachable through the group menu when the rail has limited height, without scrolling the rail."
       },
       "required_evidence": [
         "unit",
