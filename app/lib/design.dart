@@ -24,6 +24,19 @@ abstract final class AppDesign {
 
   static const touchTarget = 44.0;
   static const controlHeight = 48.0;
+
+  // Action bodies are painted smaller than their interactive target. The target
+  // stays at least [touchTarget]; each density only changes the painted body.
+  static const actionDenseHeight = 28.0;
+  static const actionCompactHeight = 30.0;
+  static const actionRegularHeight = 34.0;
+  static const actionLargeHeight = 38.0;
+  static const actionHeroHeight = controlHeight;
+  static const actionRadius = 8.0;
+  static const actionCorners =
+      BorderRadius.all(Radius.circular(actionRadius));
+  static const actionPadding =
+      EdgeInsets.symmetric(horizontal: spaceMd, vertical: spaceXs);
   static const settingsRowHeight = 68.0;
   static const compactSettingsRowHeight = 64.0;
   static const controlSize = Size(touchTarget, touchTarget);

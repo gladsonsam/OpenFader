@@ -24,7 +24,7 @@ enum ConsoleButtonVariant {
 
 /// Horizontal padding of a [ConsoleButton].
 enum ConsoleButtonPadding {
-  /// [AppDesign.controlPadding].
+  /// The density's [ConsoleButtonSize.horizontalPadding].
   standard,
 
   /// Horizontal [AppDesign.spaceSm] only.
@@ -34,29 +34,42 @@ enum ConsoleButtonPadding {
   none,
 }
 
-/// Label size of a [ConsoleButton]. Every size keeps the 44-point target.
+/// Density of a [ConsoleButton]: label size, painted body height and body
+/// padding. The interactive target stays at least [AppDesign.touchTarget]
+/// tall, independent of the painted body.
 enum ConsoleButtonSize {
   /// Smallest label, for dense inline actions.
-  dense(AppDesign.minorText),
+  dense(AppDesign.minorText, AppDesign.actionDenseHeight, AppDesign.spaceSm),
 
   /// Dense toolbars and inline actions.
-  compact(AppDesign.smallLabel),
+  compact(
+      AppDesign.smallLabel, AppDesign.actionCompactHeight, AppDesign.spaceSm),
 
   /// Dialog actions and standard form buttons.
-  regular(AppDesign.controlLabel),
+  regular(AppDesign.controlLabel, AppDesign.actionRegularHeight,
+      AppDesign.spaceMd),
 
   /// Prominent page-level actions.
-  large(AppDesign.rowLabel),
+  large(AppDesign.rowLabel, AppDesign.actionLargeHeight, AppDesign.spaceMd),
 
   /// Front-door actions with a large glyph.
-  hero(AppDesign.entryValue);
+  hero(AppDesign.entryValue, AppDesign.actionHeroHeight, AppDesign.spaceMd);
 
   final double fontSize;
-  const ConsoleButtonSize(this.fontSize);
+
+  /// Painted height of the button body. Padding outside it keeps the
+  /// interactive target at least [AppDesign.touchTarget] tall.
+  final double bodyHeight;
+
+  /// Horizontal padding inside the painted body.
+  final double horizontalPadding;
+  const ConsoleButtonSize(
+      this.fontSize, this.bodyHeight, this.horizontalPadding);
 }
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
-/// 44-point target. Colour indicates state or intent rather than screen type.
+/// target of at least 44 points around a smaller painted body. Colour indicates
+/// state or intent rather than screen type.
 class ConsoleButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -129,23 +142,29 @@ class ConsoleButton extends StatelessWidget {
               foregroundColor: textColor,
               disabledBackgroundColor: quiet ? Colors.transparent : p.selected,
               disabledForegroundColor: p.mutedText,
-              minimumSize: AppDesign.controlSize,
+              minimumSize: Size(0, size.bodyHeight),
               alignment: switch (alignment) {
                 MainAxisAlignment.start => Alignment.centerLeft,
                 MainAxisAlignment.end => Alignment.centerRight,
                 _ => Alignment.center,
               },
               padding: switch (padding) {
-                ConsoleButtonPadding.standard => AppDesign.controlPadding,
+                ConsoleButtonPadding.standard => EdgeInsets.symmetric(
+                    horizontal: size.horizontalPadding,
+                    vertical: AppDesign.spaceXs),
                 ConsoleButtonPadding.tight => const EdgeInsets.symmetric(
-                  horizontal: AppDesign.spaceSm,
-                ),
+                    horizontal: AppDesign.spaceSm,
+                    vertical: AppDesign.spaceXs),
                 ConsoleButtonPadding.none => EdgeInsets.zero,
               },
               textStyle: AppDesign.type(size.fontSize, weight: FontWeight.w600),
               shape: const RoundedRectangleBorder(
-                borderRadius: AppDesign.radius,
+                borderRadius: AppDesign.actionCorners,
               ),
+              // The painted body is smaller than the target. Padded keeps the
+              // Material target around the compact body; the enclosing layout
+              // may clamp it to the 44-point minimum.
+              tapTargetSize: MaterialTapTargetSize.padded,
               side: outlined ? BorderSide(color: active) : BorderSide.none,
             ).copyWith(
               animationDuration: animationsOff

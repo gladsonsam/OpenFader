@@ -95,6 +95,8 @@ ThemeData u4Theme(
     splashFactory: NoSplash.splashFactory,
   );
   final shape = RoundedRectangleBorder(borderRadius: AppDesign.radius);
+  final actionShape =
+      RoundedRectangleBorder(borderRadius: AppDesign.actionCorners);
   return theme.copyWith(
     textTheme: theme.textTheme
         .apply(bodyColor: p.text, displayColor: p.text)
@@ -104,18 +106,18 @@ ThemeData u4Theme(
             bodyLarge: AppDesign.type(AppDesign.controlLabel, color: p.text),
             titleSmall: AppDesign.type(AppDesign.controlLabel,
                 color: p.text, weight: FontWeight.w600)),
-    // Keep painted and tappable bounds aligned across Material/custom controls.
-    // Compact page density must not shrink buttons below the 44-point target.
+    // Painted action bodies stay smaller than their interactive targets.
+    // Compact page density must not shrink the target below 44 points.
     textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.text,
       backgroundColor: p.control,
-      minimumSize: AppDesign.controlSize,
-      padding: AppDesign.controlPadding,
+      minimumSize: const Size(0, AppDesign.actionRegularHeight),
+      padding: AppDesign.actionPadding,
       visualDensity: VisualDensity.standard,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      shape: shape,
+      tapTargetSize: MaterialTapTargetSize.padded,
+      shape: actionShape,
       textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
     ).copyWith(
             overlayColor: WidgetStateProperty.resolveWith(
@@ -128,35 +130,35 @@ ThemeData u4Theme(
         style: OutlinedButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.accent,
-      minimumSize: AppDesign.controlSize,
-      padding: AppDesign.controlPadding,
+      minimumSize: const Size(0, AppDesign.actionRegularHeight),
+      padding: AppDesign.actionPadding,
       visualDensity: VisualDensity.standard,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      tapTargetSize: MaterialTapTargetSize.padded,
       textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
       side: BorderSide(color: p.lineCtl),
-      shape: shape,
+      shape: actionShape,
     )),
     filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.onAccent,
       backgroundColor: p.accent,
-      minimumSize: AppDesign.controlSize,
-      padding: AppDesign.controlPadding,
+      minimumSize: const Size(0, AppDesign.actionRegularHeight),
+      padding: AppDesign.actionPadding,
       visualDensity: VisualDensity.standard,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      tapTargetSize: MaterialTapTargetSize.padded,
       textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
-      shape: shape,
+      shape: actionShape,
     )),
     elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
       animationDuration: AppDesign.feedbackDuration,
-      minimumSize: AppDesign.controlSize,
-      padding: AppDesign.controlPadding,
+      minimumSize: const Size(0, AppDesign.actionRegularHeight),
+      padding: AppDesign.actionPadding,
       visualDensity: VisualDensity.standard,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      tapTargetSize: MaterialTapTargetSize.padded,
       textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
-      shape: shape,
+      shape: actionShape,
     )),
     iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
@@ -166,7 +168,7 @@ ThemeData u4Theme(
       minimumSize: AppDesign.controlSize,
       visualDensity: VisualDensity.standard,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      shape: shape,
+      shape: actionShape,
     )),
     inputDecorationTheme: InputDecorationThemeData(
       filled: true,
