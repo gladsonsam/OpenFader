@@ -265,12 +265,12 @@ class _FaderGeometry {
   /// Distance from the well edge to the cap centre at the first/last dB.
   /// Reserve the held cap, not the resting cap plus a row gap: that extra gap
   /// was dead space above and below the scale on short strips.
-  double get endClearance => capHeight * heldScale / 2 + AppDesign.spaceXs;
+  double get endClearance => math.max(
+      capHeight * heldScale / 2 + AppDesign.spaceXs, capHeight / 2 + touchPad);
 
   double get top =>
-      math.max(endClearance, size.height * (compact ? 38 / 534 : 65 / 647));
-  double get bottom =>
-      math.max(endClearance, size.height * (compact ? 56 / 534 : 55 / 647));
+      math.max(endClearance, MixerMeter.scaleInset + AppDesign.spaceXs);
+  double get bottom => endClearance;
   double get travel => math.max(1, size.height - top - bottom);
   double get x => size.width * (compact ? 57 / 96.2 : 101 / 178.2);
 
@@ -334,6 +334,7 @@ class _ScalePainter extends CustomPainter {
   bool shouldRepaint(_ScalePainter old) =>
       old.palette != palette ||
       old.g.size != g.size ||
+      old.g.compact != g.compact ||
       old.g.largeTargets != g.largeTargets ||
       old.number != number;
 }

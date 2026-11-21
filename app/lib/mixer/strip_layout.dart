@@ -24,6 +24,7 @@ enum StripElement {
   nameplate(
     label: 'Nameplate',
     description: 'Channel number, icon and name',
+    mandatory: true,
   );
 
   const StripElement({
@@ -77,16 +78,11 @@ class StripLayout {
   final double faderWeight;
   final bool compactProcessing;
 
-  /// Show the channel icon above the nameplate. Hiding it gives the fader the
-  /// space back on shorter windows while keeping the name and channel number.
-  final bool showArtwork;
-
   const StripLayout({
     required this.order,
     required this.visible,
     this.faderWeight = defaultFaderWeight,
     this.compactProcessing = false,
-    this.showArtwork = true,
   });
 
   factory StripLayout.defaults() => StripLayout(
@@ -190,14 +186,12 @@ class StripLayout {
     Set<StripElement>? visible,
     double? faderWeight,
     bool? compactProcessing,
-    bool? showArtwork,
   }) =>
       StripLayout(
         order: order ?? this.order,
         visible: visible ?? this.visible,
         faderWeight: faderWeight ?? this.faderWeight,
         compactProcessing: compactProcessing ?? this.compactProcessing,
-        showArtwork: showArtwork ?? this.showArtwork,
       );
 
   Map<String, Object> toJson() => {
@@ -206,7 +200,6 @@ class StripLayout {
         'visible': [for (final el in visible) el.key],
         'faderWeight': faderWeight,
         'compactProcessing': compactProcessing,
-        'showArtwork': showArtwork,
       };
 
   String encode() => jsonEncode(toJson());
@@ -247,8 +240,7 @@ class StripLayout {
         final element = StripElement.fromKey(entry);
         if (element != null) parsed.add(element);
       }
-      // The fader is mandatory: a strip without it is unusable.
-      parsed.add(StripElement.fader);
+      parsed.addAll(StripElement.values.where((element) => element.mandatory));
       visible = parsed;
     }
     final weight = (json['faderWeight'] as num?)?.toDouble() ?? defaultFaderWeight;
@@ -257,8 +249,6 @@ class StripLayout {
       visible: visible,
       faderWeight: weight.clamp(1.0, 6.0),
       compactProcessing: (json['compactProcessing'] as bool?) ?? false,
-      // Payloads written before this preference omit the key and keep artwork.
-      showArtwork: (json['showArtwork'] as bool?) ?? true,
     );
   }
 
@@ -269,13 +259,11 @@ class StripLayout {
       visible.length == other.visible.length &&
       visible.containsAll(other.visible) &&
       faderWeight == other.faderWeight &&
-      compactProcessing == other.compactProcessing &&
-      showArtwork == other.showArtwork;
+      compactProcessing == other.compactProcessing;
 
   @override
   int get hashCode => Object.hash(Object.hashAll(order),
-      Object.hashAllUnordered(visible), faderWeight, compactProcessing,
-      showArtwork);
+      Object.hashAllUnordered(visible), faderWeight, compactProcessing);
 }
 
 bool _listEquals(List<StripElement> a, List<StripElement> b) {

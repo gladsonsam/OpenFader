@@ -80,6 +80,9 @@ Read this before changing a screen, panel or mixer strip.
   surface. Use the existing toolbar for a compact, actionable status indicator.
   Add a full-width row only while a task needs it, and check fader travel at
   the shortest supported window.
+- Keep channel identity visible as strips get shorter. Give spare strip
+  height to usable fader travel first. Add EQ and dynamics previews only
+  after the available height can support them alongside the fader.
 - Visual bounds and hit areas are separate. Input keeps at least
   `AppDesign.touchTarget` (44); painted content stays inside the space it is
   given. A row that cannot hold both is a layout bug: shrink the visual body,

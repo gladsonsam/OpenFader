@@ -71,7 +71,7 @@ class MixerNameplate extends StatelessWidget {
             final identityHeight = math.min(iconHeight, nameOffset);
             final numberHeight =
                 math.min(identityHeight, (compact ? 20 : 26) * sx);
-            final artworkPadding = math.min(AppDesign.spaceSm, identityHeight / 4);
+            const artworkPadding = AppDesign.spaceXs;
             final artworkSize = math.min((compact ? 48 : 86) * sx,
                 math.max(0.0, identityHeight - artworkPadding * 2));
             return Stack(clipBehavior: Clip.none, children: [

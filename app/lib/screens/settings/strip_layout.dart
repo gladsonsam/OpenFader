@@ -137,15 +137,6 @@ class _StripLayoutSection extends StatelessWidget {
               ),
             ),
             _PrefRow(
-              label: 'Channel artwork',
-              desc: 'Channel icon above the name',
-              trailing: _Toggle(
-                label: 'Channel artwork',
-                value: layout.showArtwork,
-                onChanged: (v) => apply(layout.copyWith(showArtwork: v)),
-              ),
-            ),
-            _PrefRow(
               label: 'Fader size',
               desc: layout.faderWeight.toStringAsFixed(1),
               trailing: SizedBox(

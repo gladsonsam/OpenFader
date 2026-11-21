@@ -31,15 +31,11 @@ class MixerStrip extends StatefulWidget {
   final ValueChanged<MixerReadoutControl>? onControlFocus;
   final bool compact;
 
-  /// A bank supplies one value for aligned rows; standalone strips use their
-  /// own artwork metadata.
-  final bool? reserveArtwork;
   final double bottomInset;
   const MixerStrip(
       {super.key,
       required this.channel,
       required this.controller,
-      this.reserveArtwork,
       this.onControlFocus,
       this.compact = false,
       this.bottomInset = 0,
@@ -60,7 +56,6 @@ class _MixerStripState extends State<MixerStrip> {
   ValueChanged<MixerReadoutControl>? get onControlFocus =>
       widget.onControlFocus;
   bool get compact => widget.compact;
-  bool? get reserveArtwork => widget.reserveArtwork;
   double get bottomInset => widget.bottomInset;
   final _feedback = InlineFeedbackController();
   @override
@@ -91,15 +86,9 @@ class _MixerStripState extends State<MixerStrip> {
             : AppDesign.actionCompactHeight;
         final toggleFontSize =
             shortSurface ? AppDesign.body : AppDesign.controlLabel;
-        final hasArtwork = ch.showsArtwork;
-        var showArtwork = layout.showArtwork &&
-            (reserveArtwork ?? hasArtwork) &&
-            box.maxHeight >= 480;
-        var identityHeight = showArtwork
-            ? AppDesign.spaceXl + math.min(32.0, box.maxWidth * .35)
-            : AppDesign.spaceXl;
+        const identityHeight = AppDesign.space2xl;
         // Tape grows by the system bottom inset so names clear the nav bar.
-        final nameHeight = AppDesign.space2xl + bottomInset;
+        final nameHeight = AppDesign.spaceXl + bottomInset;
         final gap = shortSurface ? AppDesign.spaceXs : AppDesign.spaceSm;
         var compactRack =
             compact || layout.compactProcessing || box.maxHeight < 520;
@@ -126,6 +115,7 @@ class _MixerStripState extends State<MixerStrip> {
         // 200 still leaves a usable travel, and a taller floor pushes the
         // nameplate past the bottom on the shortest windows.
         final minimumFaderHeight = math.max(200.0, box.maxHeight * .55);
+        final preferredFaderHeight = math.max(200.0, box.maxHeight * .60);
         final hasFader = visible.contains(StripElement.fader);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
@@ -135,24 +125,23 @@ class _MixerStripState extends State<MixerStrip> {
             (visible.lastOrNull == StripElement.nameplate
                 ? 0.0
                 : AppDesign.spaceSm);
-        bool faderNeedsSpace() =>
-            hasFader &&
-            box.maxHeight - fixedHeight() - rowSpacing() < minimumFaderHeight;
+        bool faderNeedsSpace(double target) =>
+            hasFader && box.maxHeight - fixedHeight() - rowSpacing() < target;
         // Processing stays available from the channel screen. Prefer a small
         // EQ preview, then remove the preview entirely before reducing travel.
-        if (faderNeedsSpace() && visible.contains(StripElement.processing)) {
+        if (faderNeedsSpace(preferredFaderHeight) &&
+            visible.contains(StripElement.processing)) {
           compactRack = true;
           heights[StripElement.processing] = AppDesign.touchTarget;
         }
-        if (faderNeedsSpace() && showArtwork) {
-          showArtwork = false;
-          identityHeight = AppDesign.spaceXl;
-          heights[StripElement.nameplate] = identityHeight + nameHeight;
+        if (faderNeedsSpace(preferredFaderHeight)) {
+          visible.remove(StripElement.processing);
         }
-        if (faderNeedsSpace()) visible.remove(StripElement.processing);
         // Pan is secondary to level control on the shortest surfaces; it is
         // still accessible by opening the channel. Mute and Solo stay at hand.
-        if (faderNeedsSpace()) visible.remove(StripElement.pan);
+        if (faderNeedsSpace(minimumFaderHeight)) {
+          visible.remove(StripElement.pan);
+        }
         final fixed = fixedHeight();
         final spacing = rowSpacing();
         final contentHeight = math.max(box.maxHeight,
@@ -257,7 +246,7 @@ class _MixerStripState extends State<MixerStrip> {
                                 positions[StripElement.nameplate]?.height ?? 0,
                             child: MixerNameplate(
                                 channel: ch,
-                                showArtwork: showArtwork && hasArtwork,
+                                showArtwork: ch.showsArtwork,
                                 iconHeight: identityHeight,
                                 nameHeight: nameHeight,
                                 bottomInset: bottomInset,

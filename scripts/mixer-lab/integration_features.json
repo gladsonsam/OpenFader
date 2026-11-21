@@ -141,6 +141,8 @@
         "crates/core/src/lib.rs",
         "app/lib/mixer/store.dart",
         "app/lib/mixer/components/strip.dart",
+        "app/lib/mixer/components/fader.dart",
+        "app/lib/mixer/components/nameplate.dart",
         "app/lib/mixer/components/toggle.dart"
       ],
       "engine_contracts": [
@@ -160,7 +162,7 @@
       "required_hooks": [],
       "acceptance": {
         "controls": "Read/write input, destination and main levels/mutes with independent native readback and provider ranges.",
-        "fader_space": "At short and tall viewport sizes, prioritize fader travel over artwork, labels and processing previews; compact control visuals keep full hit targets and must not overlap the fader or safe area."
+        "fader_space": "At short and tall heights, preserve channel identity in a compact nameplate, give remaining height to usable fader travel, and show EQ and dynamics previews only when space allows. Keep full hit targets clear of adjacent rows and safe areas."
       },
       "required_evidence": [
         "unit",

@@ -13,7 +13,7 @@ The mixer screen is a row of channel strips with the master strip fixed on the r
 
 Each strip has, from top to bottom:
 
-- a gain and EQ preview (tap it to open [channel processing](/docs/channel-processing))
+- gain, EQ and dynamics previews when the strip is tall enough (tap a preview to open [channel processing](/docs/channel-processing))
 - a pan bar
 - **Mute**
 - the fader, with the meter beside it
@@ -105,7 +105,7 @@ Go to **Settings**, **Appearance & controls**, **Channel strips**:
 - **Monitor** hides processing and pan and gives the fader more room.
 - **Phone** is tuned for small screens.
 
-You can also turn single parts on or off, change the **Fader size**, reorder the parts, and turn on **Compact processing** to show only the EQ preview on every strip. **Larger fader touch targets** makes the fader cap easier to grab.
+You can turn optional controls on or off, change **Fader size**, and reorder the parts. **Compact processing** uses the EQ preview when space allows. The channel name and its assigned icon stay visible as the window gets shorter. **Larger fader touch targets** makes the fader cap easier to grab.
 
 ## Meters
 
