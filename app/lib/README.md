@@ -38,6 +38,6 @@ painters. Do not merge superficially similar meters or faders whose scales or
 protocol values differ. The shell's 80 ms poll loop remains the only meter
 clock, and hot-path strip changes update per-strip notifiers in place.
 
-Verification and repository rules are in the root `AGENTS.md`: clean analyzer,
-iOS build and both simulator sizes, plus the locked Rust workspace tests. No
-frontend test suites are currently permitted.
+Follow the root `AGENTS.md` verification rules. Run the analyzer and locked
+Rust workspace tests, and visually verify changes in the running app. The
+Linux desktop app qualifies on Linux. Frontend test suites are prohibited.

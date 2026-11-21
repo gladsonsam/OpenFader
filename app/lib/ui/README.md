@@ -18,10 +18,12 @@ acyclic and avoid accidentally coupling primitives to the whole library.
 
 - Action: `ConsoleButton`. Variants: `secondary` (default), `primary` (main
   action), `quiet` (low emphasis, e.g. Cancel in dense spots), `danger`
-  (outlined risky action), `destructive` (filled irreversible confirm). Sizes:
-  `compact` (default), `regular` (dialogs, forms), `large` (page actions).
-  `selected` marks a toggle on state. Extra size `dense` (11) and `hero` (24,
-  front-door actions). `padding: ConsoleButtonPadding.tight/none` for fixed
+  (outlined risky action), `destructive` (filled irreversible confirm). Sizes
+  set label size and painted density: `dense` (11, 28-high body), `compact`
+  (13, 30, default), `regular` (16, 34, dialogs/forms), `large` (17, 38, page
+  actions) and `hero` (24, 48, front-door actions). Every size keeps a target
+  of at least 44 points around the smaller painted body. `selected` marks a
+  toggle on state. `padding: ConsoleButtonPadding.tight/none` for fixed
   slots, `leading`/`trailing` widgets (glyph, drop-down arrow), `alignment`,
   `subtitle` (muted second line), `foreground` (on-colour when filled) and
   `accent` (also the text colour of `quiet`). Icon-only: `ConsoleIconButton`.
@@ -59,8 +61,13 @@ owning audio modules. Feature-specific widgets stay within their feature until
 there is an actual shared responsibility to extract.
 
 When changing a shared component, inspect every consumer, run `flutter analyze`,
-build the app, and check both phone and tablet simulators. Do not add frontend
-test suites (see the repository's AGENTS.md). Rust workspace tests remain the
-protocol regression gate.
+and visually verify the running app at the viewport sizes relevant to the
+change. The Linux desktop app qualifies on Linux. Follow the repository's
+`AGENTS.md` for the remaining gates and the prohibition on frontend test suites.
+Its Visual standards section covers visual bounds versus hit areas, strip
+insets, shared spacing tokens, label budgets and semantics; use
+`scripts/visual_qa.py` for repeatable Linux captures.
 
-`python3 scripts/ui_guard.py check` fails on new raw buttons, dialogs, numeric font sizes, color literals and breakpoints outside this library; see AGENTS.md.
+`python3 scripts/ui_guard.py check` fails on new raw buttons, dialogs, numeric
+font sizes, color literals and breakpoints outside this library, and on literal
+action labels over 5 words or 36 characters; see AGENTS.md.

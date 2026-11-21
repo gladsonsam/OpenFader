@@ -27,7 +27,7 @@ fn registry() { vec![RegisteredDriver { name: "fixture", driver: driver() }] }
         self.feature = {'id': 'recorder_names', 'label': 'Recorder names', 'scope': 'provider',
                         'engine_contracts': ['recorder_descriptor'], 'required_hooks': ['recorder_descriptor'],
                         'shared_paths': ['app/recorder.dart'], 'acceptance': {'patch': 'Read actual patch'},
-                        'required_evidence': ['unit', 'hardware', 'ipad', 'iphone']}
+                        'required_evidence': ['unit', 'hardware', 'ui']}
         self.provider = {'schema': 1, 'id': 'fixture', 'brand': 'Fixture', 'family': 'Fixture',
                          'scope': 'provider', 'adapter': 'fixture::Driver',
                          'source_paths': ['crates/fixture/src/lib.rs'], 'source_globs': ['crates/fixture/src/**/*.rs'],
@@ -54,7 +54,8 @@ fn registry() { vec![RegisteredDriver { name: "fixture", driver: driver() }] }
         artifact.write_text(json.dumps({'result': 'pass', 'checks': ['patch']}))
         return {'model': 'fixture-one', 'feature': 'recorder_names', 'kind': kind,
                 'result': 'pass', 'checks': ['patch'], 'recorded_at': '2026-01-01T00:00:00Z',
-                'firmware': 'fixture-1', 'device': 'fixture simulator', 'artifact': str(artifact),
+                'firmware': 'fixture-1', 'device': 'fixture simulator',
+                'platform': 'fixture desktop', 'artifact': str(artifact),
                 'sha256': matrix.digest(artifact), 'source_sha256': {p: matrix.digest(self.root / p) for p in paths}}
 
     def test_real_catalogue_covers_registered_drivers(self):
@@ -154,13 +155,29 @@ async fn second() { let c = '}'; let s = "{ } \\\""; }
                                                       'references': ['crates/fixture/src/lib.rs']}
         self.save_provider()
         cell = matrix.build(self.root)['cells'][0]
-        records = [self.evidence(kind, cell['source_paths']) for kind in matrix.KINDS if kind != 'emulator']
+        records = [self.evidence(kind, cell['source_paths']) for kind in cell['required_evidence']]
         self.assertTrue(matrix.build(self.root, records)['cells'][0]['complete'])
         self.assertFalse(matrix.build(self.root, records[:-1])['cells'][0]['complete'])
         self.put('crates/fixture/src/lib.rs', 'pub struct ChangedDriver;')
         changed = matrix.build(self.root, records)['cells'][0]
         self.assertFalse(changed['complete'])
         self.assertEqual({p['status'] for p in changed['evidence'].values()}, {'stale'})
+
+    def test_ui_evidence_records_platform_and_ios_is_optional(self):
+        self.provider['features']['recorder_names'] = {'state': 'implemented', 'reason': 'Reviewed',
+                                                      'references': ['crates/fixture/src/lib.rs']}
+        self.save_provider()
+        cell = matrix.build(self.root)['cells'][0]
+        records = [self.evidence(kind, cell['source_paths']) for kind in ('unit', 'hardware', 'ui')]
+        self.assertTrue(matrix.build(self.root, records)['cells'][0]['complete'])
+        ios = self.evidence('ipad', cell['source_paths'])
+        self.assertTrue(matrix.build(self.root, [*records, ios])['cells'][0]['complete'])
+        ios.pop('device')
+        with self.assertRaisesRegex(ValueError, 'device'):
+            matrix.build(self.root, [*records, ios])
+        records[2].pop('platform')
+        with self.assertRaisesRegex(ValueError, 'platform'):
+            matrix.build(self.root, records)
 
     def test_tampered_artifact_is_rejected(self):
         cell = matrix.build(self.root)['cells'][0]

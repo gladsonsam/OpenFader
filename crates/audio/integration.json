@@ -42,7 +42,7 @@
   "features": {
     "recording": {
       "state": "implemented",
-      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and manual UI verification still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -64,7 +64,7 @@
     },
     "export_tracks": {
       "state": "implemented",
-      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and manual UI verification still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -86,7 +86,7 @@
     },
     "import_takes": {
       "state": "implemented",
-      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
+      "reason": "Shared host recording/playback is implemented with saved capture provenance, explicit imported-track mapping, silent output preparation and persistent playback transport. Physical audio timing, OS interfaces and manual UI verification still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",
@@ -97,7 +97,7 @@
     },
     "manual_soundcheck": {
       "state": "implemented",
-      "reason": "The recorder exposes rate-compatible output selection, explicit track assignment with inline feedback, and visible transport and return-to-live actions. Physical audio timing, OS interfaces and both iOS simulators still require verification.",
+      "reason": "The recorder exposes rate-compatible output selection, explicit track assignment with inline feedback, and visible transport and return-to-live actions. Physical audio timing, OS interfaces and manual UI verification still require verification.",
       "references": [
         "crates/audio/src/lib.rs",
         "crates/serve/src/recorder.rs",

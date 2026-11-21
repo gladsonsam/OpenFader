@@ -76,7 +76,7 @@
   "features": {
     "identity": {
       "state": "implemented",
-      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Mixer discovery and connection are implemented.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -89,7 +89,7 @@
     },
     "catalogue": {
       "state": "implemented",
-      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The app uses the provider\u2019s channel topology and control ranges.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -102,7 +102,7 @@
     },
     "channel_names": {
       "state": "implemented",
-      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Channel names can be read and edited.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -115,7 +115,7 @@
     },
     "levels": {
       "state": "implemented",
-      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Input, destination and main fader/mute controls are implemented where the provider exposes them.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -128,7 +128,7 @@
     },
     "fader_law": {
       "state": "implemented",
-      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The mixer\u2019s registered fader law is used for level readouts.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -142,7 +142,7 @@
     },
     "processing": {
       "state": "implemented",
-      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Input EQ, gate and compressor controls are implemented for supported processor models.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -156,7 +156,7 @@
     },
     "preamps": {
       "state": "implemented",
-      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Gain and phantom controls follow the selected physical input source.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -193,7 +193,7 @@
     },
     "sends": {
       "state": "implemented",
-      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Send controls use the mixer\u2019s destination list.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -210,7 +210,7 @@
     },
     "solo": {
       "state": "implemented",
-      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Solo control is implemented for supported strips.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -223,7 +223,7 @@
     },
     "meters": {
       "state": "implemented",
-      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Live channel meters are implemented.",
       "references": [
         "crates/proto-x32/src/driver.rs",
@@ -262,7 +262,7 @@
     },
     "recorder_names": {
       "state": "partial",
-      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
+      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and manual UI evidence are still needed.",
       "references": [
         "crates/proto-x32/src/soundcheck.rs",
         "crates/engine/src/drivers/x32.rs"
@@ -271,7 +271,7 @@
     },
     "auto_soundcheck": {
       "state": "partial",
-      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
+      "reason": "Fresh installed-card, USB channel mode, native card-bank and input-selector inventory supplies stable capture identities and names. Physical local/AES50 capture banks and native AUX-input captures support reversible preparation of the inactive REC or PLAY banks, switching and guarded readback. Existing live card returns, including AUX-remapped card returns, reserve their USB lanes and remain routed. AUX physical remaps are returned only when their actual captures match the native first-six card-return lanes. Reconnect recovery reconstructs native selector guards without requiring USB-card eligibility or REC mode. Non-USB cards, processed/user feeds, active sources outside available capture/return lanes and X-LIVE SD playback remain explicitly unavailable. Exact-model hardware, audio-path and manual UI evidence are still needed.",
       "references": [
         "crates/proto-x32/src/soundcheck.rs",
         "crates/engine/src/drivers/x32.rs"
@@ -280,7 +280,7 @@
     },
     "pan_balance": {
       "state": "implemented",
-      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Pan and balance controls use the provider\u2019s supported strips and ranges.",
       "references": [
         "crates/proto-x32/src/driver.rs",

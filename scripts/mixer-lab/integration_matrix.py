@@ -12,7 +12,9 @@ sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 STATES = {'unreviewed', 'missing', 'partial', 'implemented', 'blocked', 'not_applicable'}
-KINDS = {'unit', 'emulator', 'hardware', 'ipad', 'iphone'}
+# `ui` is manual visual verification on any recorded platform. `ipad` and `iphone`
+# stay accepted only for claims specifically about iPadOS/iOS behaviour.
+KINDS = {'unit', 'emulator', 'hardware', 'ui', 'ipad', 'iphone'}
 
 
 def load(path):
@@ -147,6 +149,8 @@ def evidence_for(root, records, model, feature, paths):
             raise ValueError(f'Invalid evidence record for {model}:{feature["id"]}')
         if kind == 'hardware' and not record.get('firmware'):
             raise ValueError('Hardware evidence requires model firmware (or explicit OS/audio driver versions for host audio)')
+        if kind == 'ui' and not record.get('platform'):
+            raise ValueError('UI evidence requires the platform used for manual visual verification')
         if kind in {'ipad', 'iphone'} and not record.get('device'):
             raise ValueError('Simulator evidence requires device identity')
         stamp = dt.datetime.fromisoformat(record.get('recorded_at', '').replace('Z', '+00:00'))
@@ -291,7 +295,7 @@ def build(root=ROOT, evidence=()):
     if set(lab['fixtures']) - fixtures:
         raise ValueError(f'Lab models missing from catalogue: {sorted(set(lab["fixtures"])-fixtures)}')
     return {'schema': 1, 'models': models, 'features': features, 'cells': cells,
-            'notice': 'Hook presence is wiring evidence only. No hardware or simulator support is inferred.'}
+            'notice': 'Hook presence is wiring evidence only. No hardware or UI support is inferred.'}
 
 
 def brief(report, cell):
@@ -310,7 +314,7 @@ def brief(report, cell):
     if cell['lab_status'] == 'runnable':
         lines.append(f'Lab: python3 scripts/mixer-lab/lab.py run {cell["fixture"]}')
     lines += ['Stop lab emulators before repository gates.', 'Validation: cargo test --workspace --locked; flutter analyze in app.',
-              'For UI changes verify both required iOS simulators; record unavailable hardware or simulators as blocked.',
+              'For UI changes verify manually in the running app (the Linux desktop app qualifies) and record that platform; record unavailable hardware or platforms as blocked.',
               'Completion requires explicit per-model evidence: ' + ', '.join(cell['required_evidence']),
               'Reuse shared provider implementation where appropriate, but verify each model separately; never mark sibling models verified by inheritance.',
               'Update the owning integration.json disposition and attach checksummed, source-bound evidence.',

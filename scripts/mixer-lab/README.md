@@ -71,9 +71,11 @@ to 127.0.0.1 using its matching provider or automatic identification. Other
 listeners: wing, wing-compact, wing-rack, sq5 and dlive. SQ/dLive have no registered
 OpenFader driver; do not substitute another provider. The lab has no LAN binding.
 
-The automated loop does not launch Flutter. On a Mac, run the lab locally and
-follow AGENTS.md for both iOS simulator boot, connection and screenshot checks.
-Physical phones cannot reach this host through their own loopback address.
+The automated loop does not launch Flutter. Run the lab locally and follow
+AGENTS.md for manual visual verification in the running app; on Linux the Linux
+desktop app qualifies. Boot an iOS simulator only when the claim is specifically
+about iPadOS/iOS behaviour, and record that platform with the evidence. Physical
+phones cannot reach this host through their own loopback address.
 
 For a Linux desktop check, build the native host first and pass Cargo's actual
 target directory to Flutter's bundle step. Otherwise a global Cargo config can
@@ -98,8 +100,8 @@ restart the isolated UI and desktop host before checking controls.
    incoming events; restore mutations on failure. Do not add frontend suites or
    expand desk protocol tests.
 4. Verify a differing descriptor where relevant, then stop emulators and run
-   `cargo test --workspace --locked` and `flutter analyze` in `app`. Existing
-   simulator checks remain required.
+   `cargo test --workspace --locked` and `flutter analyze` in `app`. Manual
+   visual verification in the running app remains required.
 5. Report exact evidence and gaps. Hardware verification requires physical desk
    evidence with model and firmware. The lab neither starts agents nor runs in CI.
 
@@ -186,8 +188,8 @@ and [preferences table](https://github.com/pmaillot/X32-Behringer/blob/master/X3
 receipts rather than invented empty slots. Scene-kind archive export represents
 the current live mix, with that provenance; it does not export a selected saved
 scene or vendor USB file. Recorder/USB, manual virtual soundcheck, LAN changes,
-physical DSP, phantom power, preamps and audio need dedicated evidence. Desktop
-UI checks supplement the command loop and do not replace iOS simulator checks.
+physical DSP, phantom power, preamps and audio need dedicated evidence. UI checks
+supplement the command loop and do not replace command/readback evidence.
 
 ## Native processor scenes and remaining integration
 
@@ -230,8 +232,8 @@ paired strips require verified unlinked state. Individual presets preserve enabl
 flags, while complete processing copy includes supported enable flags.
 `input-processors` checks independent capture/write/readback, differing output
 domains, sibling and stale context rejection, partner locks and restoration.
-Current output preset/clipboard UI verification on both iOS simulators remains
-pending. Restricted-role provisioning,
+Current output preset/clipboard UI verification remains pending. Restricted-role
+provisioning,
 unreceived ABA transitions and a safe link-transition fixture remain separate
 limits. Linked X32 input blocks remain unavailable until member-aware guards
 can prove the complete partner state. Writable X32 talkback destination bitmaps,
@@ -270,7 +272,7 @@ python3 -B -m unittest discover -s scripts/mixer-lab -p 'test_integration_matrix
 Give an agent the output of `task model:feature`. It includes ownership,
 acceptance criteria, missing hooks, exact fixture availability and existing gates.
 The agent updates the owning disposition and supplies evidence; missing hardware
-or simulator access stays open. Adding a model, registered driver, engine hook or
+or UI platform access stays open. Adding a model, registered driver, engine hook or
 feature must update the catalogue. CI checks those relationships. The initial
 catalogue deliberately marks unaudited existing behavior `unreviewed`; these cells
 are an audit queue, not a claim that every feature is broken.
@@ -283,21 +285,27 @@ lack a working UI flow. Only current exact-model evidence can make it complete.
 Evidence is a JSON list, passed with `--evidence records.json` **before** the
 subcommand, or stored in the owning manifest's `evidence` list. Each record needs:
 
-- `model`, `feature`, `kind` (`unit`, `emulator`, `hardware`, `ipad` or `iphone`),
+- `model`, `feature`, `kind` (`unit`, `emulator`, `hardware` or `ui`),
   `result` (`pass`, `fail` or `blocked`) and timezone-aware `recorded_at`.
+  `ipad` and `iphone` remain accepted for claims specifically about iPadOS/iOS
+  behaviour.
 - A real `artifact` file and its SHA-256 in `sha256`.
 - `source_sha256`: SHA-256 for every path in that cell's JSON `source_paths`.
   This includes the contract and owning manifest; settle the disposition before
   collecting external evidence. External evidence avoids a manifest checksum cycle.
 - `checks`: acceptance keys actually checked. A pass requires all keys.
 - `firmware` for hardware, or explicit OS and audio-driver versions for host audio;
-  `device` for simulator evidence, including the required model identity.
+  `platform` for `ui` evidence, naming where manual visual verification ran (for
+  example the Linux desktop app); `device` for simulator evidence, including the
+  required model identity.
 
 Source changes invalidate old proof. The newest record for each evidence kind
 wins, including a failure. Sibling models do not inherit evidence. Completion
 requires every evidence kind declared by that feature (physical-model checks
-include hardware and both required iOS simulators). Emulator proof supplements
-these checks and cannot replace hardware proof. Existing restrictions on frontend
+include hardware and manual UI verification on a recorded platform). Emulator
+proof supplements these checks and cannot replace hardware proof. iOS simulator
+evidence is only required when the claim is specifically about iPadOS/iOS
+behaviour; it is not a universal UI gate. Existing restrictions on frontend
 and desk protocol tests still apply; this catalogue does not add those suites.
 
 ```sh

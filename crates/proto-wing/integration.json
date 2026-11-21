@@ -50,7 +50,7 @@
   "features": {
     "identity": {
       "state": "implemented",
-      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Mixer discovery and connection are implemented.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -63,7 +63,7 @@
     },
     "catalogue": {
       "state": "implemented",
-      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The app uses the provider\u2019s channel topology and control ranges.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -76,7 +76,7 @@
     },
     "channel_names": {
       "state": "implemented",
-      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Channel names can be read and edited.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -89,7 +89,7 @@
     },
     "levels": {
       "state": "implemented",
-      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Input, destination and main fader/mute controls are implemented where the provider exposes them.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -102,7 +102,7 @@
     },
     "fader_law": {
       "state": "implemented",
-      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The mixer\u2019s registered fader law is used for level readouts.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -116,7 +116,7 @@
     },
     "processing": {
       "state": "partial",
-      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "EQ and dynamics are integrated; available parameters depend on the processor model and firmware.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -130,7 +130,7 @@
     },
     "preamps": {
       "state": "implemented",
-      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Gain and phantom controls follow the selected physical input source.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -166,7 +166,7 @@
     },
     "sends": {
       "state": "implemented",
-      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Send controls use the mixer\u2019s destination list.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -183,7 +183,7 @@
     },
     "solo": {
       "state": "implemented",
-      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Solo control is implemented for supported strips.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -196,7 +196,7 @@
     },
     "meters": {
       "state": "implemented",
-      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Live channel meters are implemented.",
       "references": [
         "crates/proto-wing/src/driver.rs",
@@ -235,7 +235,7 @@
     },
     "recorder_names": {
       "state": "partial",
-      "reason": "Fresh native USB roster, actual USB channel mode and output patches supply capture identities and names. Captured physical sources support reversible inactive main/alternate patch preparation and selection, with observed mono/stereo/M-S widths and guarded readback. USB return source modes and automatic-source selection are journaled and restored; reconnect recovery rebuilds fresh guards without requiring live-input eligibility. Live USB inputs reserve their existing lanes; other nonphysical inputs remain live. Unresolved user-signal USB dependencies, absent capture lanes, nonadjacent stereo capture, read-only USB source modes and effective-mode overrides remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
+      "reason": "Fresh native USB roster, actual USB channel mode and output patches supply capture identities and names. Captured physical sources support reversible inactive main/alternate patch preparation and selection, with observed mono/stereo/M-S widths and guarded readback. USB return source modes and automatic-source selection are journaled and restored; reconnect recovery rebuilds fresh guards without requiring live-input eligibility. Live USB inputs reserve their existing lanes; other nonphysical inputs remain live. Unresolved user-signal USB dependencies, absent capture lanes, nonadjacent stereo capture, read-only USB source modes and effective-mode overrides remain explicitly unavailable. Exact-model hardware, audio-path and manual UI evidence are still needed.",
       "references": [
         "crates/proto-wing/src/soundcheck.rs",
         "crates/engine/src/drivers/wing.rs"
@@ -244,7 +244,7 @@
     },
     "auto_soundcheck": {
       "state": "partial",
-      "reason": "Fresh native USB roster, actual USB channel mode and output patches supply capture identities and names. Captured physical sources support reversible inactive main/alternate patch preparation and selection, with observed mono/stereo/M-S widths and guarded readback. USB return source modes and automatic-source selection are journaled and restored; reconnect recovery rebuilds fresh guards without requiring live-input eligibility. Live USB inputs reserve their existing lanes; other nonphysical inputs remain live. Unresolved user-signal USB dependencies, absent capture lanes, nonadjacent stereo capture, read-only USB source modes and effective-mode overrides remain explicitly unavailable. Exact-model hardware, audio-path and both simulator evidence are still needed.",
+      "reason": "Fresh native USB roster, actual USB channel mode and output patches supply capture identities and names. Captured physical sources support reversible inactive main/alternate patch preparation and selection, with observed mono/stereo/M-S widths and guarded readback. USB return source modes and automatic-source selection are journaled and restored; reconnect recovery rebuilds fresh guards without requiring live-input eligibility. Live USB inputs reserve their existing lanes; other nonphysical inputs remain live. Unresolved user-signal USB dependencies, absent capture lanes, nonadjacent stereo capture, read-only USB source modes and effective-mode overrides remain explicitly unavailable. Exact-model hardware, audio-path and manual UI evidence are still needed.",
       "references": [
         "crates/proto-wing/src/soundcheck.rs",
         "crates/engine/src/drivers/wing.rs"
@@ -253,7 +253,7 @@
     },
     "pan_balance": {
       "state": "implemented",
-      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Pan and balance controls use the provider\u2019s supported strips and ranges.",
       "references": [
         "crates/proto-wing/src/driver.rs",

@@ -78,7 +78,7 @@
   "features": {
     "identity": {
       "state": "implemented",
-      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Mixer discovery and connection are implemented.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -90,7 +90,7 @@
     },
     "catalogue": {
       "state": "implemented",
-      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The app uses the provider\u2019s channel topology and control ranges.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -102,7 +102,7 @@
     },
     "channel_names": {
       "state": "implemented",
-      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Channel names can be read and edited.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -114,7 +114,7 @@
     },
     "levels": {
       "state": "implemented",
-      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Input, destination and main fader/mute controls are implemented where the provider exposes them.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -126,7 +126,7 @@
     },
     "fader_law": {
       "state": "implemented",
-      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "The mixer\u2019s registered fader law is used for level readouts.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -139,7 +139,7 @@
     },
     "processing": {
       "state": "implemented",
-      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Input EQ, gate and compressor controls are implemented for supported processor models.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -152,7 +152,7 @@
     },
     "preamps": {
       "state": "implemented",
-      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Gain and phantom controls follow the selected physical input source.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -188,7 +188,7 @@
     },
     "sends": {
       "state": "implemented",
-      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Send controls use the mixer\u2019s destination list.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -204,7 +204,7 @@
     },
     "solo": {
       "state": "implemented",
-      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Solo control is implemented for supported strips.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -216,7 +216,7 @@
     },
     "meters": {
       "state": "implemented",
-      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Live channel meters are implemented.",
       "references": [
         "crates/proto-xair/src/lib.rs",
@@ -254,7 +254,7 @@
     },
     "recorder_names": {
       "state": "partial",
-      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and both simulator acceptance remain Testing needed.",
+      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and manual UI acceptance remain Testing needed.",
       "public_note": "XR18 and MR18: Testing needed. Requires matching USB interface and successful routing checks.",
       "references": [
         "crates/proto-xair/src/soundcheck_profile.rs",
@@ -262,12 +262,12 @@
         "crates/engine/src/drivers.rs"
       ],
       "acceptance": {
-        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery with both required simulators."
+        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery in the running app."
       }
     },
     "auto_soundcheck": {
       "state": "partial",
-      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and both simulator acceptance remain Testing needed.",
+      "reason": "Explicit XR18 and MR18 profiles validate complete runtime USB source/tap selectors rather than a firmware version literal. Reordered physical input captures, stereo aux bank/return selection, linked-pair bank switching and restoration are implemented. Exact-model physical audio, firmware and manual UI acceptance remain Testing needed.",
       "public_note": "XR18 and MR18: Testing needed. Requires matching USB interface and successful routing checks.",
       "references": [
         "crates/proto-xair/src/soundcheck_profile.rs",
@@ -275,12 +275,12 @@
         "crates/engine/src/drivers.rs"
       ],
       "acceptance": {
-        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery with both required simulators."
+        "routing": "For each XR18/MR18 model and firmware verify USB PCM source identity and tap, reordered capture sends, mono/linked pair and stereo aux switching/restoration, reserved live USB returns and disconnect recovery in the running app."
       }
     },
     "pan_balance": {
       "state": "implemented",
-      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
+      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
       "public_note": "Pan and balance controls use the provider\u2019s supported strips and ranges.",
       "references": [
         "crates/proto-xair/src/lib.rs",

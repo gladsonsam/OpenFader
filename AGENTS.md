@@ -57,21 +57,78 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 
 ## Working loop
 
-- One screen at a time: implement, verify on **both** simulators
-  (iPad Pro 13-inch + iPhone 18 Pro), screenshot-compare against the design
-  mock at its specified dimensions, then commit.
-- For iOS simulator checks, build with
-  `flutter build ios --simulator --debug` in `app`, then use `xcrun simctl`
-  to install, launch and capture screenshots. Use equivalent platform
-  tooling for other targets.
-- The app boots into the Connections start screen; use Work offline to
-  reach the mixer on sims.
+- One screen at a time: implement, visually verify in the running app, then
+  commit. On Linux, the Linux desktop app satisfies the visual verification
+  requirement. Use the viewport sizes relevant to the change and compare
+  screenshots against the design mock at its specified dimensions when a mock
+  is available.
+- The app boots into the Connections start screen. Use Work offline to reach
+  the mixer for visual checks that do not require a live connection.
 - For emulator driver work, use `scripts/mixer-lab/lab.py` and the workflow in
   `scripts/mixer-lab/README.md`. It runs pinned Sidecar fixtures and saves
   independent command/readback evidence. Stop lab emulators before repository
   tests because discovery tests use the same ports. Keep missing integrations
   blocked in its matrix; emulator passes do not establish hardware support or
-  replace the existing gates and simulator checks.
+  replace the existing gates or visual verification.
+
+## Visual standards (binding)
+
+Read this before changing a screen, panel or mixer strip.
+
+- Visual bounds and hit areas are separate. Input keeps at least
+  `AppDesign.touchTarget` (44); painted content stays inside the space it is
+  given. A row that cannot hold both is a layout bug: shrink the visual body,
+  then drop the row, then show the action unavailable with a reason. Never let
+  a border, outline, focus ring, label or minimum height grow into the next
+  row or the enclosing strip edge.
+- Size from the allocated box (`LayoutBuilder`), not a fixed guess. Use the
+  provider's real channel count, `ConsoleDensity.of(context)` for target
+  density, and the shortest relevant window. If the surface cannot fit the
+  control, change the composition, not the target size.
+- Inset rows from their surface. A strip that places rows itself keeps its
+  `AppDesign.spaceXs` inset on both sides and its existing inter-row gap; do
+  not expand a row to the divider or add a second inset. Use
+  `AppDesign.panelPadding`, `controlPadding` and `fieldPadding` for surfaces
+  and groups. Keep spacing equal on both sides; one-sided padding is only for a
+  deliberate optical alignment.
+- Use shared tokens and roles: `AppDesign.space*`, `ConsoleTextRole`,
+  `ConsolePalette`, theme shape/radius, `ConsoleButton` and
+  `ConsoleIconButton`. Do not add page-local numeric spacing, sizes, colors or
+  font sizes when a token exists. `scripts/ui_guard.py` already rejects raw
+  Material controls, dialogs, numeric font sizes, color literals and numeric
+  breakpoints.
+- Labels name the action or value in at most 5 words and 36 characters. Prefer
+  one or two words; the surface supplies context. Shared-width labels use
+  `maxLines: 1` with ellipsis, or wrap in their own lane. Move explanation to a
+  subtitle, tooltip, helper line or dialog body; never a sentence in a button,
+  tab, chip or strip label. The guard rejects longer literal action labels.
+- Semantics are part of the layout: every action and toggle exposes its role
+  and name, a disabled control exposes why it is disabled, and the visible body
+  is not the only pointer target. Do not rely on color alone.
+- Verify with realistic content, not placeholder strings: long channel,
+  preset, destination and provider names; the narrow window; large targets on
+  and off; the shortest supported height. Inspect the default window and at
+  least one narrow window for every UI change.
+
+### Linux visual capture
+
+`scripts/visual_qa.py` launches the built Linux bundle on an isolated Xvfb
+display with its own HOME/XDG state, enters the offline mixer, resizes the
+window and writes cropped PNGs:
+
+```sh
+# after the usual Linux build
+python3 scripts/visual_qa.py --offline
+# or build the native host and bundle first
+FLUTTER=/path/to/flutter python3 scripts/visual_qa.py --build --offline
+```
+
+It uses the existing local Xvfb, xdotool, scrot and dbus-run-session tools and
+adds no service. Defaults: 1280x800, 1024x700 and 900x640 under
+`/tmp/openfader-visual-qa/`. Add `--sizes 1280x800,700x900` for other sizes, or
+omit `--offline` to capture Connections. The capture is evidence for a person
+to inspect; it is not a screenshot-diff suite. If the window never appears,
+check the GL/EGL stack and `app.log` rather than reporting a visual pass.
 
 ## Gates (binding)
 
@@ -82,8 +139,9 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
 - `cargo test --workspace --locked` must stay green. It guards the desk
   protocol; do not expand it without being asked.
 - Do NOT write frontend tests (widget/interaction/screenshot-diff suites)
-  and do not gate on them. MVP check is: analyze clean + app boots +
-  connects on sims. This lifts only at the owner's word.
+  and do not gate on them. MVP verification includes clean analysis, app
+  launch, connection checks, and manual visual verification. This lifts
+  only at the owner's word.
 
 ## State rules
 
@@ -160,8 +218,9 @@ copy must be direct and factual; avoid metaphors, jokes and lifestyle slogans.
   inferred support, invented mappings or a sibling model's defaults.
 - A completed cell requires its acceptance checks and current, checksummed,
   source-bound evidence for that exact model and required verification types.
-  Record physical model/firmware and both required simulator identities where
-  applicable. Keep unavailable hardware/emulators/simulators blocked; existing
-  gates and the prohibition on frontend suites remain binding. Check a proposed
+  Record the physical model and firmware where applicable, and the platform
+  used for manual visual verification. Keep unavailable hardware and emulator
+  evidence blocked. Existing gates and the prohibition on frontend suites
+  remain binding. Check a proposed
   completion with `integration_matrix.py --evidence <records.json> check
   --complete <model>:<feature>` before claiming it is done.

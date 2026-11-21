@@ -39,8 +39,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 20,
       "public_label": "Connection"
@@ -104,8 +103,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 21,
       "public_label": "Channels & controls"
@@ -131,8 +129,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 2
     },
@@ -167,8 +164,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 0,
       "public_label": "Faders & mute"
@@ -190,8 +186,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 1
     },
@@ -211,8 +206,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 22,
       "public_label": "Fader dB scale"
@@ -237,8 +231,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 4
     },
@@ -262,8 +255,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 5,
       "public_label": "Gain & phantom"
@@ -287,8 +279,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 12
     },
@@ -317,8 +308,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 8
     },
@@ -365,8 +355,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 10,
       "public_label": "Input routing"
@@ -395,8 +384,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 11,
       "public_label": "Output routing"
@@ -426,8 +414,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 6,
       "public_label": "Sends"
@@ -475,8 +462,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 17
     },
@@ -509,8 +495,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 7
     },
@@ -546,8 +531,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 3,
       "public_label": "Meters"
@@ -600,8 +584,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 9,
       "public_label": "Effects"
@@ -631,8 +614,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 13
     },
@@ -659,8 +641,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 14
     },
@@ -691,8 +672,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 15
     },
@@ -716,8 +696,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 16
     },
@@ -746,8 +725,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 18,
       "public_label": "Track names from USB"
@@ -782,8 +760,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ],
       "public_order": 19,
       "public_label": "Automatic soundcheck"
@@ -807,8 +784,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -829,8 +805,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -852,8 +827,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -874,8 +848,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -896,8 +869,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -920,8 +892,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -942,8 +913,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     },
     {
@@ -964,8 +934,7 @@
       "required_evidence": [
         "unit",
         "hardware",
-        "ipad",
-        "iphone"
+        "ui"
       ]
     }
   ]
