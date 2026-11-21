@@ -84,8 +84,6 @@ class _MixerStripState extends State<MixerStrip> {
         final toggleHeight = shortSurface
             ? AppDesign.actionDenseHeight
             : AppDesign.actionCompactHeight;
-        final toggleFontSize =
-            shortSurface ? AppDesign.body : AppDesign.controlLabel;
         const identityHeight = AppDesign.space2xl;
         // Tape grows by the system bottom inset so names clear the nav bar.
         final nameHeight = AppDesign.spaceXl + bottomInset;
@@ -116,20 +114,36 @@ class _MixerStripState extends State<MixerStrip> {
         // nameplate past the bottom on the shortest windows.
         final minimumFaderHeight = math.max(200.0, box.maxHeight * .55);
         final preferredFaderHeight = math.max(200.0, box.maxHeight * .60);
+        final fullRackFaderHeight = math.max(200.0, box.maxHeight * .65);
         final hasFader = visible.contains(StripElement.fader);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
-        double rowSpacing() =>
-            gap * math.max(0, visible.length - 1) +
-            AppDesign.spaceSm +
-            (visible.lastOrNull == StripElement.nameplate
-                ? 0.0
-                : AppDesign.spaceSm);
+        // Pan and the square toggles already have clear space inside their
+        // touch rows. Only add a gap between rows whose paint fills the box.
+        bool hasPaintInset(StripElement element) =>
+            element == StripElement.pan ||
+            element == StripElement.mute ||
+            element == StripElement.solo;
+        double gapBefore(int index) {
+          if (hasPaintInset(visible[index])) return 0;
+          if (index == 0) return AppDesign.spaceSm;
+          return hasPaintInset(visible[index - 1]) ? 0 : gap;
+        }
+
+        double rowSpacing() {
+          final last = visible.last;
+          final bottom = last == StripElement.nameplate || hasPaintInset(last)
+              ? 0.0
+              : AppDesign.spaceSm;
+          return visible.indexed.fold<double>(
+              bottom, (sum, row) => sum + gapBefore(row.$1));
+        }
+
         bool faderNeedsSpace(double target) =>
             hasFader && box.maxHeight - fixedHeight() - rowSpacing() < target;
         // Processing stays available from the channel screen. Prefer a small
         // EQ preview, then remove the preview entirely before reducing travel.
-        if (faderNeedsSpace(preferredFaderHeight) &&
+        if (faderNeedsSpace(fullRackFaderHeight) &&
             visible.contains(StripElement.processing)) {
           compactRack = true;
           heights[StripElement.processing] = AppDesign.touchTarget;
@@ -147,13 +161,14 @@ class _MixerStripState extends State<MixerStrip> {
         final contentHeight = math.max(box.maxHeight,
             fixed + spacing + (hasFader ? minimumFaderHeight : 0));
         final positions = <StripElement, Rect>{};
-        var y = AppDesign.spaceSm;
-        for (final element in visible) {
+        var y = 0.0;
+        for (final (index, element) in visible.indexed) {
+          y += gapBefore(index);
           final height = element == StripElement.fader
               ? contentHeight - fixed - spacing
               : heights[element] ?? 0;
           positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
-          y += height + gap;
+          y += height;
         }
         double allocated(StripElement element) =>
             positions[element]?.height ?? 0;
@@ -217,8 +232,7 @@ class _MixerStripState extends State<MixerStrip> {
                               controller: controller,
                               kind: MixerToggleKind.mute,
                               ready: ready,
-                              visualHeight: toggleHeight,
-                              fontSize: toggleFontSize)),
+                              visualHeight: toggleHeight)),
                       place(
                           StripElement.fader,
                           MixerFaderCell(
@@ -235,8 +249,7 @@ class _MixerStripState extends State<MixerStrip> {
                               controller: controller,
                               kind: MixerToggleKind.solo,
                               ready: ready,
-                              visualHeight: toggleHeight,
-                              fontSize: toggleFontSize)),
+                              visualHeight: toggleHeight)),
                       if (visible.contains(StripElement.nameplate))
                         Positioned(
                             left: 0,

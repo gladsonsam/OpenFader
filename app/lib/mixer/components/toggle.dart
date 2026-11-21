@@ -18,15 +18,13 @@ class MixerToggleCell extends StatelessWidget {
   final MixerToggleKind kind;
   final int ready;
   final double visualHeight;
-  final double fontSize;
   const MixerToggleCell(
       {super.key,
       required this.channel,
       required this.controller,
       required this.kind,
       required this.ready,
-      required this.visualHeight,
-      required this.fontSize});
+      required this.visualHeight});
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +36,12 @@ class MixerToggleCell extends StatelessWidget {
         return ValueListenableBuilder<bool>(
             valueListenable: controller.muteNoteOf(chIndex, isMaster),
             builder: (context, muted, _) => MixerToggle(
-                label: ready & 2 != 0 ? 'Mute' : 'Mute · -',
+                label: 'Mute',
+                unavailableReason:
+                    ready & 2 != 0 ? null : 'Mute unavailable',
                 visualHeight: visualHeight,
-                fontSize: fontSize,
+                square: true,
+                fontSize: AppDesign.minorText,
                 channelName: ch.name,
                 on: ready & 2 != 0 && muted,
                 activeColor: ConsolePalette.of(context).mute,
@@ -56,7 +57,8 @@ class MixerToggleCell extends StatelessWidget {
                 unavailableReason:
                     ready & 8 != 0 ? null : 'Solo unavailable',
                 visualHeight: visualHeight,
-                fontSize: fontSize,
+                square: true,
+                fontSize: AppDesign.minorText,
                 channelName: ch.name,
                 on: ready & 8 != 0 && solo,
                 activeColor: ConsolePalette.of(context).solo,
@@ -73,6 +75,7 @@ class MixerToggle extends StatelessWidget {
   final String label, channelName;
   final String? unavailableReason;
   final bool on;
+  final bool square;
   final Color activeColor, activeForeground;
   final double visualHeight, fontSize;
   final VoidCallback? onPressed;
@@ -82,6 +85,7 @@ class MixerToggle extends StatelessWidget {
       required this.channelName,
       this.unavailableReason,
       required this.on,
+      this.square = false,
       this.visualHeight = AppDesign.touchTarget,
       this.fontSize = AppDesign.sectionTitle,
       required this.activeColor,
@@ -115,15 +119,25 @@ class MixerToggle extends StatelessWidget {
                                       foregroundColor: on
                                           ? activeForeground
                                           : ConsolePalette.of(context).text,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: AppDesign.spaceXs),
-                                      minimumSize:
-                                          Size(bounds.maxWidth, visualHeight),
+                                      padding: square
+                                          ? EdgeInsets.zero
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: AppDesign.spaceXs),
+                                      minimumSize: Size(
+                                          square
+                                              ? visualHeight
+                                              : bounds.maxWidth,
+                                          visualHeight),
+                                      fixedSize: square
+                                          ? Size.square(visualHeight)
+                                          : null,
                                       visualDensity: VisualDensity.standard,
                                       tapTargetSize:
                                           MaterialTapTargetSize.padded,
-                                      shape: const RoundedRectangleBorder(
-                                          borderRadius: AppDesign.radius),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: square
+                                              ? BorderRadius.zero
+                                              : AppDesign.radius),
                                       textStyle: mixerType(context, fontSize,
                                           weight: FontWeight.w600))
                                   .copyWith(
