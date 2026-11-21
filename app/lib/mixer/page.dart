@@ -199,11 +199,12 @@ class _MixerPageState extends State<MixerPage> {
                       controller.isCustomLayerActive
                           ? controller.effectivePageSize
                           : 8);
-                  // Edit mode needs room for a drag handle, a readable name
-                  // and the strip options control even on a phone-width
-                  // surface; the list already scrolls horizontally.
+                  // Edit mode carries a drag handle, the strip name and the
+                  // options control. Two touch targets plus an inset hold all
+                  // three; a third target only consumed width on short windows.
+                  // The list still scrolls horizontally.
                   final editingStripWidth =
-                      math.max(stripWidth, AppDesign.touchTarget * 3);
+                      math.max(stripWidth, MixerStripMetrics.editStripMinWidth);
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,

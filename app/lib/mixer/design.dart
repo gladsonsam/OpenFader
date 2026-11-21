@@ -10,6 +10,12 @@ import '../design.dart';
 
 abstract final class MixerStripMetrics {
   static const contentInset = 12.0;
+
+  /// Edit items carry a drag affordance, the strip name and the options
+  /// control, so they may be wider than a playing strip. Two targets plus an
+  /// inset hold all three; the list scrolls horizontally.
+  static const editStripMinWidth =
+      AppDesign.touchTarget * 2 + AppDesign.spaceLg;
 }
 
 /// Reference travel is a display coordinate. Engine values continue to use

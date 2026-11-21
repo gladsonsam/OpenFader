@@ -47,7 +47,7 @@ class _MixerFaderState extends State<MixerFader> {
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
         // Enlarge only while held; selection keeps only its outline.
-        final scale = _held ? (widget.compact ? 1.25 : 1.4) : 1.0;
+        final scale = _held ? geometry.heldScale : 1.0;
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
@@ -257,23 +257,35 @@ class _FaderGeometry {
   final bool compact;
   final bool largeTargets;
   const _FaderGeometry(this.size, this.compact, this.largeTargets);
-  // Keep the entire cap, including its held enlargement and touch padding,
-  // inside the well even when a compact layout shortens the travel.
-  double get endClearance =>
-      math.max(
-          capHeight * (compact ? 1.25 : 1.4) / 2, capHeight / 2 + touchPad) +
-      AppDesign.spaceSm;
+
+  /// Held enlargement. The end clearance reserves the scaled cap, not just the
+  /// resting one, so the feedback stays inside the well at both limits.
+  double get heldScale => compact ? 1.25 : 1.4;
+
+  /// Distance from the well edge to the cap centre at the first/last dB.
+  /// Reserve the held cap, not the resting cap plus a row gap: that extra gap
+  /// was dead space above and below the scale on short strips.
+  double get endClearance => capHeight * heldScale / 2 + AppDesign.spaceXs;
+
   double get top =>
       math.max(endClearance, size.height * (compact ? 38 / 534 : 65 / 647));
   double get bottom =>
       math.max(endClearance, size.height * (compact ? 56 / 534 : 55 / 647));
   double get travel => math.max(1, size.height - top - bottom);
   double get x => size.width * (compact ? 57 / 96.2 : 101 / 178.2);
-  double get capWidth => math.max(
-      34,
-      size.width *
-          (compact ? 54 / 96.2 : 84 / 178.2) *
-          (!compact && largeTargets ? 1.08 : 1));
+
+  /// Painted cap size. Width alone made the cap oversized on wide-but-short
+  /// cells and its clearance ate most of the travel. Cap the paint by the cell
+  /// height too; the touch padding still supplies the full target.
+  double get capWidth {
+    final paintedWidth = size.width *
+        (compact ? 54 / 96.2 : 84 / 178.2) *
+        (!compact && largeTargets ? 1.08 : 1);
+    final paintedHeight = size.height * .14;
+    return math.min(
+        math.max(34, paintedWidth), math.max(34, paintedHeight));
+  }
+
   double get capHeight => capWidth;
 
   double get touchPad => largeTargets ? 10 : 6;
