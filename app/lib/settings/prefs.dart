@@ -231,6 +231,24 @@ class PrefsService extends ChangeNotifier {
 
   Future<void> setActiveMixerLayerId(String id) => _set(activeLayerIdKey, id);
 
+  // --- selected layer/view (per mixer connection) --------------------------
+  static const mixerSelectionPrefix = 'openfader.mixerSelection.v1';
+
+  String _selectionKey(String scope) {
+    final trimmed = scope.trim();
+    return '$mixerSelectionPrefix.${trimmed.isEmpty ? 'unknown' : trimmed}';
+  }
+
+  /// Last layer or native/custom view chosen for [scope]. Null means the
+  /// connection has no saved selection yet and the mixer should start on All.
+  String? mixerSelection(String scope) {
+    final value = _prefs?.getString(_selectionKey(scope));
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<void> setMixerSelection(String scope, String selection) =>
+      _set(_selectionKey(scope), selection);
+
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
   String get backupCreatedAt =>
@@ -277,7 +295,10 @@ class PrefsService extends ChangeNotifier {
             CustomMixerView(
                 id: row['id'] as String,
                 name: row['name'] as String,
-                stripKeys: (row['strips'] as List).whereType<String>().toSet())
+                stripKeys: List.unmodifiable(<String>{
+                  for (final key in (row['strips'] as List))
+                    if (key is String && key.isNotEmpty) key,
+                })),
       ];
     } catch (_) {
       return const [];
@@ -364,6 +385,10 @@ class PrefsService extends ChangeNotifier {
       stripLayoutKey,
       layersKey,
       activeLayerIdKey,
+      for (final key in p.getKeys().where(
+        (key) => key.startsWith('$mixerSelectionPrefix.'),
+      ))
+        key,
     ]) {
       if (!await p.remove(key)) {
         await p.reload();

@@ -16,6 +16,13 @@ class _LayersSection extends StatelessWidget {
       listenable: prefs,
       builder: (context, _) {
         final state = prefs.mixerLayersState;
+        final activeKey = store.mixerSelectionKey;
+        // Settings lists layers only, so native and custom views have no row
+        // here. Keep the list neutral for them instead of marking All.
+        final allActive = activeKey == 'view:all';
+        final activeLayerId = activeKey.startsWith('layer:')
+            ? activeKey.substring('layer:'.length)
+            : null;
         final channels = store.layerChannelOptions;
         Future<void> activate(String id) async {
           await store.activateMixerLayer(id);
@@ -43,7 +50,7 @@ class _LayersSection extends StatelessWidget {
                   color: ConsolePalette.of(context).mutedText,
                 ),
               ),
-              trailing: state.activeLayer.isAll
+              trailing: allActive
                   ? Icon(Icons.check, color: ConsolePalette.of(context).accent)
                   : null,
               onTap: () => _runSettingsAction(context, () async {
@@ -62,7 +69,7 @@ class _LayersSection extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  '${layer.channelKeys.length} channels · '
+                  '${mixerChannelCount(layer.channelKeys.length)} · '
                   '${layer.effectiveStripsPerPage} per page'
                   '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
                   style: TextStyle(
@@ -74,7 +81,7 @@ class _LayersSection extends StatelessWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (layer.id == state.activeLayerId)
+                    if (layer.id == activeLayerId)
                       Icon(Icons.check, color: ConsolePalette.of(context).accent),
                     PopupMenuButton<String>(
                       popUpAnimationStyle: AnimationStyle.noAnimation,
@@ -94,6 +101,7 @@ class _LayersSection extends StatelessWidget {
                             toast('Preference saved');
                           case 'delete':
                             await deleteMixerLayer(layer.id,
+                                activeSelection: activeKey,
                                 activate: activate);
                             toast('Preference saved');
                         }

@@ -1,7 +1,53 @@
+import 'dart:math' as math;
+
+import '../../design.dart';
 import '../../palette.dart';
 import 'package:material_ui/material_ui.dart';
 import '../../u4law.dart';
+import '../controller.dart';
 import '../design.dart';
+
+/// Strip-level pan row. Master strips and outputs without a channel identity
+/// keep the control visible but inert; a channel follows its live pan notifier
+/// and the provider readiness bit.
+class MixerPanCell extends StatelessWidget {
+  final MixerChannel channel;
+  final MixerController controller;
+  final int ready;
+  final double allocatedHeight;
+  final ValueChanged<MixerReadoutControl>? onControlFocus;
+  const MixerPanCell(
+      {super.key,
+      required this.channel,
+      required this.controller,
+      required this.ready,
+      required this.allocatedHeight,
+      this.onControlFocus});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = channel.name;
+    final visualHeight = math.min(AppDesign.space2xl, allocatedHeight);
+    final chIndex = channel.channel;
+    if (channel.master || chIndex == null) {
+      return MixerPan(
+          name: name, value: 0, visualHeight: visualHeight, onChanged: null);
+    }
+    return ValueListenableBuilder<double>(
+        valueListenable: controller.panNoteOf(chIndex),
+        builder: (context, pan, _) => MixerPan(
+            name: name,
+            value: pan,
+            onTouch: () => onControlFocus?.call(MixerReadoutControl.pan),
+            visualHeight: visualHeight,
+            onChanged: ready & 4 != 0
+                ? (v) {
+                    onControlFocus?.call(MixerReadoutControl.pan);
+                    controller.setPan(channel, v);
+                  }
+                : null));
+  }
+}
 
 class MixerPan extends StatefulWidget {
   final String name;

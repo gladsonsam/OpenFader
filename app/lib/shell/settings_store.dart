@@ -81,14 +81,22 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
   @override
   List<({String key, String name})> get layerChannelOptions => [
         for (final s in app.engine.strips)
-          if (s.key != 'main')
+          if (s.key != 'main' &&
+              app.isMixerStripVisible(s) &&
+              app.accessTargetAllowed(s.key))
             (key: s.key, name: s.name.isEmpty ? s.key : s.name),
       ];
 
   @override
+  String get mixerSelectionKey =>
+      prefs.mixerSelection(app.mixerScope) ?? 'view:all';
+
+  @override
   Future<void> activateMixerLayer(String id) async {
-    await prefs.setActiveMixerLayerId(id);
+    final key = id == 'all' ? 'view:all' : 'layer:$id';
+    await prefs.setMixerSelection(app.mixerScope, key);
     if (id == 'all') app.setBank('view:all');
+    notifyListeners();
   }
 
   final RecentMixers _recents = RecentMixers.instance;

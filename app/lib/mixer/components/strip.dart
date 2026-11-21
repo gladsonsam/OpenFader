@@ -87,8 +87,9 @@ class _MixerStripState extends State<MixerStrip> {
         final ch = channel;
         final shortSurface = box.maxHeight < 800;
         final hasArtwork = ch.showsArtwork;
-        var showArtwork =
-            (reserveArtwork ?? hasArtwork) && box.maxHeight >= 480;
+        var showArtwork = layout.showArtwork &&
+            (reserveArtwork ?? hasArtwork) &&
+            box.maxHeight >= 480;
         var identityHeight = showArtwork
             ? AppDesign.spaceXl + math.min(32.0, box.maxWidth * .35)
             : AppDesign.spaceXl;
@@ -110,8 +111,10 @@ class _MixerStripState extends State<MixerStrip> {
         final visible = [...layout.visibleOrder];
         // Reserve most of the usable strip for level control. A fixed minimum
         // alone lets secondary rows consume too much of landscape windows.
-        // Keep a logical-pixel floor because the cap needs endpoint clearance.
-        final minimumFaderHeight = math.max(240.0, box.maxHeight * .55);
+        // Keep a logical-pixel floor because the cap needs endpoint clearance;
+        // 200 still leaves a usable travel, and a taller floor pushes the
+        // nameplate past the bottom on the shortest windows.
+        final minimumFaderHeight = math.max(200.0, box.maxHeight * .55);
         final hasFader = visible.contains(StripElement.fader);
         double fixedHeight() =>
             visible.fold<double>(0, (sum, el) => sum + (heights[el] ?? 0));
@@ -155,9 +158,18 @@ class _MixerStripState extends State<MixerStrip> {
         double allocated(StripElement element) =>
             positions[element]?.height ?? 0;
         Widget place(StripElement element, Widget child) {
-          if (!visible.contains(element)) return const SizedBox.shrink();
+          // Hidden rows must stay positioned children. A plain zero-size
+          // child would be a non-positioned Stack child, and the Stack would
+          // then size itself to that child whenever its width is loose (the
+          // edit item and the strip's own scroll fallback both do that),
+          // collapsing the whole body to zero width.
+          if (!visible.contains(element)) {
+            return const Positioned.fill(child: SizedBox.shrink());
+          }
           final rect = positions[element];
-          if (rect == null) return const SizedBox.shrink();
+          if (rect == null) {
+            return const Positioned.fill(child: SizedBox.shrink());
+          }
           // Rows already reserve their full touch targets. Expanding them
           // independently here can cover an adjacent fader's outline.
           const inset = AppDesign.spaceXs;
@@ -185,158 +197,53 @@ class _MixerStripState extends State<MixerStrip> {
                     child: Stack(children: [
                       place(
                           StripElement.processing,
-                          compactRack
-                              ? MixerEqPreview(
-                                  channel: ch,
-                                  compact: true,
-                                  showPhantom: controller.hasPhantomOf(ch),
-                                  onOpen: _openProcessing)
-                              : MixerProcessingRack(
-                                  channel: ch,
-                                  gainRange: controller.gainRangeOf(ch),
-                                  showPhantom: controller.hasPhantomOf(ch),
-                                  demo: controller.demo,
-                                  onOpen: _openProcessing,
-                                  onGain: (v) => controller.setGain(ch, v))),
+                          MixerProcessingCell(
+                              channel: ch,
+                              controller: controller,
+                              compact: compactRack,
+                              onOpen: _openProcessing)),
                       place(
-                        StripElement.pan,
-                        isMaster || chIndex == null
-                            ? MixerPan(
-                                name: ch.name,
-                                value: 0,
-                                visualHeight: math.min(AppDesign.space2xl,
-                                    allocated(StripElement.pan)),
-                                onChanged: null)
-                            : ValueListenableBuilder<double>(
-                                valueListenable: controller.panNoteOf(chIndex),
-                                builder: (context, pan, _) => MixerPan(
-                                    name: ch.name,
-                                    value: pan,
-                                    onTouch: () => onControlFocus
-                                        ?.call(MixerReadoutControl.pan),
-                                    visualHeight: math.min(AppDesign.space2xl,
-                                        allocated(StripElement.pan)),
-                                    onChanged: ready & 4 != 0
-                                        ? (v) {
-                                            onControlFocus
-                                                ?.call(MixerReadoutControl.pan);
-                                            controller.setPan(ch, v);
-                                          }
-                                        : null)),
-                      ),
+                          StripElement.pan,
+                          MixerPanCell(
+                              channel: ch,
+                              controller: controller,
+                              ready: ready,
+                              allocatedHeight: allocated(StripElement.pan),
+                              onControlFocus: onControlFocus)),
                       place(
-                        StripElement.mute,
-                        ValueListenableBuilder<bool>(
-                            valueListenable:
-                                controller.muteNoteOf(chIndex, isMaster),
-                            builder: (context, muted, _) => MixerToggle(
-                                label: ready & 2 != 0 ? 'Mute' : 'Mute · -',
-                                visualHeight: math.min(AppDesign.toggleHeight,
-                                    allocated(StripElement.mute)),
-                                fontSize: g.x(compact ? 22 : 32)
-                                    .clamp(AppDesign.controlLabel, 20.0),
-                                channelName: ch.name,
-                                on: ready & 2 != 0 && muted,
-                                activeColor: ConsolePalette.of(context).mute,
-                                activeForeground:
-                                    ConsolePalette.of(context).onDanger,
-                                onPressed: ready & 2 != 0
-                                    ? () => controller.toggleMute(ch)
-                                    : null)),
-                      ),
+                          StripElement.mute,
+                          MixerToggleCell(
+                              channel: ch,
+                              controller: controller,
+                              kind: MixerToggleKind.mute,
+                              ready: ready,
+                              visualHeight: math.min(AppDesign.toggleHeight,
+                                  allocated(StripElement.mute)),
+                              fontSize: g
+                                  .x(compact ? 22 : 32)
+                                  .clamp(AppDesign.controlLabel, 20.0))),
                       place(
                           StripElement.fader,
-                          ListenableBuilder(
-                              listenable: Listenable.merge([
-                                controller.faderNoteOf(chIndex, isMaster),
-                                controller.muteNoteOf(chIndex, isMaster),
-                              ]),
-                              builder: (context, _) {
-                                final fader = controller
-                                    .faderNoteOf(chIndex, isMaster)
-                                    .value;
-                                return Stack(children: [
-                                  ExcludeSemantics(
-                                      excluding: ready & 1 == 0,
-                                      child: IgnorePointer(
-                                          ignoring: ready & 1 == 0,
-                                          child: Opacity(
-                                              opacity: ready & 1 != 0 ? 1 : 0,
-                                              child: ValueListenableBuilder<
-                                                      String>(
-                                                  valueListenable: controller
-                                                      .store
-                                                      .controlGroupNoteOf(
-                                                          chIndex ?? -1),
-                                                  builder: (context, group, _) =>
-                                                      Tooltip(
-                                                          message: group,
-                                                          child: MixerFader(
-                                                              channel: _withFader(
-                                                                  ch, fader),
-                                                              compact: compact,
-                                                              showMeter: layout
-                                                                  .showMeter,
-                                                              onTouch: () =>
-                                                                  onControlFocus
-                                                                      ?.call(MixerReadoutControl.volume),
-                                                              onPosition: (v) {
-                                                                onControlFocus?.call(
-                                                                    MixerReadoutControl
-                                                                        .volume);
-                                                                controller
-                                                                    .setPosition(
-                                                                        ch, v);
-                                                              },
-                                                              onSelect: () {
-                                                                onControlFocus?.call(
-                                                                    MixerReadoutControl
-                                                                        .volume);
-                                                                controller
-                                                                    .select(ch);
-                                                              },
-                                                              onUnity: controller.canUnity(ch)
-                                                                  ? () {
-                                                                      onControlFocus
-                                                                          ?.call(
-                                                                              MixerReadoutControl.volume);
-                                                                      controller
-                                                                          .unity(
-                                                                              ch);
-                                                                    }
-                                                                  : null)))))),
-                                  if (ready & 1 == 0)
-                                    Center(
-                                        child: Text('-',
-                                            style: AppDesign.type(AppDesign.body,
-                                                color:
-                                                    ConsolePalette.of(context)
-                                                        .mutedText))),
-                                ]);
-                              })),
+                          MixerFaderCell(
+                              channel: ch,
+                              controller: controller,
+                              ready: ready,
+                              compact: compact,
+                              showMeter: layout.showMeter,
+                              onControlFocus: onControlFocus)),
                       place(
-                        StripElement.solo,
-                        ValueListenableBuilder<bool>(
-                            valueListenable:
-                                controller.soloNoteOf(isMaster ? -1 : chIndex!),
-                            builder: (context, solo, _) => MixerToggle(
-                                label: 'Solo',
-                                unavailableReason:
-                                    ready & 8 != 0 ? null : 'Solo unavailable',
-                                visualHeight: math.min(AppDesign.toggleHeight,
-                                    allocated(StripElement.solo)),
-                                fontSize: g.x(compact ? 22 : 32)
-                                    .clamp(AppDesign.controlLabel, 20.0),
-                                channelName: ch.name,
-                                on: ready & 8 != 0 && solo,
-                                activeColor: ConsolePalette.of(context).solo,
-                                activeForeground:
-                                    ConsolePalette.of(context).onSolo,
-                                onPressed: ready & 8 != 0
-                                    ? () => controller.toggleSolo(ch)
-                                    : null)),
-                      ),
-                      if (layout.visible.contains(StripElement.nameplate))
+                          StripElement.solo,
+                          MixerToggleCell(
+                              channel: ch,
+                              controller: controller,
+                              kind: MixerToggleKind.solo,
+                              ready: ready,
+                              visualHeight: math.min(AppDesign.toggleHeight,
+                                  allocated(StripElement.solo)),
+                              fontSize: g
+                                  .x(compact ? 22 : 32)
+                                  .clamp(AppDesign.controlLabel, 20.0))),
+                      if (visible.contains(StripElement.nameplate))
                         Positioned(
                             left: 0,
                             right: 0,
@@ -355,29 +262,7 @@ class _MixerStripState extends State<MixerStrip> {
                                 onSelect: () => controller.select(ch),
                                 onOpen: onOpen,
                                 onOpenAt: onOpenAt,
-                                onRename: !isMaster &&
-                                        ((identityChannel ?? chIndex) == null ||
-                                            controller.store.captureNameTarget(
-                                                    identityChannel ??
-                                                        chIndex) ==
-                                                null)
-                                    ? null
-                                    : (anchor, bounds) {
-                                        final index =
-                                            identityChannel ?? chIndex;
-                                        final target = index == null
-                                            ? null
-                                            : controller.store
-                                                .captureNameTarget(index);
-                                        if (target != null) {
-                                          showChannelNameEditor(
-                                              anchor, controller.store, target,
-                                              anchorBounds: bounds);
-                                        } else {
-                                          _feedback.show(
-                                              'This output has no channel identity controls on this connection.');
-                                        }
-                                      })),
+                                onRename: _nameplateRename(isMaster, chIndex))),
                     ]))));
         // Feedback scrolls after the strip instead of taking fader travel.
         return ValueListenableBuilder<String?>(
@@ -408,23 +293,26 @@ class _MixerStripState extends State<MixerStrip> {
                     : content!);
       });
 
-  /// Snapshot copy carrying the live fader value for [MixerFader] (level
-  /// label + cap position). Identity/selection/meter stay from the snapshot.
-  static MixerChannel _withFader(MixerChannel ch, double fader) => MixerChannel(
-      key: ch.key,
-      name: ch.name,
-      number: ch.number,
-      channel: ch.channel,
-      artwork: ch.artwork,
-      colorChoice: ch.colorChoice,
-      icon: ch.icon,
-      fader: fader,
-      pan: ch.pan,
-      muted: ch.muted,
-      solo: ch.solo,
-      selected: ch.selected,
-      master: ch.master,
-      meter: ch.meter,
-      params: ch.params,
-      eqPreview: ch.eqPreview);
+  /// Rename is offered only where this connection exposes a name target.
+  /// Outputs without one stay tappable but never open an editor they cannot
+  /// commit to.
+  void Function(BuildContext, Rect)? _nameplateRename(
+      bool isMaster, int? chIndex) {
+    if (isMaster) return null;
+    final index = identityChannel ?? chIndex;
+    final target =
+        index == null ? null : controller.store.captureNameTarget(index);
+    if (target == null) return null;
+    return (anchor, bounds) {
+      final current =
+          index == null ? null : controller.store.captureNameTarget(index);
+      if (current != null) {
+        showChannelNameEditor(anchor, controller.store, current,
+            anchorBounds: bounds);
+      } else {
+        _feedback.show(
+            'This output has no channel identity controls on this connection.');
+      }
+    };
+  }
 }

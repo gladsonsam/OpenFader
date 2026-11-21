@@ -1,9 +1,9 @@
 part of '../settings.dart';
 
-/// Channel-strip composition: presets, per-element visibility, fader size,
-/// order, and compact processing. Self-listens on [PrefsService] so edits
-/// apply here immediately; the mixer page's own prefs listener applies them
-/// to live strips.
+/// Channel-strip composition: presets, the ordered row list, and the layout
+/// properties that are not rows. The list and the mixer strip share
+/// [StripElement] metadata and [StripLayout] helpers, so hiding or moving a
+/// row here has exactly one meaning in the running strip.
 class _StripLayoutSection extends StatelessWidget {
   final SettingsStore store;
   final void Function(String) toast;
@@ -16,16 +16,19 @@ class _StripLayoutSection extends StatelessWidget {
       listenable: prefs,
       builder: (context, _) {
         final layout = prefs.stripLayout;
+        final palette = ConsolePalette.of(context);
         Future<void> apply(StripLayout next) async {
           await prefs.setStripLayout(next);
           toast('Preference saved');
         }
 
+        final rows = layout.rows;
         return _Section(
           title: 'Channel strips',
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppDesign.spaceLg, vertical: AppDesign.spaceMd),
               child: ConsoleActionGroup(
                 children: [
                   for (final preset in const [
@@ -53,36 +56,100 @@ class _StripLayoutSection extends StatelessWidget {
                 ],
               ),
             ),
-            for (final el in StripElement.values)
-              if (el == StripElement.fader)
-                _PrefRow(
-                  label: el.label,
-                  desc: 'Always on',
-                  trailing: _ValueText('On'),
-                )
-              else
-                _PrefRow(
-                  label:
-                      el == StripElement.meter ? 'Meter (in fader)' : el.label,
-                  trailing: _Toggle(
-                    label: '${el.label} visible',
-                    value: layout.visible.contains(el),
-                    onChanged: (v) async {
-                      final visible = {...layout.visible};
-                      if (v) {
-                        visible.add(el);
-                      } else {
-                        visible.remove(el);
-                      }
-                      await apply(layout.copyWith(visible: visible));
-                    },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppDesign.spaceLg,
+                  AppDesign.spaceMd, AppDesign.spaceLg, AppDesign.spaceXs),
+              child: Text(
+                'Rows (drag to reorder)',
+                style: AppDesign.type(AppDesign.body, color: palette.mutedText),
+              ),
+            ),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: rows.length,
+              itemBuilder: (context, index) {
+                final element = rows[index];
+                final shown = layout.shows(element);
+                return DecoratedBox(
+                  key: ValueKey(element.key),
+                  decoration: BoxDecoration(
+                    border: index < rows.length - 1
+                        ? Border(bottom: BorderSide(color: palette.line))
+                        : null,
                   ),
-                ),
+                  child: ConsolePreferenceRow(
+                    label: element.label,
+                    description: element.mandatory
+                        ? 'Always shown'
+                        : element.description,
+                    foreground: shown ? null : palette.mutedText,
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (!element.mandatory)
+                        _Toggle(
+                          label: '${element.label} visible',
+                          value: shown,
+                          onChanged: (v) =>
+                              apply(layout.withVisibility(element, v)),
+                        ),
+                      const SizedBox(width: AppDesign.spaceSm),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: Semantics(
+                          label: 'Reorder ${element.label}',
+                          onDecrease: index == 0
+                              ? null
+                              : () => apply(
+                                  layout.withOrder(_moveRow(rows, index, -1))),
+                          onIncrease: index == rows.length - 1
+                              ? null
+                              : () => apply(
+                                  layout.withOrder(_moveRow(rows, index, 1))),
+                          child: SizedBox(
+                            width: AppDesign.touchTarget,
+                            height: AppDesign.touchTarget,
+                            child: Icon(Icons.drag_handle,
+                                size: AppDesign.iconSize,
+                                color: palette.mutedText),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                );
+              },
+              onReorderItem: (oldIndex, newIndex) async {
+                final next = [...rows];
+                final element = next.removeAt(oldIndex);
+                next.insert(newIndex, element);
+                await apply(layout.withOrder(next));
+              },
+            ),
+            _PrefRow(
+              label: 'Meter',
+              desc: StripElement.meter.description,
+              trailing: _Toggle(
+                label: 'Meter visible',
+                value: layout.shows(StripElement.meter),
+                onChanged: (v) =>
+                    apply(layout.withVisibility(StripElement.meter, v)),
+              ),
+            ),
+            _PrefRow(
+              label: 'Channel artwork',
+              desc: 'Channel icon above the name',
+              trailing: _Toggle(
+                label: 'Channel artwork',
+                value: layout.showArtwork,
+                onChanged: (v) => apply(layout.copyWith(showArtwork: v)),
+              ),
+            ),
             _PrefRow(
               label: 'Fader size',
               desc: layout.faderWeight.toStringAsFixed(1),
               trailing: SizedBox(
-                width: 174,
+                width: AppDesign.compactSelectMaxWidth,
                 child: Slider(
                   value: layout.faderWeight,
                   min: 1,
@@ -100,63 +167,9 @@ class _StripLayoutSection extends StatelessWidget {
               trailing: _Toggle(
                 label: 'Compact processing',
                 value: layout.compactProcessing,
-                onChanged: (v) async =>
+                onChanged: (v) =>
                     apply(layout.copyWith(compactProcessing: v)),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-              child: Text(
-                'Strip order (top to bottom)',
-                style: TextStyle(
-                  fontFamily: AppDesign.font,
-                  fontSize: AppDesign.body,
-                  color: ConsolePalette.of(context).mutedText,
-                ),
-              ),
-            ),
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount:
-                  layout.order.where((el) => el != StripElement.meter).length,
-              itemBuilder: (context, i) {
-                final order = layout.order
-                    .where((el) => el != StripElement.meter)
-                    .toList();
-                final el = order[i];
-                return ListTile(
-                  key: ValueKey(el.key),
-                  dense: true,
-                  title: Text(
-                    el.label,
-                    style: TextStyle(
-                      fontFamily: AppDesign.font,
-                      fontSize: AppDesign.rowLabel,
-                      color: layout.visible.contains(el) ||
-                              el == StripElement.fader
-                          ? ConsolePalette.of(context).text
-                          : ConsolePalette.of(context).mutedText,
-                    ),
-                  ),
-                  trailing: ReorderableDragStartListener(
-                    index: i,
-                    child: Icon(
-                      Icons.drag_handle,
-                      color: ConsolePalette.of(context).mutedText,
-                    ),
-                  ),
-                );
-              },
-              onReorderItem: (oldIndex, newIndex) async {
-                final order = layout.order
-                    .where((el) => el != StripElement.meter)
-                    .toList();
-                final el = order.removeAt(oldIndex);
-                order.insert(newIndex, el);
-                // Meter stays fused to the fader; keep it out of the row order.
-                await apply(layout.copyWith(order: order));
-              },
             ),
             const SizedBox(height: AppDesign.spaceSm),
           ],
@@ -164,6 +177,14 @@ class _StripLayoutSection extends StatelessWidget {
       },
     );
   }
+}
+
+/// Move one row without letting a screen-reader action walk past the ends.
+List<StripElement> _moveRow(List<StripElement> rows, int index, int delta) {
+  final next = [...rows];
+  final element = next.removeAt(index);
+  next.insert((index + delta).clamp(0, next.length).toInt(), element);
+  return next;
 }
 
 class _PresetChip extends StatelessWidget {

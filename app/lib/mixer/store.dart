@@ -21,7 +21,11 @@ class MixerBank {
 
 class CustomMixerView {
   final String id, name;
-  final Set<String> stripKeys;
+
+  /// Ordered membership: the mixer renders this view in the user's order,
+  /// not the desk's channel order. Unknown keys are kept so a view survives
+  /// a desk reconfiguration; the mixer skips keys it cannot resolve.
+  final List<String> stripKeys;
   const CustomMixerView(
       {required this.id, required this.name, required this.stripKeys});
 }
@@ -53,6 +57,11 @@ class MixerBusRow {
 /// solo banner) notifies through [ChangeNotifier].
 abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   List<Strip> get strips;
+
+  /// Stable identity of the current mixer connection. Saved selections are
+  /// scoped to this key so two mixers, a remote host and the offline sim never
+  /// inherit each other's layer or view.
+  String get mixerScope;
 
   /// Descriptor-based membership of the current mixer surface. Independent
   /// of hydration, permissions, locks and whether a fader is currently ready.

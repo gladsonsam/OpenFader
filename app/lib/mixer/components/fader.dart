@@ -156,6 +156,102 @@ class _MixerFaderState extends State<MixerFader> {
       });
 }
 
+/// Strip-level fader cell. It owns the per-strip fader and mute notifiers and
+/// the snapshot copy that carries the live fader position, so a drag wakes
+/// this cell only. Readiness, unity and provider gating stay on the controller.
+class MixerFaderCell extends StatelessWidget {
+  final MixerChannel channel;
+  final MixerController controller;
+  final int ready;
+  final bool compact;
+  final bool showMeter;
+  final ValueChanged<MixerReadoutControl>? onControlFocus;
+  const MixerFaderCell(
+      {super.key,
+      required this.channel,
+      required this.controller,
+      required this.ready,
+      this.compact = false,
+      this.showMeter = true,
+      this.onControlFocus});
+
+  @override
+  Widget build(BuildContext context) {
+    final ch = channel;
+    final chIndex = ch.channel;
+    final isMaster = ch.master;
+    return ListenableBuilder(
+        listenable: Listenable.merge([
+          controller.faderNoteOf(chIndex, isMaster),
+          controller.muteNoteOf(chIndex, isMaster),
+        ]),
+        builder: (context, _) {
+          final fader = controller.faderNoteOf(chIndex, isMaster).value;
+          return Stack(children: [
+            ExcludeSemantics(
+                excluding: ready & 1 == 0,
+                child: IgnorePointer(
+                    ignoring: ready & 1 == 0,
+                    child: Opacity(
+                        opacity: ready & 1 != 0 ? 1 : 0,
+                        child: ValueListenableBuilder<String>(
+                            valueListenable: controller.store
+                                .controlGroupNoteOf(chIndex ?? -1),
+                            builder: (context, group, _) => Tooltip(
+                                message: group,
+                                child: MixerFader(
+                                    channel: _withFader(ch, fader),
+                                    compact: compact,
+                                    showMeter: showMeter,
+                                    onTouch: () => onControlFocus
+                                        ?.call(MixerReadoutControl.volume),
+                                    onPosition: (v) {
+                                      onControlFocus?.call(
+                                          MixerReadoutControl.volume);
+                                      controller.setPosition(ch, v);
+                                    },
+                                    onSelect: () {
+                                      onControlFocus?.call(
+                                          MixerReadoutControl.volume);
+                                      controller.select(ch);
+                                    },
+                                    onUnity: controller.canUnity(ch)
+                                        ? () {
+                                            onControlFocus?.call(
+                                                MixerReadoutControl.volume);
+                                            controller.unity(ch);
+                                          }
+                                        : null)))))),
+            if (ready & 1 == 0)
+              Center(
+                  child: Text('-',
+                      style: AppDesign.type(AppDesign.body,
+                          color: ConsolePalette.of(context).mutedText))),
+          ]);
+        });
+  }
+
+  /// Snapshot copy carrying the live fader value for [MixerFader] (level
+  /// label + cap position). Identity/selection/meter stay from the snapshot.
+  static MixerChannel _withFader(MixerChannel ch, double fader) => MixerChannel(
+      key: ch.key,
+      name: ch.name,
+      number: ch.number,
+      channel: ch.channel,
+      artwork: ch.artwork,
+      colorChoice: ch.colorChoice,
+      icon: ch.icon,
+      fader: fader,
+      pan: ch.pan,
+      muted: ch.muted,
+      solo: ch.solo,
+      selected: ch.selected,
+      master: ch.master,
+      meter: ch.meter,
+      params: ch.params,
+      eqPreview: ch.eqPreview);
+}
+
 class _FaderGeometry {
   final Size size;
   final bool compact;

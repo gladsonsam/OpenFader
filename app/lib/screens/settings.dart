@@ -65,6 +65,9 @@ abstract class SettingsStore extends ChangeNotifier {
 
   /// Live channel catalog for the custom-layers editor (master excluded).
   List<({String key, String name})> get layerChannelOptions;
+
+  /// Selected layer/view for the connected mixer (`layer:<id>` or a bank key).
+  String get mixerSelectionKey;
   Future<void> activateMixerLayer(String id);
   Future<int> appStorageBytes();
 

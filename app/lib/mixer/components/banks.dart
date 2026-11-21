@@ -445,10 +445,18 @@ Future<void> showCustomMixerViews(
                   for (final view in controller.store.customMixerViews)
                     ListTile(
                         title: Text(view.name),
-                        subtitle: Text('${view.stripKeys.length} channels'),
+                        subtitle: Text(
+                            '${view.stripKeys.length} channels · saved order'),
                         trailing: const Icon(Icons.edit_outlined),
                         onTap: () =>
                             _editCustomView(context, controller, view)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Text(
+                        'Use Edit layout on the mixer to reorder a view.',
+                        style: mixerType(context, 12,
+                            color: ConsolePalette.of(context).mutedText)),
+                  ),
                 ]),
               )),
             ));
@@ -456,10 +464,12 @@ Future<void> showCustomMixerViews(
 Future<void> _editCustomView(BuildContext context, MixerController controller,
     [CustomMixerView? existing]) async {
   final engine = controller.store.engine;
-  final scope = (engine.driver, engine.model, engine.linkIp);
+  final scope = controller.mixerScope;
   final strips = engine.strips.where((s) => s.key != 'main').toList();
   final name = TextEditingController(text: existing?.name ?? '');
-  final selected = <String>{...?existing?.stripKeys};
+  // Ordered membership: existing views keep their saved order, and new
+  // selections append in the order the user ticks them.
+  final selected = <String>[...?existing?.stripKeys];
   final route = DialogRoute<String>(
       animationStyle: AnimationStyle.noAnimation,
       context: context,
@@ -485,7 +495,9 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
                             value: selected.contains(strip.key),
                             onChanged: (value) => setDialogState(() {
                               if (value == true) {
-                                selected.add(strip.key);
+                                if (!selected.contains(strip.key)) {
+                                  selected.add(strip.key);
+                                }
                               } else {
                                 selected.remove(strip.key);
                               }
@@ -521,7 +533,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
   await route.completed;
   name.dispose();
   if (result == null || !context.mounted) return;
-  if ((engine.driver, engine.model, engine.linkIp) != scope) {
+  if (controller.mixerScope != scope) {
     InlineFeedbackScope.show(
         context, 'Mixer changed. Open custom views again.');
     return;
@@ -533,7 +545,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
     final view = CustomMixerView(
         id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         name: viewName,
-        stripKeys: selected);
+        stripKeys: List.unmodifiable(selected));
     if (existing == null) {
       views.add(view);
     } else {

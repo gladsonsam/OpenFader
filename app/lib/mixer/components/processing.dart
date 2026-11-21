@@ -7,6 +7,37 @@ import '../design.dart';
 import '../demo.dart';
 import '../../design.dart';
 
+/// Strip-level processing row: either the compact EQ preview or the full
+/// gain/EQ/dynamics rack. Gain range and phantom availability come from the
+/// controller, so an unsupported provider yields a read-only preview.
+class MixerProcessingCell extends StatelessWidget {
+  final MixerChannel channel;
+  final MixerController controller;
+  final bool compact;
+  final VoidCallback onOpen;
+  const MixerProcessingCell(
+      {super.key,
+      required this.channel,
+      required this.controller,
+      required this.compact,
+      required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) => compact
+      ? MixerEqPreview(
+          channel: channel,
+          compact: true,
+          showPhantom: controller.hasPhantomOf(channel),
+          onOpen: onOpen)
+      : MixerProcessingRack(
+          channel: channel,
+          gainRange: controller.gainRangeOf(channel),
+          showPhantom: controller.hasPhantomOf(channel),
+          demo: controller.demo,
+          onOpen: onOpen,
+          onGain: (v) => controller.setGain(channel, v));
+}
+
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
 /// opens the existing channel editor; hardware curves use actual parameters.
 class MixerProcessingRack extends StatefulWidget {

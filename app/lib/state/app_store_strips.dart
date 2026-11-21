@@ -241,8 +241,17 @@ mixin _AppStoreStrips on _AppStoreContext {
     } else if (_bank.startsWith('custom:')) {
       final id = _bank.substring(7);
       final view = customMixerViews.where((v) => v.id == id).firstOrNull;
-      visible =
-          engine.strips.where((s) => view?.stripKeys.contains(s.key) ?? false);
+      // App views keep the user's saved order. A desk reorder or channel
+      // insertion must not silently reshuffle a view the user arranged.
+      final byKey = {for (final s in engine.strips) s.key: s};
+      final ordered = <Strip>[];
+      for (final key in view?.stripKeys ?? const <String>[]) {
+        final strip = byKey[key];
+        if (strip != null && !ordered.any((s) => s.key == key)) {
+          ordered.add(strip);
+        }
+      }
+      visible = ordered;
     } else if (_bank == 'view:all') {
       visible = engine.topology.isEmpty
           ? engine.strips
@@ -585,6 +594,9 @@ mixin _AppStoreStrips on _AppStoreContext {
 
   String get _mixerViewScope =>
       '${engine.driver}:${engine.model}:${engine.linkIp}';
+
+  @override
+  String get mixerScope => _mixerViewScope;
 
   @override
   List<CustomMixerView> get customMixerViews =>

@@ -1,8 +1,70 @@
 import '../../palette.dart';
 import 'package:material_ui/material_ui.dart';
+import '../controller.dart';
 import '../design.dart';
 import '../../ui/motion.dart';
 import '../../design.dart';
+
+/// Which live state a [MixerToggleCell] binds to. Both kinds share the same
+/// readiness gate, touch target and semantic toggle contract.
+enum MixerToggleKind { mute, solo }
+
+/// Strip-level mute or solo row. The cell owns the live notifier so a tap
+/// rebuilds one strip, not the shell or its siblings.
+class MixerToggleCell extends StatelessWidget {
+  final MixerChannel channel;
+  final MixerController controller;
+  final MixerToggleKind kind;
+  final int ready;
+  final double visualHeight;
+  final double fontSize;
+  const MixerToggleCell(
+      {super.key,
+      required this.channel,
+      required this.controller,
+      required this.kind,
+      required this.ready,
+      required this.visualHeight,
+      required this.fontSize});
+
+  @override
+  Widget build(BuildContext context) {
+    final ch = channel;
+    final isMaster = ch.master;
+    final chIndex = ch.channel;
+    switch (kind) {
+      case MixerToggleKind.mute:
+        return ValueListenableBuilder<bool>(
+            valueListenable: controller.muteNoteOf(chIndex, isMaster),
+            builder: (context, muted, _) => MixerToggle(
+                label: ready & 2 != 0 ? 'Mute' : 'Mute · -',
+                visualHeight: visualHeight,
+                fontSize: fontSize,
+                channelName: ch.name,
+                on: ready & 2 != 0 && muted,
+                activeColor: ConsolePalette.of(context).mute,
+                activeForeground: ConsolePalette.of(context).onDanger,
+                onPressed:
+                    ready & 2 != 0 ? () => controller.toggleMute(ch) : null));
+      case MixerToggleKind.solo:
+        return ValueListenableBuilder<bool>(
+            valueListenable:
+                controller.soloNoteOf(isMaster ? -1 : (chIndex ?? -1)),
+            builder: (context, solo, _) => MixerToggle(
+                label: 'Solo',
+                unavailableReason:
+                    ready & 8 != 0 ? null : 'Solo unavailable',
+                visualHeight: visualHeight,
+                fontSize: fontSize,
+                channelName: ch.name,
+                on: ready & 8 != 0 && solo,
+                activeColor: ConsolePalette.of(context).solo,
+                activeForeground: ConsolePalette.of(context).onSolo,
+                onPressed:
+                    ready & 8 != 0 ? () => controller.toggleSolo(ch) : null));
+    }
+  }
+}
 
 /// Shared mute/solo control. A minimum 44-point hit target is independent of
 /// the strip density, and screen readers receive both name and toggle state.

@@ -25,11 +25,10 @@ class MixerLayer {
   final String name;
   final List<String> channelKeys;
   final int stripsPerPage;
-  // Optional free-text device tag (e.g. "X32", "DL32S"). Null = global
-  // layer shown on every mixer. Full per-mixer-model keying
-  // (layers bound to a specific desk model) is future work; this hint is
-  // deliberately unstructured so a later migration can adopt it without a
-  // codec break.
+  // Optional free-text device tag (e.g. "X32", "DL32S") shown beside the
+  // layer. It labels the layer; it does not filter layers by mixer. Binding a
+  // layer to a desk model is future work, so the tag stays unstructured and a
+  // later migration can adopt it without a codec break.
   final String? deviceHint;
 
   const MixerLayer({

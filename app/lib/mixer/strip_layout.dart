@@ -2,16 +2,52 @@ import 'dart:convert';
 
 /// Per-strip vertical composition. The strip renders [order] top-to-bottom,
 /// skipping elements absent from [visible]. The meter has no row of its own:
-/// it is fused into the fader cell and shown when [visible] contains
-/// [StripElement.meter].
+/// it is fused into the fader cell and shown when the layout includes it.
+///
+/// Labels, descriptions and the row rules live on the element itself so the
+/// strip, the settings editor and persisted layouts all use one typed model.
+/// Adding an element means extending this enum; every consumer follows.
 enum StripElement {
-  processing,
-  pan,
-  mute,
-  fader,
-  meter,
-  solo,
-  nameplate;
+  processing(
+    label: 'Processing',
+    description: 'Gain, EQ and dynamics preview',
+  ),
+  pan(label: 'Pan', description: 'Balance control'),
+  mute(label: 'Mute', description: 'Mute button'),
+  fader(label: 'Fader', description: 'Level control', mandatory: true),
+  meter(
+    label: 'Meter',
+    description: 'Level meter inside the fader',
+    fused: true,
+  ),
+  solo(label: 'Solo', description: 'Solo button'),
+  nameplate(
+    label: 'Nameplate',
+    description: 'Channel number, icon and name',
+  );
+
+  const StripElement({
+    required this.label,
+    required this.description,
+    this.mandatory = false,
+    this.fused = false,
+  });
+
+  /// Short action/value name for editors and readouts.
+  final String label;
+
+  /// One line of context for the settings editor. The strip supplies context
+  /// for the control itself, so this never becomes a strip label.
+  final String description;
+
+  /// Cannot be hidden: a strip without this element is unusable.
+  final bool mandatory;
+
+  /// Has no row of its own and is drawn inside its host element.
+  final bool fused;
+
+  /// Whether [StripLayout.order] carries this element as a draggable row.
+  bool get hasOwnRow => !fused;
 
   String get key => name;
 
@@ -21,16 +57,6 @@ enum StripElement {
     }
     return null;
   }
-
-  String get label => switch (this) {
-        StripElement.processing => 'Processing',
-        StripElement.pan => 'Pan',
-        StripElement.mute => 'Mute',
-        StripElement.fader => 'Fader',
-        StripElement.meter => 'Meter',
-        StripElement.solo => 'Solo',
-        StripElement.nameplate => 'Nameplate',
-      };
 }
 
 class StripLayout {
@@ -51,24 +77,21 @@ class StripLayout {
   final double faderWeight;
   final bool compactProcessing;
 
+  /// Show the channel icon above the nameplate. Hiding it gives the fader the
+  /// space back on shorter windows while keeping the name and channel number.
+  final bool showArtwork;
+
   const StripLayout({
     required this.order,
     required this.visible,
     this.faderWeight = defaultFaderWeight,
     this.compactProcessing = false,
+    this.showArtwork = true,
   });
 
-  factory StripLayout.defaults() => const StripLayout(
+  factory StripLayout.defaults() => StripLayout(
         order: defaultOrder,
-        visible: {
-          StripElement.processing,
-          StripElement.pan,
-          StripElement.mute,
-          StripElement.fader,
-          StripElement.meter,
-          StripElement.solo,
-          StripElement.nameplate,
-        },
+        visible: StripElement.values.toSet(),
       );
 
   /// Everything on: the full console strip.
@@ -112,27 +135,69 @@ class StripLayout {
         },
       );
 
-  /// Ordered, visible elements with a row of their own. Meter is fused into
-  /// the fader cell, so it never appears here even when visible.
-  List<StripElement> get visibleOrder => [
+  /// Ordered rows with a place in the strip. The fused meter has no row, so
+  /// it never appears here even when visible.
+  List<StripElement> get rows => [
         for (final el in order)
-          if (el != StripElement.meter && visible.contains(el)) el,
+          if (el.hasOwnRow) el,
       ];
 
+  /// Ordered, visible elements with a row of their own.
+  List<StripElement> get visibleOrder => [
+        for (final el in order)
+          if (el.hasOwnRow && shows(el)) el,
+      ];
+
+  /// Whether the element participates in the strip. Mandatory elements stay
+  /// present even if a hand-edited payload omitted them.
+  bool shows(StripElement element) =>
+      element.mandatory || visible.contains(element);
+
+  /// The meter is fused into the fader, so both must be present.
   bool get showMeter =>
-      visible.contains(StripElement.meter) && visible.contains(StripElement.fader);
+      shows(StripElement.meter) && shows(StripElement.fader);
+
+  /// All row elements exactly once, in [values] order first and canonical
+  /// order for anything missing. Fused elements are not rows.
+  static List<StripElement> normalizeOrder(Iterable<StripElement> values) {
+    final parsed = <StripElement>[];
+    for (final element in values) {
+      if (element.hasOwnRow && !parsed.contains(element)) parsed.add(element);
+    }
+    for (final element in StripElement.values) {
+      if (element.hasOwnRow && !parsed.contains(element)) parsed.add(element);
+    }
+    return parsed;
+  }
+
+  StripLayout withOrder(Iterable<StripElement> next) =>
+      copyWith(order: normalizeOrder(next));
+
+  /// Set visibility through the model, so mandatory rows can never be hidden.
+  StripLayout withVisibility(StripElement element, bool isVisible) {
+    if (element.mandatory && !isVisible) return this;
+    final next = {...visible};
+    if (isVisible) {
+      next.add(element);
+    } else {
+      next.remove(element);
+    }
+    return copyWith(visible: next);
+  }
 
   StripLayout copyWith({
     List<StripElement>? order,
     Set<StripElement>? visible,
     double? faderWeight,
     bool? compactProcessing,
+    bool? showArtwork,
   }) =>
       StripLayout(
         order: order ?? this.order,
         visible: visible ?? this.visible,
         faderWeight: faderWeight ?? this.faderWeight,
         compactProcessing: compactProcessing ?? this.compactProcessing,
+        showArtwork: showArtwork ?? this.showArtwork,
       );
 
   Map<String, Object> toJson() => {
@@ -141,6 +206,7 @@ class StripLayout {
         'visible': [for (final el in visible) el.key],
         'faderWeight': faderWeight,
         'compactProcessing': compactProcessing,
+        'showArtwork': showArtwork,
       };
 
   String encode() => jsonEncode(toJson());
@@ -160,33 +226,30 @@ class StripLayout {
     if ((json['version'] as num?)?.toInt() != version) {
       throw const FormatException('unsupported strip layout version');
     }
-    List<StripElement> parseList(Object? value, List<StripElement> fallback) {
-      if (value is! List) return fallback;
+    List<StripElement> parseOrder(Object? value) {
+      if (value is! List) return defaultOrder;
       final parsed = <StripElement>[];
       for (final entry in value) {
-        final el = StripElement.fromKey(entry);
-        if (el != null && !parsed.contains(el)) parsed.add(el);
+        final element = StripElement.fromKey(entry);
+        if (element != null) parsed.add(element);
       }
-      // Repair: any missing element (except meter) rejoins at the end so a
-      // hand-edited or older payload can never drop a control silently.
-      for (final el in StripElement.values) {
-        if (el != StripElement.meter && !parsed.contains(el)) parsed.add(el);
-      }
-      return parsed;
+      return normalizeOrder(parsed);
     }
 
-    final order = parseList(json['order'], defaultOrder);
+    final order = parseOrder(json['order']);
     final visibleRaw = json['visible'];
     final Set<StripElement> visible;
     if (visibleRaw is! List) {
       visible = StripLayout.defaults().visible;
     } else {
-      visible = {
-        for (final entry in visibleRaw)
-          if (StripElement.fromKey(entry) != null) StripElement.fromKey(entry)!,
-      };
+      final parsed = <StripElement>{};
+      for (final entry in visibleRaw) {
+        final element = StripElement.fromKey(entry);
+        if (element != null) parsed.add(element);
+      }
       // The fader is mandatory: a strip without it is unusable.
-      visible.add(StripElement.fader);
+      parsed.add(StripElement.fader);
+      visible = parsed;
     }
     final weight = (json['faderWeight'] as num?)?.toDouble() ?? defaultFaderWeight;
     return StripLayout(
@@ -194,6 +257,8 @@ class StripLayout {
       visible: visible,
       faderWeight: weight.clamp(1.0, 6.0),
       compactProcessing: (json['compactProcessing'] as bool?) ?? false,
+      // Payloads written before this preference omit the key and keep artwork.
+      showArtwork: (json['showArtwork'] as bool?) ?? true,
     );
   }
 
@@ -204,12 +269,13 @@ class StripLayout {
       visible.length == other.visible.length &&
       visible.containsAll(other.visible) &&
       faderWeight == other.faderWeight &&
-      compactProcessing == other.compactProcessing;
+      compactProcessing == other.compactProcessing &&
+      showArtwork == other.showArtwork;
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(order), Object.hashAllUnordered(visible),
-          faderWeight, compactProcessing);
+  int get hashCode => Object.hash(Object.hashAll(order),
+      Object.hashAllUnordered(visible), faderWeight, compactProcessing,
+      showArtwork);
 }
 
 bool _listEquals(List<StripElement> a, List<StripElement> b) {

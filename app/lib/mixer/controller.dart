@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import '../palette.dart';
@@ -14,6 +15,7 @@ import '../core/fader_law.dart' show lawForDriver, designLaw;
 import '../core/control_reset.dart';
 import 'design.dart';
 import 'mixer_layers.dart';
+import 'store.dart' show CustomMixerView;
 
 enum MixerDestination {
   meters,
@@ -95,6 +97,13 @@ class MixerController extends ChangeNotifier {
   int _page = 0;
   int _pageSize = 8;
 
+  /// Restore is idempotent per connection session. The scoped selection is
+  /// applied only after the provider advertises its banks/views, so a slow
+  /// handshake cannot overwrite the saved choice with a premature fallback.
+  String? _restoredSelectionToken;
+  bool _restoringSelection = false;
+  bool _sanitizingSelection = false;
+
   /// Horizontal scroll offset, retained across tab switches so returning
   /// home lands on the same mixer view.
   double scrollOffset = 0;
@@ -103,6 +112,7 @@ class MixerController extends ChangeNotifier {
   MixerController(this.store) : _driver = store.engine.driver {
     store.addListener(_changed);
     PrefsService.instance.addListener(_layersChanged);
+    _maybeRestoreSelection();
   }
   bool get demo => store.engine.driver == 'sim';
   bool get connected => store.engine.connected;
@@ -120,6 +130,8 @@ class MixerController extends ChangeNotifier {
 
   String? get sendsOnFadersBusName =>
       store.masterProcessingTarget.startsWith('bus/') ? store.masterName : null;
+
+  String get mixerScope => store.mixerScope;
 
   String get error => store.visibleError;
   int get page => _page;
@@ -140,11 +152,134 @@ class MixerController extends ChangeNotifier {
     }).toList(growable: false);
   }
 
-  /// Active custom layer, or the built-in All layer (unknown ids fall back
-  /// to All via [MixerLayersState]).
-  MixerLayer get activeLayer =>
-      PrefsService.instance.mixerLayersState.activeLayer;
+  /// Active custom layer for this mixer connection, or the built-in All
+  /// layer. The selection is scoped to the connection, so changing mixers,
+  /// reconnecting remotely or working offline never inherits another
+  /// mixer's layer.
+  MixerLayer get activeLayer {
+    final selection = PrefsService.instance.mixerSelection(store.mixerScope);
+    if (selection != null && selection.startsWith(_layerSelectionPrefix)) {
+      final id = selection.substring(_layerSelectionPrefix.length);
+      for (final layer in PrefsService.instance.mixerLayers) {
+        if (layer.id == id) return layer;
+      }
+    }
+    return MixerLayer.all();
+  }
   bool get isCustomLayerActive => !activeLayer.isAll;
+
+  static const _layerSelectionPrefix = 'layer:';
+
+  /// Current top-level picker selection: an app layer (`layer:<id>`) or the
+  /// live bank/view key (`view:all`, `custom:<id>`, `ch1`, `view:view1_assign`).
+  String get selectionKey => isCustomLayerActive
+      ? '$_layerSelectionPrefix${activeLayer.id}'
+      : store.bank;
+
+  /// Human label for the always-visible layers bar.
+  String get selectionLabel {
+    final layer = activeLayer;
+    if (!layer.isAll) return layer.name;
+    if (store.bank == 'view:all') return 'All';
+    for (final bank in store.banks) {
+      if (bank.key == store.bank) return bank.label;
+    }
+    return 'All';
+  }
+
+  /// Custom view currently shown as a bank, if any.
+  CustomMixerView? get activeCustomView {
+    if (!activeLayer.isAll || !store.bank.startsWith('custom:')) return null;
+    final id = store.bank.substring('custom:'.length);
+    return store.customMixerViews.where((view) => view.id == id).firstOrNull;
+  }
+
+  /// Layout editing is explicit and only mutates app-owned membership:
+  /// a saved layer or a custom view. Native banks and All stay read-only.
+  bool get canEditLayout => !activeLayer.isAll || activeCustomView != null;
+
+  /// Raw saved key order, including keys the current desk cannot resolve.
+  /// Keeping them means editing a layer on a reconfigured desk does not
+  /// silently delete entries that may return later.
+  List<String> get editableChannelKeys => !activeLayer.isAll
+      ? [...activeLayer.channelKeys]
+      : [...?activeCustomView?.stripKeys];
+
+  /// Live channels available to add, filtered by the same surface/access
+  /// rules the mixer uses. The master is never part of a layer or view.
+  List<LayerChannelOption> get layerChannels => [
+        for (final strip in store.engine.strips)
+          if (strip.key != store.masterProcessingTarget &&
+              strip.key != 'main' &&
+              store.isMixerStripVisible(strip) &&
+              store.accessTargetAllowed(strip.key))
+            (
+              key: strip.key,
+              name: strip.name.isEmpty ? strip.key : strip.name,
+            ),
+      ];
+
+  List<LayerChannelOption> get addableLayerChannels {
+    final present = editableChannelKeys.toSet();
+    return [
+      for (final option in layerChannels)
+        if (!present.contains(option.key)) option,
+    ];
+  }
+
+  LayerChannelOption? channelOptionFor(String key) {
+    for (final option in layerChannels) {
+      if (option.key == key) return option;
+    }
+    return null;
+  }
+
+  /// Resolve saved keys to live mixer strips in saved order. Used by the
+  /// in-place layout editor so a draft can render before anything is saved.
+  List<MixerChannel> channelsForKeys(Iterable<String> keys) {
+    final byKey = {
+      for (final strip in store.engine.strips)
+        if (strip.key != 'main') strip.key: strip,
+    };
+    final picked = <Strip>[];
+    for (final key in keys) {
+      final strip = byKey[key];
+      if (strip == null ||
+          !store.isMixerStripVisible(strip) ||
+          picked.any((candidate) => candidate.key == key)) {
+        continue;
+      }
+      picked.add(strip);
+    }
+    final present = picked.map((strip) => strip.ch).toSet();
+    return [
+      for (final strip in picked)
+        if (_linkedPair(strip.ch) == null ||
+            _linkedPair(strip.ch)!.last != strip.ch ||
+            !present.contains(_linkedPair(strip.ch)!.first))
+          _channel(strip),
+    ];
+  }
+
+  /// Re-merge a visible order with the raw saved order so keys the current
+  /// desk cannot resolve keep their place during reordering.
+  List<String> mergeVisibleOrder(
+      List<String> saved, List<String> visibleOrder) {
+    final visible = visibleOrder.toSet();
+    final merged = <String>[];
+    var next = 0;
+    for (final key in saved) {
+      if (!visible.contains(key)) {
+        merged.add(key);
+      } else if (next < visibleOrder.length) {
+        merged.add(visibleOrder[next++]);
+      }
+    }
+    while (next < visibleOrder.length) {
+      merged.add(visibleOrder[next++]);
+    }
+    return merged;
+  }
 
   /// Custom layers ignore the bank rail: their channel source is the layer's
   /// own [MixerLayer.channelKeys] order, not the bank-filtered surface
@@ -198,9 +333,13 @@ class MixerController extends ChangeNotifier {
       .map(_channel)
       .toList(growable: false);
 
-  /// Empty-state copy for a custom layer with no resolvable channels.
-  String get layerEmptyMessage =>
-      '“${activeLayer.name}” has no channels to show.';
+  /// Empty-state copy for an app layer or custom view with no resolvable
+  /// channels.
+  String get layerEmptyMessage {
+    final view = activeCustomView;
+    if (view != null) return '“${view.name}” has no channels to show.';
+    return '“${activeLayer.name}” has no channels to show.';
+  }
   String _stripNumber(Strip strip) {
     final family = store.engine.topology.where((row) {
       final first = (row['first'] as num).toInt();
@@ -331,7 +470,10 @@ class MixerController extends ChangeNotifier {
       _selectedKey = null;
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
       _page = 0;
+      _restoredSelectionToken = null;
     }
+    _maybeRestoreSelection();
+    _sanitizeSelection();
     for (final strip in store.strips) {
       if (strip.key != _selectedKey) continue;
       final pair = _linkedPair(strip.ch);
@@ -364,12 +506,108 @@ class MixerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Restore the saved layer/view for this exact mixer connection once the
+  /// provider has advertised its capabilities. Nothing is written to the
+  /// mixer: only the UI selection and local prefs change.
+  void _maybeRestoreSelection() {
+    if (_disposed || _restoringSelection) return;
+    final engine = store.engine;
+    final ready = engine.driver == 'sim'
+        ? engine.connected && engine.strips.isNotEmpty
+        : engine.connected && engine.capsReady && store.banks.isNotEmpty;
+    if (!ready) return;
+    final scope = store.mixerScope;
+    final token = '${engine.session}:$scope';
+    if (_restoredSelectionToken == token) return;
+    _restoredSelectionToken = token;
+    unawaited(_restoreSelection(scope));
+  }
+
+  Future<void> _restoreSelection(String scope) async {
+    if (_disposed) return;
+    _restoringSelection = true;
+    try {
+      final prefs = PrefsService.instance;
+      final banks = store.banks;
+      bool hasBank(String key) => banks.any((bank) => bank.key == key);
+      final saved = prefs.mixerSelection(scope);
+      String? key = saved;
+      if (key != null && key.startsWith(_layerSelectionPrefix)) {
+        final id = key.substring(_layerSelectionPrefix.length);
+        if (!prefs.mixerLayers.any((layer) => layer.id == id)) {
+          key = hasBank('view:all') ? 'view:all' : null;
+        }
+      } else if (key == null || !hasBank(key)) {
+        key = hasBank('view:all') ? 'view:all' : banks.firstOrNull?.key;
+      }
+      if (key == null || _disposed) return;
+      if (!key.startsWith(_layerSelectionPrefix) && store.bank != key) {
+        store.setBank(key);
+      } else if (key.startsWith(_layerSelectionPrefix) &&
+          !hasBank(store.bank)) {
+        // Keep the previous native bank alongside a layer when it is valid
+        // for this mixer; otherwise start on All if the provider has it.
+        final fallback = hasBank('view:all') ? 'view:all' : banks.first.key;
+        store.setBank(fallback);
+      }
+      if (prefs.mixerSelection(scope) != key) {
+        await prefs.setMixerSelection(scope, key);
+      }
+      if (_disposed) return;
+      _page = 0;
+      // Restore selection is UI-only. Do not open/focus a channel: opening a
+      // strip can send a focus command to the desk, and a saved view must not
+      // write mixer state or routing when it is restored.
+      _selectedKey = channels.firstOrNull?.key;
+      notifyListeners();
+    } catch (error) {
+      // A failed local write must not break the connection; keep the current
+      // valid fallback and surface it only in debug logs.
+      debugPrint('Could not restore mixer selection: $error');
+    } finally {
+      _restoringSelection = false;
+    }
+  }
+
+  /// A saved view can disappear or a desk can stop advertising a bank while
+  /// the app is running. Fall back to All instead of rendering another
+  /// mixer's selection or an invalid bank.
+  void _sanitizeSelection() {
+    if (_disposed || _restoringSelection || _sanitizingSelection) return;
+    final banks = store.banks;
+    if (banks.isEmpty) return;
+    final key = PrefsService.instance.mixerSelection(store.mixerScope);
+    if (key != null && key.startsWith(_layerSelectionPrefix)) {
+      final id = key.substring(_layerSelectionPrefix.length);
+      if (PrefsService.instance.mixerLayers.any((layer) => layer.id == id)) {
+        return;
+      }
+    } else if (key != null && banks.any((bank) => bank.key == key)) {
+      return;
+    }
+    if (!banks.any((bank) => bank.key == store.bank)) {
+      _sanitizingSelection = true;
+      store.setBank('view:all');
+      _sanitizingSelection = false;
+    }
+    if (key != null) {
+      unawaited(_rememberSelection('view:all'));
+    }
+  }
+
+  Future<void> _rememberSelection(String key) async {
+    final prefs = PrefsService.instance;
+    if (prefs.mixerSelection(store.mixerScope) == key) return;
+    await prefs.setMixerSelection(store.mixerScope, key);
+  }
+
   /// Layer prefs changed (possibly from Settings while the mixer is open):
   /// clamp the page to the new source and drop a selection the layer cannot
   /// resolve. Prefs notifies on every preference write, so this stays cheap
   /// and never writes prefs back (no notify loop).
   void _layersChanged() {
     if (_disposed) return;
+    _sanitizeSelection();
     if (_page >= pageCount) _page = 0;
     if (_selectedKey != null &&
         _selectedKey != 'master' &&
@@ -543,29 +781,105 @@ class MixerController extends ChangeNotifier {
   }
 
   Future<void> setBank(String key) async {
-    _page = 0;
-    if (isCustomLayerActive) {
-      await PrefsService.instance.setActiveMixerLayerId(MixerLayer.allLayerId);
+    if (!store.banks.any((bank) => bank.key == key)) return;
+    if (store.bank == key && !isCustomLayerActive) {
+      await _rememberSelection(key);
+      return;
     }
+    _page = 0;
+    await _rememberSelection(key);
     store.setBank(key);
     final first = channels.firstOrNull;
     if (first != null) select(first);
+    notifyListeners();
   }
 
   /// Switch the active layer. Unknown ids are ignored (the All fallback in
-  /// [activeLayer] would otherwise silently change the view). Mirrors
-  /// [setBank]: reset to the first page and select its first strip.
+  /// [activeLayer] would otherwise silently change the view). The selection is
+  /// saved for this mixer connection only, and the previously chosen native
+  /// bank is kept so leaving the layer returns to it instead of resetting.
   Future<void> setActiveLayer(String id) async {
     final prefs = PrefsService.instance;
     final known = id == MixerLayer.allLayerId ||
         prefs.mixerLayers.any((layer) => layer.id == id);
-    if (!known || prefs.activeMixerLayerId == id) return;
+    if (!known) return;
+    final key = id == MixerLayer.allLayerId
+        ? 'view:all'
+        : '$_layerSelectionPrefix$id';
+    if (selectionKey == key) return;
     _page = 0;
-    await prefs.setActiveMixerLayerId(id);
-    // The prefs listener (_layersChanged) already clamped the page and
-    // selection; align the open channel like a bank switch does.
+    await _rememberSelection(key);
+    if (id == MixerLayer.allLayerId &&
+        store.banks.any((bank) => bank.key == 'view:all')) {
+      store.setBank('view:all');
+    }
     final first = channels.firstOrNull;
     if (first != null) select(first);
+    notifyListeners();
+  }
+
+  /// Replace the ordered membership of the app layer or custom view that is
+  /// currently in Edit layout mode. Never touches mixer state or routing.
+  Future<void> saveEditableChannelKeys(List<String> keys) async {
+    final clean = <String>[];
+    final seen = <String>{};
+    for (final key in keys) {
+      if (key.isNotEmpty && seen.add(key)) clean.add(key);
+    }
+    final view = activeCustomView;
+    if (view != null) {
+      await _saveEditableView(CustomMixerView(
+        id: view.id,
+        name: view.name,
+        stripKeys: List.unmodifiable(clean),
+      ));
+      return;
+    }
+    final layer = activeLayer;
+    if (layer.isAll) return;
+    await _saveEditableLayer(
+        layer.copyWith(channelKeys: List.unmodifiable(clean)));
+  }
+
+  Future<void> addEditableChannel(String key) async {
+    final keys = editableChannelKeys;
+    if (keys.contains(key)) return;
+    await saveEditableChannelKeys([...keys, key]);
+  }
+
+  Future<void> removeEditableChannel(String key) async {
+    final keys = editableChannelKeys;
+    if (!keys.contains(key)) return;
+    await saveEditableChannelKeys([...keys]..remove(key));
+  }
+
+  Future<void> reorderEditableChannel(
+      String key, int oldIndex, int newIndex) async {
+    final visible = channels.map((channel) => channel.key).toList();
+    final from = visible.indexOf(key);
+    if (from < 0) return;
+    final moved = visible.removeAt(from);
+    final target = newIndex.clamp(0, visible.length);
+    visible.insert(target, moved);
+    await saveEditableChannelKeys(
+        mergeVisibleOrder(editableChannelKeys, visible));
+  }
+
+  Future<void> _saveEditableLayer(MixerLayer layer) async {
+    final prefs = PrefsService.instance;
+    final layers = [...prefs.mixerLayers];
+    final index = layers.indexWhere((candidate) => candidate.id == layer.id);
+    if (index < 0) return;
+    layers[index] = layer;
+    await prefs.setMixerLayers(layers);
+  }
+
+  Future<void> _saveEditableView(CustomMixerView view) async {
+    final views = [
+      for (final existing in store.customMixerViews)
+        existing.id == view.id ? view : existing,
+    ];
+    await store.saveCustomMixerViews(views);
   }
 
   /// Channel-page swipes follow the complete bank/layer, across mixer pages,
