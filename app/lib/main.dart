@@ -87,7 +87,9 @@ class OpenfaderApp extends StatelessWidget {
                           onPointerDown: desktop?.pointerDown,
                           onPointerUp: desktop?.pointerEnded,
                           onPointerCancel: desktop?.pointerEnded,
-                          child: child!)))),
+                          child: TooltipVisibility(
+                              visible: !DesktopIntegration.supported,
+                              child: child!))))),
           home: kIsWeb
               ? BrowserConnectionGate(connected: (host) => BootGate(api: host))
               : BootGate(desktop: desktop),

@@ -18,7 +18,7 @@ abstract final class MeterTuning {
 /// Live meter reusable in strips, bus pickers, and future meter bridges.
 /// The signal repaints this boundary directly; it does not rebuild controls.
 class MixerMeter extends StatefulWidget {
-  /// Align the signal's scale origin with the adjacent fader ruler.
+  /// Space above the signal track for the clip indicator.
   static const scaleInset = 17.0;
   final ValueListenable<double> level;
   final bool stereo;

@@ -89,7 +89,7 @@ class _MixerFaderState extends State<MixerFader> {
                       top: geometry.top - MixerMeter.scaleInset,
                       width: box.maxWidth *
                           (widget.compact ? 20 / 96.2 : 36 / 178.2),
-                      bottom: geometry.bottom,
+                      bottom: AppDesign.spaceSm,
                       child: widget.showMeter
                           ? MixerMeter(level: ch.meter, stereo: ch.master)
                           : const SizedBox.shrink()),
@@ -286,7 +286,7 @@ class _FaderGeometry {
         math.max(34, paintedWidth), math.max(34, paintedHeight));
   }
 
-  double get capHeight => capWidth;
+  double get capHeight => capWidth + AppDesign.spaceXs;
 
   double get touchPad => largeTargets ? 10 : 6;
 }
@@ -344,10 +344,10 @@ class _CapPainter extends CustomPainter {
   const _CapPainter({required this.palette});
   @override
   void paint(Canvas c, Size s) {
-    // Design cap: one rounded square with ribbed grip zones top + bottom
-    // and the lime position line through the middle.
+    // Ribbed grip zones frame the position line.
     mixerBox(c, Offset.zero & s, palette.cap,
-        radius: 14, border: palette.capBorder);
+        radius: math.min(AppDesign.actionRadius, s.width * .18),
+        border: palette.capBorder);
     // Ribbed grips: repeating dark slits across the top and bottom zones.
     // All insets are proportional so the small phone cap keeps the same
     // look as the large tablet one (design: 14px inset on an 84px cap).

@@ -187,8 +187,8 @@ class MixerToolbar extends StatelessWidget {
     return Container(
         height:
             compact ? AppDesign.toolbarCompactHeight : AppDesign.toolbarHeight,
-        padding:
-            EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 6),
+        padding: EdgeInsets.symmetric(
+            horizontal: compact ? 6 : 10, vertical: AppDesign.spaceXs),
         decoration: BoxDecoration(
             color: ConsolePalette.of(context).background,
             border: Border(

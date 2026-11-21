@@ -48,8 +48,8 @@ abstract final class AppDesign {
   static const compactToggleWidth = 50.0;
   static const compactToggleHeight = 30.0;
   static const compactToggleThumb = 22.0;
-  static const toolbarCompactHeight = 64.0;
-  static const toolbarHeight = 68.0;
+  static const toolbarCompactHeight = 56.0;
+  static const toolbarHeight = 60.0;
   static const readoutHeight = 52.0;
   static const panelRadius = 10.0;
   static const fieldRadius = 8.0;

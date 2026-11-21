@@ -7,7 +7,7 @@ import '../design.dart';
 import '../demo.dart';
 import '../../design.dart';
 
-const _phantomLabelSize = 9.0;
+const _phantomLabelSize = 8.0;
 
 enum MixerProcessingMode { eq, dynamics, full }
 
@@ -94,8 +94,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
         const gainHeight = MixerProcessingRack._gainHeight;
         final dynamicsHeight =
             MixerProcessingRack._dynamicsHeight + widget.dynamicsExtraHeight;
-        final eqTop =
-            widget.showGain ? insetY + gainHeight + insetY : insetY;
+        final eqTop = widget.showGain ? insetY + gainHeight : 0.0;
         final dynamicsTop = box.maxHeight - insetY - dynamicsHeight;
         Widget place(double top, double height, Widget child,
                 {double horizontalInset = AppDesign.spaceSm}) =>
@@ -174,7 +173,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       widget.showPhantom)))))),
               place(
                   eqTop,
-                  math.max(0, dynamicsTop - AppDesign.spaceXs - eqTop),
+                  math.max(0, dynamicsTop - eqTop),
                   MixerEqPreview(
                       channel: widget.channel,
                       compact: !widget.showGain,

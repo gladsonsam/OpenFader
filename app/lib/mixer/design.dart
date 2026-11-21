@@ -54,7 +54,7 @@ abstract final class MixerFaderScale {
   static double positionForDb(double d) => fromEngine(dbToPos(d));
 
   /// Meter events carry linear amplitude, not a fader position or fill ratio.
-  /// Convert to dBFS before placing the signal against the shared dB ruler.
+  /// Convert to dBFS before placing the signal along the meter track.
   static double positionForLevel(double level) {
     if (!level.isFinite || level <= 0) return 0;
     return positionForDb(20 * math.log(level.clamp(0.0, 1.0)) / math.ln10);
