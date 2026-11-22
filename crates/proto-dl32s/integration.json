@@ -23,7 +23,7 @@
   "features": {
     "identity": {
       "state": "implemented",
-      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Mixer discovery and connection are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Mixer discovery and connection are implemented.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -36,7 +36,7 @@
     },
     "catalogue": {
       "state": "implemented",
-      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "The app uses the provider\u2019s channel topology and control ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "The app uses the provider\u2019s channel topology and control ranges.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -49,7 +49,7 @@
     },
     "channel_names": {
       "state": "implemented",
-      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Channel names can be read and edited. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Channel names can be read and edited.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -62,7 +62,7 @@
     },
     "levels": {
       "state": "implemented",
-      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Input, destination and main fader/mute controls are implemented where the provider exposes them. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Input, destination and main fader/mute controls are implemented where the provider exposes them.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -75,7 +75,7 @@
     },
     "fader_law": {
       "state": "implemented",
-      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "The mixer\u2019s registered fader law is used for level readouts. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "The mixer\u2019s registered fader law is used for level readouts.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -89,7 +89,7 @@
     },
     "processing": {
       "state": "implemented",
-      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Input EQ, gate and compressor controls are implemented for supported processor models. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Input EQ, gate and compressor controls are implemented for supported processor models.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -103,7 +103,7 @@
     },
     "preamps": {
       "state": "implemented",
-      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Gain and phantom controls follow the selected physical input source. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Gain and phantom controls follow the selected physical input source.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -140,7 +140,7 @@
     },
     "sends": {
       "state": "implemented",
-      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Send controls use the mixer\u2019s destination list. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Send controls use the mixer\u2019s destination list.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -157,7 +157,7 @@
     },
     "solo": {
       "state": "partial",
-      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Solo control is implemented for supported strips. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Solo is available for input channels; output solo is unavailable.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -170,7 +170,7 @@
     },
     "meters": {
       "state": "implemented",
-      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Live channel meters are implemented. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Live channel meters are implemented.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",
@@ -209,7 +209,7 @@
     },
     "recorder_names": {
       "state": "partial",
-      "reason": "USB patch/name readback integration is present in the working tree; physical DL32S naming and manual UI verification remain unverified.",
+      "reason": "USB patch/name readback integration is present in the working tree; physical DL32S naming and both iOS simulator checks remain unverified.",
       "references": [
         "crates/engine/src/drivers.rs",
         "crates/proto-dl32s/src/output_routing.rs",
@@ -218,7 +218,7 @@
     },
     "auto_soundcheck": {
       "state": "partial",
-      "reason": "Provider-owned DL32S Mic Pre USB capture mapping and guarded A/B return switching are implemented, including repatched B assignments, reserved live USB inputs, stereo-link dependencies, independent readback and restoration. Physical signal/tap, linked-input behavior and manual UI acceptance remain Testing needed.",
+      "reason": "Provider-owned DL32S soundcheck patches and selects Input B for active inputs with matching Mic Pre USB sends. Other inputs stay live and their active USB returns are reserved. Selector changes require independent readback and the original Input B assignments and selectors are journaled for restoration. Physical signal/tap, linked-input behavior and manual UI acceptance remain Testing needed.",
       "references": [
         "crates/proto-dl32s/src/soundcheck.rs",
         "crates/proto-dl32s/src/output_routing.rs",
@@ -226,12 +226,12 @@
       ],
       "public_note": "Testing needed. Requires matching USB audio interface and successful routing readback.",
       "acceptance": {
-        "routing": "On DL32S hardware verify Mic Pre capture PCM, reordered USB sends, nondefault B assignment restoration, linked input routing and retained live USB sources; verify independent routing readback and disconnect recovery in the running app."
+        "routing": "On DL32S hardware verify default 1–32 playback and reordered or partial Mic Pre USB sends, including an uncaptured live input and a reserved live USB return. Check Input B assignments, A/B selection, PCM, linked inputs and restoration of nondefault patches. Verify independent readback and disconnect recovery in the running app."
       }
     },
     "pan_balance": {
       "state": "implemented",
-      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and manual UI verification are tracked separately.",
+      "reason": "Pan and balance controls use the provider\u2019s supported strips and ranges. Reviewed software implementation; exact-model hardware and simulator verification are tracked separately.",
       "public_note": "Pan and balance controls use the provider\u2019s supported strips and ranges.",
       "references": [
         "crates/proto-dl32s/src/driver.rs",

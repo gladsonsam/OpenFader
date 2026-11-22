@@ -6,6 +6,11 @@ use openfader_transport::mackie::{MackieSession, REQUEST_TIMEOUT, VALUE_TYPE_PAR
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
+// A saved Input B assignment must also be writable when returning to live.
+fn valid_input_source(raw: i32) -> bool {
+    raw == 0 || raw == 17000 || (1000..=1031).contains(&raw) || (2000..=2031).contains(&raw)
+}
+
 pub struct Profile {
     pub capture_sources: Vec<String>,
     pub output_mapping: Vec<Option<usize>>,
@@ -235,19 +240,16 @@ impl crate::Dl32sDriver {
             let b = values[&table.address(channel, "source_b")?];
             let selected = values[&table.address(channel, "source_select")?];
             let live = if selected == 1 { a } else { b };
-            if (2000..=2031).contains(&live) {
+            // Only physical Mic Pre captures can be replayed through the
+            // strip without applying its processing twice. Other inputs
+            // keep their live patch and selector.
+            let Some(&track) = captured.get(&live) else {
                 continue;
-            }
+            };
             anyhow::ensure!(
-                (1000..=1031).contains(&live),
-                "Input {channel}: live source cannot be replayed as a physical Mic Pre"
+                i32::try_from(b).is_ok_and(valid_input_source),
+                "Input {channel}: Input B source {b} cannot be restored"
             );
-            let track = *captured.get(&live).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Input {channel}: Mic Pre {} is not captured by a USB send",
-                    live - 999
-                )
-            })?;
             let output = if let Some(output) = outputs.get(&live) {
                 *output
             } else {
@@ -265,8 +267,8 @@ impl crate::Dl32sDriver {
                 outputs.insert(live, output);
                 output
             };
-            // If B is already live, repatch the active selector in place;
-            // journal restoration reverses this write before restoring A/B.
+            // Patch B before selecting it. If B is already live, the journal
+            // restores its previous source directly.
             if b != 2000 + output as u32 {
                 changes.push((
                     key(table.address(channel, "source_b")?),
@@ -279,7 +281,7 @@ impl crate::Dl32sDriver {
         }
         anyhow::ensure!(
             output_mask.iter().any(|v| *v),
-            "No physical inputs available for soundcheck"
+            "No active Mic Pre inputs match the mixer's USB capture sends"
         );
         let rows: serde_json::Map<String, Value> = snapshot
             .second_pass
@@ -371,10 +373,7 @@ impl crate::Dl32sDriver {
         let mut writable = false;
         for ch in 1..=crate::addrs::INPUT_COUNT {
             if pid == table.address(ch, "source_b")? {
-                writable = desired == 0
-                    || desired == 17000
-                    || (1000..=1031).contains(&desired)
-                    || (2000..=2031).contains(&desired);
+                writable = valid_input_source(desired);
             }
             if pid == table.address(ch, "source_select")? {
                 writable = (0..=1).contains(&desired);
