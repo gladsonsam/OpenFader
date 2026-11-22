@@ -12,6 +12,7 @@ class MixerPanCell extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final int ready;
+  final double faceHeight;
   final double leadingHitInset;
   final VoidCallback? onMeterTap;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
@@ -20,6 +21,7 @@ class MixerPanCell extends StatelessWidget {
       required this.channel,
       required this.controller,
       required this.ready,
+      required this.faceHeight,
       required this.leadingHitInset,
       this.onMeterTap,
       this.onControlFocus});
@@ -32,6 +34,7 @@ class MixerPanCell extends StatelessWidget {
       return MixerPan(
           name: name,
           value: 0,
+          faceHeight: faceHeight,
           leadingHitInset: leadingHitInset,
           onMeterTap: onMeterTap);
     }
@@ -40,6 +43,7 @@ class MixerPanCell extends StatelessWidget {
         builder: (context, pan, _) => MixerPan(
             name: name,
             value: pan,
+            faceHeight: faceHeight,
             onTouch: () => onControlFocus?.call(MixerReadoutControl.pan),
             leadingHitInset: leadingHitInset,
             onMeterTap: onMeterTap,
@@ -55,6 +59,7 @@ class MixerPanCell extends StatelessWidget {
 class MixerPan extends StatefulWidget {
   final String name;
   final double value;
+  final double faceHeight;
   final double leadingHitInset;
   final ValueChanged<double>? onChanged;
   final VoidCallback? onTouch;
@@ -63,6 +68,7 @@ class MixerPan extends StatefulWidget {
       {super.key,
       required this.name,
       required this.value,
+      required this.faceHeight,
       this.leadingHitInset = 0,
       this.onTouch,
       this.onMeterTap,
@@ -109,20 +115,17 @@ class _MixerPanState extends State<MixerPan> {
                         },
                   onHorizontalDragEnd: (_) => _release(),
                   onHorizontalDragCancel: _release,
-                  child: SizedBox(
-                      height: AppDesign.touchTarget,
-                      width: double.infinity,
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (widget.leadingHitInset > 0)
-                              GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  excludeFromSemantics: true,
-                                  onTap: widget.onMeterTap,
-                                  child: SizedBox(height: widget.leadingHitInset)),
-                            Expanded(child: _panFace(context)),
-                          ]))))));
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (widget.leadingHitInset > 0)
+                          GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              excludeFromSemantics: true,
+                              onTap: widget.onMeterTap,
+                              child: SizedBox(height: widget.leadingHitInset)),
+                        Expanded(child: _panFace(context)),
+                      ])))));
 
   Widget _panFace(BuildContext context) => Listener(
       onPointerDown:
@@ -134,7 +137,7 @@ class _MixerPanState extends State<MixerPan> {
           child: Center(
               child: SizedBox(
                   width: double.infinity,
-                  height: AppDesign.spaceXl,
+                  height: widget.faceHeight,
                   child: CustomPaint(
                       painter: _PanPainter(
                           ConsolePalette.of(context),

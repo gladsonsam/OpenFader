@@ -5,9 +5,6 @@
  "app/lib/mixer/components/banks.dart": {
   "raw-button": 1
  },
- "app/lib/mixer/components/fader.dart": {
-  "numeric-breakpoint": 1
- },
  "app/lib/mixer/components/nameplate.dart": {
   "color-literal": 1
  },

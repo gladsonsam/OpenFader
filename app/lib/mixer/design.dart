@@ -38,6 +38,7 @@ abstract final class MixerFaderScale {
         .toDouble();
   }
 
+  static const lowestFiniteMarkDb = -60.0;
   static const marks = [
     (10.0, '10'),
     (5.0, '5'),
@@ -48,8 +49,8 @@ abstract final class MixerFaderScale {
     (-30.0, '30'),
     (-40.0, '40'),
     (-50.0, '50'),
-    (-60.0, '60'),
-    (-80.0, '∞')
+    (lowestFiniteMarkDb, '60'),
+    (double.negativeInfinity, '∞')
   ];
   static double positionForDb(double d) => fromEngine(dbToPos(d));
 

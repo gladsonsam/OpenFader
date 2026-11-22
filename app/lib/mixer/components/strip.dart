@@ -196,15 +196,23 @@ class _MixerStripState extends State<MixerStrip> {
         final panIndex = visible.indexOf(StripElement.pan);
         // Extend Pan's drag area into the meter lane above it. A tap in
         // that lane still opens processing. EQ and the toggles stay separate.
-        final panOverhang = panIndex > 0 &&
-                visible[panIndex - 1] == StripElement.processing &&
-                processingMode != MixerProcessingMode.eq
+        final sharesMeterLane = panIndex > 0 &&
+            visible[panIndex - 1] == StripElement.processing &&
+            processingMode != MixerProcessingMode.eq;
+        const extraPanHeight = AppDesign.space2xl - AppDesign.spaceXl;
+        final tallerPan = roomy &&
+            panIndex >= 0 &&
+            !faderNeedsSpace(sharesMeterLane ? extraPanHeight : 0);
+        final panHeight = tallerPan ? AppDesign.space2xl : AppDesign.spaceXl;
+        final panOverhang = sharesMeterLane
             ? AppDesign.touchTarget - AppDesign.spaceXl - AppDesign.spaceXs
             : 0.0;
         if (panOverhang > 0) {
           heights[StripElement.processing] =
               heights[StripElement.processing]! + panOverhang;
-          heights[StripElement.pan] = AppDesign.touchTarget - panOverhang;
+          heights[StripElement.pan] =
+              AppDesign.touchTarget - panOverhang +
+                  (tallerPan ? extraPanHeight : 0);
         }
         final fixed = fixedHeight();
         final spacing = rowSpacing();
@@ -272,6 +280,7 @@ class _MixerStripState extends State<MixerStrip> {
                               channel: ch,
                               controller: controller,
                               ready: ready,
+                              faceHeight: panHeight,
                               leadingHitInset: panOverhang,
                               onMeterTap:
                                   panOverhang > 0 ? _openProcessing : null,

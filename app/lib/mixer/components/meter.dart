@@ -22,7 +22,13 @@ class MixerMeter extends StatefulWidget {
   static const scaleInset = 17.0;
   final ValueListenable<double> level;
   final bool stereo;
-  const MixerMeter({super.key, required this.level, this.stereo = false});
+  final double extraTailHeight;
+  const MixerMeter({
+    super.key,
+    required this.level,
+    this.stereo = false,
+    this.extraTailHeight = 0,
+  });
   @override
   State<MixerMeter> createState() => _MixerMeterState();
 }
@@ -58,6 +64,7 @@ class _MixerMeterState extends State<MixerMeter> {
           ConsolePalette.of(context),
           _signal,
           widget.stereo,
+          widget.extraTailHeight,
         ),
       ),
     ),
@@ -106,10 +113,13 @@ class _MeterSignal extends ChangeNotifier {
 class _MeterPainter extends CustomPainter {
   static final _unity = MixerFaderScale.positionForDb(0);
   static final _warning = MixerFaderScale.positionForDb(-12);
+  static final _lowestMark =
+      MixerFaderScale.positionForDb(MixerFaderScale.lowestFiniteMarkDb);
   final ConsolePalette palette;
   final _MeterSignal signal;
   final bool stereo;
-  _MeterPainter(this.palette, this.signal, this.stereo)
+  final double extraTailHeight;
+  _MeterPainter(this.palette, this.signal, this.stereo, this.extraTailHeight)
     : super(repaint: signal);
   @override
   void paint(Canvas c, Size s) {
@@ -127,6 +137,15 @@ class _MeterPainter extends CustomPainter {
     final clipHeight = 11.0;
     const top = MixerMeter.scaleInset;
     final h = (s.height - top).clamp(1.0, double.infinity);
+    final rulerHeight = (h - extraTailHeight).clamp(1.0, h);
+    final floor = top + h;
+    // Extend only the range below the last finite tick. The rest of the
+    // meter shares the fader's ruler even though the meter reaches lower.
+    double yFor(double position) =>
+        top + (1 - position) * rulerHeight +
+        (1 - position / _lowestMark).clamp(0.0, 1.0) * (h - rulerHeight);
+    final unityY = yFor(_unity);
+    final warningY = yFor(_warning);
     final count = stereo ? 2 : 1;
     final w = (s.width - (count - 1) * 3) / count;
     final clipped = MeterTuning.holdClips
@@ -134,6 +153,8 @@ class _MeterPainter extends CustomPainter {
         : signal.source.value >= .99;
     final level = MixerFaderScale.positionForLevel(signal.source.value);
     final peak = MixerFaderScale.positionForLevel(signal.peak);
+    final levelY = yFor(level);
+    final peakY = yFor(peak);
     for (var i = 0; i < count; i++) {
       final x = i * (w + 3);
       mixerBox(
@@ -144,20 +165,20 @@ class _MeterPainter extends CustomPainter {
       );
       mixerBox(
         c,
-        Rect.fromLTWH(x, top + (1 - _unity) * h, w, (_unity - _warning) * h),
+        Rect.fromLTWH(x, unityY, w, warningY - unityY),
         palette.meterAmberBack,
         radius: 3,
       );
       mixerBox(
         c,
-        Rect.fromLTWH(x, top + (1 - _warning) * h, w, _warning * h),
+        Rect.fromLTWH(x, warningY, w, floor - warningY),
         palette.meterGreenBack,
         radius: 2,
       );
       if (level > 0) {
         mixerBox(
           c,
-          Rect.fromLTWH(x, top + (1 - level) * h, w, level * h),
+          Rect.fromLTWH(x, levelY, w, floor - levelY),
           palette.meter,
           radius: 2,
         );
@@ -165,7 +186,7 @@ class _MeterPainter extends CustomPainter {
       if (peak > 0) {
         mixerBox(
           c,
-          Rect.fromLTWH(x, top + (1 - peak) * h, w, 3),
+          Rect.fromLTWH(x, peakY, w, (floor - peakY).clamp(0.0, 3.0)),
           palette.meterAmber,
         );
       }
@@ -174,5 +195,8 @@ class _MeterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MeterPainter old) =>
-      old.palette != palette || old.signal != signal || old.stereo != stereo;
+      old.palette != palette ||
+      old.signal != signal ||
+      old.stereo != stereo ||
+      old.extraTailHeight != extraTailHeight;
 }

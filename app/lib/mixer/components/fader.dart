@@ -82,16 +82,20 @@ class _MixerFaderState extends State<MixerFader> {
                   Positioned.fill(
                       child: CustomPaint(
                           painter: _ScalePainter(ConsolePalette.of(context),
-                              geometry, ch.number))),
+                              geometry, ch.number, widget.showMeter))),
                   Positioned(
                       left: box.maxWidth *
                           (widget.compact ? 22 / 96.2 : 45 / 178.2),
                       top: geometry.top - MixerMeter.scaleInset,
                       width: box.maxWidth *
                           (widget.compact ? 20 / 96.2 : 36 / 178.2),
-                      bottom: AppDesign.spaceSm,
+                      bottom: _FaderGeometry.meterBottom,
                       child: widget.showMeter
-                          ? MixerMeter(level: ch.meter, stereo: ch.master)
+                          ? MixerMeter(
+                              level: ch.meter,
+                              stereo: ch.master,
+                              extraTailHeight:
+                                  geometry.bottom - _FaderGeometry.meterBottom)
                           : const SizedBox.shrink()),
                   if (ch.fader.isFinite)
                     Positioned(
@@ -253,6 +257,7 @@ class MixerFaderCell extends StatelessWidget {
 }
 
 class _FaderGeometry {
+  static const meterBottom = AppDesign.spaceSm;
   final Size size;
   final bool compact;
   final bool largeTargets;
@@ -295,36 +300,36 @@ class _ScalePainter extends CustomPainter {
   final ConsolePalette palette;
   final _FaderGeometry g;
   final String number;
-  const _ScalePainter(this.palette, this.g, this.number);
+  final bool showMeter;
+  const _ScalePainter(this.palette, this.g, this.number, this.showMeter);
   @override
   void paint(Canvas c, Size s) {
     mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
         palette.faderSlot,
         radius: 3, border: palette.faderSlotBorder);
     for (final mark in MixerFaderScale.marks) {
-      final y = g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
+      final y = showMeter && !mark.$1.isFinite
+          ? s.height - _FaderGeometry.meterBottom
+          : g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
       final x = s.width * (g.compact ? 66 / 96.2 : 127 / 178.2);
       final label = mark.$2;
       final fontSize = s.width * (g.compact ? 11 / 96.2 : 14 / 178.2);
+      final labelTop = y - fontSize * .575;
       if (label == 'U') {
         // Barlow has no hollow-circle glyph. Paint the unity ring so a web
         // mixer never needs to fetch a fallback symbol font from the internet.
         c.drawCircle(
-            Offset(x + fontSize * .25, y - 6 + fontSize * .6),
+            Offset(x + fontSize * .25, y),
             fontSize * .2,
             Paint()
               ..color = palette.scaleTick
               ..style = PaintingStyle.stroke
               ..strokeWidth = math.max(.7, fontSize * .08));
-        mixerText(c, label, Offset(x + fontSize * .6, y - 6), fontSize,
+        mixerText(c, label, Offset(x + fontSize * .6, labelTop), fontSize,
             color: palette.scaleTick);
       } else {
-        final prefix = label.isEmpty
-            ? '·'
-            : s.width < 140
-                ? '–'
-                : '•';
-        mixerText(c, '$prefix$label', Offset(x, y - 6), fontSize,
+        final sign = mark.$1 > 0 ? '+' : '−';
+        mixerText(c, '$sign$label', Offset(x, labelTop), fontSize,
             color: palette.scaleTick);
       }
     }
@@ -336,6 +341,7 @@ class _ScalePainter extends CustomPainter {
       old.g.size != g.size ||
       old.g.compact != g.compact ||
       old.g.largeTargets != g.largeTargets ||
+      old.showMeter != showMeter ||
       old.number != number;
 }
 
