@@ -164,7 +164,7 @@
       "required_hooks": [],
       "acceptance": {
         "controls": "Read/write input, destination and main levels/mutes with independent native readback and provider ranges.",
-        "fader_space": "At short and tall heights, preserve channel identity and usable fader travel. Extend the signal meter toward the well floor while the held cap clears the well at each end. Fit EQ before gate and compressor previews, and add gain with more height. With dynamics directly above Pan, check that the taller meters still open processing on tap and that horizontal drags still adjust Pan. Keep full hit targets clear of other actions and safe areas, and keep the selected level centered in the toolbar readout."
+        "fader_space": "At short and tall heights, preserve channel identity and usable fader travel. When strip width and height allow, give Mute and Solo taller faces and enlarge the channel name and artwork lanes. Extend the signal meter toward the well floor while the held cap clears the well at each end. Fit EQ before gate and compressor previews, and add gain with more height. With dynamics directly above Pan, check that the taller meters still open processing on tap and that horizontal drags still adjust Pan. Keep full hit targets clear of other actions and safe areas, and keep the selected level centered in the toolbar readout."
       },
       "required_evidence": [
         "unit",

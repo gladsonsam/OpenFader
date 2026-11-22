@@ -81,12 +81,6 @@ class _MixerStripState extends State<MixerStrip> {
         final layout = PrefsService.instance.stripLayout;
         final ch = channel;
         final shortSurface = box.maxHeight < 800;
-        final toggleHeight = shortSurface
-            ? AppDesign.actionDenseHeight
-            : AppDesign.actionCompactHeight;
-        const identityHeight = AppDesign.space2xl;
-        // Tape grows by the system bottom inset so names clear the nav bar.
-        final nameHeight = AppDesign.spaceXl + bottomInset;
         final gap = shortSurface ? AppDesign.spaceXs : AppDesign.spaceSm;
         var processingMode = layout.compactProcessing
             ? MixerProcessingMode.eq
@@ -101,7 +95,8 @@ class _MixerStripState extends State<MixerStrip> {
           StripElement.pan: AppDesign.touchTarget,
           StripElement.mute: AppDesign.touchTarget,
           StripElement.solo: AppDesign.touchTarget,
-          StripElement.nameplate: identityHeight + nameHeight,
+          StripElement.nameplate:
+              AppDesign.space2xl + AppDesign.spaceXl + bottomInset,
         };
         final visible = [...layout.visibleOrder];
         // The cap needs room at both ends of the rail. Keep a usable well
@@ -130,8 +125,9 @@ class _MixerStripState extends State<MixerStrip> {
               bottom, (sum, row) => sum + gapBefore(row.$1));
         }
 
-        bool faderNeedsSpace() =>
-            box.maxHeight - fixedHeight() - rowSpacing() < minimumFaderHeight;
+        bool faderNeedsSpace([double reserved = 0]) =>
+            box.maxHeight - fixedHeight() - rowSpacing() - reserved <
+            minimumFaderHeight;
         if (visible.contains(StripElement.processing)) {
           if (faderNeedsSpace() && processingMode == MixerProcessingMode.full) {
             processingMode = MixerProcessingMode.dynamics;
@@ -149,6 +145,30 @@ class _MixerStripState extends State<MixerStrip> {
         if (faderNeedsSpace()) {
           visible.remove(StripElement.pan);
         }
+        const roomyNameHeight = AppDesign.space2xl + AppDesign.spaceSm;
+        const roomyIdentityHeight = AppDesign.touchTarget;
+        const extraToggleHeight = AppDesign.controlHeight - AppDesign.touchTarget;
+        final extraHeight = roomyIdentityHeight - AppDesign.space2xl +
+            roomyNameHeight - AppDesign.spaceXl +
+            (visible.contains(StripElement.mute) ? extraToggleHeight : 0) +
+            (visible.contains(StripElement.solo) ? extraToggleHeight : 0);
+        final roomy = box.maxWidth >= AppDesign.touchTarget * 2 &&
+            !faderNeedsSpace(extraHeight);
+        final identityHeight =
+            roomy ? roomyIdentityHeight : AppDesign.space2xl;
+        // Tape grows by the system bottom inset so names clear the nav bar.
+        final nameHeight =
+            (roomy ? roomyNameHeight : AppDesign.spaceXl) + bottomInset;
+        if (roomy) {
+          heights[StripElement.nameplate] = identityHeight + nameHeight;
+          heights[StripElement.mute] = AppDesign.controlHeight;
+          heights[StripElement.solo] = AppDesign.controlHeight;
+        }
+        final toggleHeight = roomy
+            ? AppDesign.actionLargeHeight
+            : shortSurface
+                ? AppDesign.actionDenseHeight
+                : AppDesign.actionCompactHeight;
         final panIndex = visible.indexOf(StripElement.pan);
         // Extend Pan's drag area into the meter lane above it. A tap in
         // that lane still opens processing. EQ and the toggles stay separate.
@@ -271,7 +291,11 @@ class _MixerStripState extends State<MixerStrip> {
                                 nameHeight: nameHeight,
                                 bottomInset: bottomInset,
                                 nameOffset: identityHeight,
-                                fontSize: g.nameText.clamp(12.0, 18.0),
+                                fontSize: roomy
+                                    ? AppDesign.sectionTitle
+                                    : g.nameText.clamp(
+                                        AppDesign.caption, AppDesign.sectionTitle),
+                                allowNameWrap: roomy,
                                 compact: compact,
                                 onSelect: () => controller.select(ch),
                                 onOpen: onOpen,

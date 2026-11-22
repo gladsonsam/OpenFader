@@ -15,6 +15,7 @@ class MixerNameplate extends StatelessWidget {
   final double iconHeight, bottomInset, nameHeight, nameOffset, fontSize;
   final bool compact;
   final bool showArtwork;
+  final bool allowNameWrap;
   final VoidCallback onSelect, onOpen;
   final void Function(BuildContext, Rect)? onRename;
   final ValueChanged<BuildContext>? onOpenAt;
@@ -24,6 +25,7 @@ class MixerNameplate extends StatelessWidget {
       required this.iconHeight,
       this.compact = false,
       this.showArtwork = true,
+      this.allowNameWrap = false,
       this.bottomInset = 0,
       this.nameHeight = 36,
       this.nameOffset = 86,
@@ -74,6 +76,11 @@ class MixerNameplate extends StatelessWidget {
             const artworkPadding = AppDesign.spaceXs;
             final artworkSize = math.min((compact ? 48 : 86) * sx,
                 math.max(0.0, identityHeight - artworkPadding * 2));
+            const wrappedLineHeight = 1.1;
+            final wrapName = allowNameWrap &&
+                MediaQuery.textScalerOf(context).scale(fontSize) *
+                        wrappedLineHeight * 2 <=
+                    nameHeight - bottomInset;
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
@@ -115,15 +122,20 @@ class MixerNameplate extends StatelessWidget {
                   child: ColoredBox(
                       color: tape,
                       child: Padding(
-                          padding: EdgeInsets.only(bottom: bottomInset),
+                          padding: EdgeInsets.only(
+                              left: allowNameWrap ? AppDesign.spaceXs : 0,
+                              right: allowNameWrap ? AppDesign.spaceXs : 0,
+                              bottom: bottomInset),
                           child: Center(
                               child: Text(channel.name,
-                                  maxLines: 1,
+                                  maxLines: wrapName ? 2 : 1,
+                                  textAlign: TextAlign.center,
                                   overflow: TextOverflow.ellipsis,
                                   style: mixerType(context, fontSize,
                                       color: ConsolePalette.of(context)
                                           .inkOn(tape),
-                                      weight: FontWeight.w600)))))),
+                                      weight: FontWeight.w600).copyWith(
+                                          height: wrapName ? wrappedLineHeight : null)))))),
               if (channel.master)
                 Positioned(
                     right: 0,
