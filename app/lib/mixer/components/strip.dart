@@ -161,7 +161,7 @@ class _MixerStripState extends State<MixerStrip> {
             !faderNeedsSpace(extraHeight +
                 largerIdentityHeight - roomyIdentityHeight +
                 largerNameHeight - roomyNameHeight);
-        final (identityHeight, tapeHeight, nameFontSize) = largerIdentity
+        final (baseIdentityHeight, tapeHeight, nameFontSize) = largerIdentity
             ? (largerIdentityHeight, largerNameHeight, AppDesign.dialogTitle)
             : roomy
                 ? (roomyIdentityHeight, roomyNameHeight, AppDesign.sectionTitle)
@@ -170,9 +170,20 @@ class _MixerStripState extends State<MixerStrip> {
                     AppDesign.spaceXl,
                     g.nameText.clamp(AppDesign.caption, AppDesign.sectionTitle)
                   );
+        // The full rack has two insets of extra graph height above the
+        // minimum EQ target. Use them around the artwork on wider strips.
+        final extraArtworkPadding = roomy &&
+                processingMode == MixerProcessingMode.full &&
+                visible.contains(StripElement.processing)
+            ? AppDesign.spaceXs
+            : 0.0;
+        final artworkSpace = extraArtworkPadding * 2;
+        final identityHeight = baseIdentityHeight + artworkSpace;
         // Tape grows by the system bottom inset so names clear the nav bar.
         final nameHeight = tapeHeight + bottomInset;
         if (roomy) {
+          heights[StripElement.processing] =
+              heights[StripElement.processing]! - artworkSpace;
           heights[StripElement.nameplate] = identityHeight + nameHeight;
           heights[StripElement.mute] = AppDesign.controlHeight;
           heights[StripElement.solo] = AppDesign.controlHeight;
@@ -302,6 +313,8 @@ class _MixerStripState extends State<MixerStrip> {
                                 channel: ch,
                                 showArtwork: ch.showsArtwork,
                                 iconHeight: identityHeight,
+                                artworkPadding:
+                                    AppDesign.spaceXs + extraArtworkPadding,
                                 nameHeight: nameHeight,
                                 bottomInset: bottomInset,
                                 nameOffset: identityHeight,

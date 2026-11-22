@@ -13,6 +13,7 @@ import '../../core/channel_icon.dart';
 class MixerNameplate extends StatelessWidget {
   final MixerChannel channel;
   final double iconHeight, bottomInset, nameHeight, nameOffset, fontSize;
+  final double artworkPadding;
   final bool compact;
   final bool showArtwork;
   final bool allowNameWrap;
@@ -23,6 +24,7 @@ class MixerNameplate extends StatelessWidget {
       {super.key,
       required this.channel,
       required this.iconHeight,
+      this.artworkPadding = AppDesign.spaceXs,
       this.compact = false,
       this.showArtwork = true,
       this.allowNameWrap = false,
@@ -73,7 +75,6 @@ class MixerNameplate extends StatelessWidget {
             final identityHeight = math.min(iconHeight, nameOffset);
             final numberHeight =
                 math.min(identityHeight, (compact ? 20 : 26) * sx);
-            const artworkPadding = AppDesign.spaceXs;
             final artworkSize = math.min((compact ? 48 : 86) * sx,
                 math.max(0.0, identityHeight - artworkPadding * 2));
             const wrappedLineHeight = 1.1;
