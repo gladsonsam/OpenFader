@@ -147,18 +147,31 @@ class _MixerStripState extends State<MixerStrip> {
         }
         const roomyNameHeight = AppDesign.space2xl + AppDesign.spaceSm;
         const roomyIdentityHeight = AppDesign.touchTarget;
-        const extraToggleHeight = AppDesign.controlHeight - AppDesign.touchTarget;
+        const largerIdentityHeight = AppDesign.controlHeight + AppDesign.spaceXs;
+        const largerNameHeight = AppDesign.controlHeight;
+        const extraToggleHeight =
+            AppDesign.controlHeight - AppDesign.touchTarget;
         final extraHeight = roomyIdentityHeight - AppDesign.space2xl +
             roomyNameHeight - AppDesign.spaceXl +
             (visible.contains(StripElement.mute) ? extraToggleHeight : 0) +
             (visible.contains(StripElement.solo) ? extraToggleHeight : 0);
         final roomy = box.maxWidth >= AppDesign.touchTarget * 2 &&
             !faderNeedsSpace(extraHeight);
-        final identityHeight =
-            roomy ? roomyIdentityHeight : AppDesign.space2xl;
+        final largerIdentity = roomy &&
+            !faderNeedsSpace(extraHeight +
+                largerIdentityHeight - roomyIdentityHeight +
+                largerNameHeight - roomyNameHeight);
+        final (identityHeight, tapeHeight, nameFontSize) = largerIdentity
+            ? (largerIdentityHeight, largerNameHeight, AppDesign.dialogTitle)
+            : roomy
+                ? (roomyIdentityHeight, roomyNameHeight, AppDesign.sectionTitle)
+                : (
+                    AppDesign.space2xl,
+                    AppDesign.spaceXl,
+                    g.nameText.clamp(AppDesign.caption, AppDesign.sectionTitle)
+                  );
         // Tape grows by the system bottom inset so names clear the nav bar.
-        final nameHeight =
-            (roomy ? roomyNameHeight : AppDesign.spaceXl) + bottomInset;
+        final nameHeight = tapeHeight + bottomInset;
         if (roomy) {
           heights[StripElement.nameplate] = identityHeight + nameHeight;
           heights[StripElement.mute] = AppDesign.controlHeight;
@@ -239,6 +252,7 @@ class _MixerStripState extends State<MixerStrip> {
                               channel: ch,
                               controller: controller,
                               mode: processingMode,
+                              roomy: roomy,
                               dynamicsExtraHeight: panOverhang,
                               onOpen: _openProcessing)),
                       place(
@@ -291,10 +305,7 @@ class _MixerStripState extends State<MixerStrip> {
                                 nameHeight: nameHeight,
                                 bottomInset: bottomInset,
                                 nameOffset: identityHeight,
-                                fontSize: roomy
-                                    ? AppDesign.sectionTitle
-                                    : g.nameText.clamp(
-                                        AppDesign.caption, AppDesign.sectionTitle),
+                                fontSize: nameFontSize,
                                 allowNameWrap: roomy,
                                 compact: compact,
                                 onSelect: () => controller.select(ch),

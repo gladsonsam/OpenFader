@@ -7,7 +7,7 @@ import '../design.dart';
 import '../demo.dart';
 import '../../design.dart';
 
-const _phantomLabelSize = 8.0;
+const _compactPhantomLabelSize = 8.0;
 
 enum MixerProcessingMode { eq, dynamics, full }
 
@@ -16,6 +16,7 @@ class MixerProcessingCell extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final MixerProcessingMode mode;
+  final bool roomy;
   final double dynamicsExtraHeight;
   final VoidCallback onOpen;
   const MixerProcessingCell(
@@ -23,25 +24,32 @@ class MixerProcessingCell extends StatelessWidget {
       required this.channel,
       required this.controller,
       required this.mode,
+      required this.roomy,
       required this.dynamicsExtraHeight,
       required this.onOpen});
 
   @override
-  Widget build(BuildContext context) => mode == MixerProcessingMode.eq
-      ? MixerEqPreview(
-          channel: channel,
-          compact: true,
-          showPhantom: controller.hasPhantomOf(channel),
-          onOpen: onOpen)
-      : MixerProcessingRack(
-          channel: channel,
-          dynamicsExtraHeight: dynamicsExtraHeight,
-          showGain: mode == MixerProcessingMode.full,
-          gainRange: controller.gainRangeOf(channel),
-          showPhantom: controller.hasPhantomOf(channel),
-          demo: controller.demo,
-          onOpen: onOpen,
-          onGain: (v) => controller.setGain(channel, v));
+  Widget build(BuildContext context) {
+    final phantomLabelSize =
+        roomy ? AppDesign.caption : _compactPhantomLabelSize;
+    return mode == MixerProcessingMode.eq
+        ? MixerEqPreview(
+            channel: channel,
+            compact: true,
+            showPhantom: controller.hasPhantomOf(channel),
+            phantomLabelSize: phantomLabelSize,
+            onOpen: onOpen)
+        : MixerProcessingRack(
+            channel: channel,
+            dynamicsExtraHeight: dynamicsExtraHeight,
+            showGain: mode == MixerProcessingMode.full,
+            gainRange: controller.gainRangeOf(channel),
+            showPhantom: controller.hasPhantomOf(channel),
+            phantomLabelSize: phantomLabelSize,
+            demo: controller.demo,
+            onOpen: onOpen,
+            onGain: (v) => controller.setGain(channel, v));
+  }
 }
 
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
@@ -60,6 +68,7 @@ class MixerProcessingRack extends StatefulWidget {
   final double dynamicsExtraHeight;
   final List<double>? gainRange;
   final bool showPhantom;
+  final double phantomLabelSize;
   final VoidCallback onOpen;
   final ValueChanged<double> onGain;
   const MixerProcessingRack(
@@ -70,6 +79,7 @@ class MixerProcessingRack extends StatefulWidget {
       required this.dynamicsExtraHeight,
       this.gainRange,
       this.showPhantom = false,
+      required this.phantomLabelSize,
       required this.onOpen,
       required this.onGain});
   @override
@@ -170,7 +180,9 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                       widget.channel.params,
                                       widget.demo,
                                       widget.gainRange,
-                                      widget.showPhantom)))))),
+                                      widget.showPhantom,
+                                      widget.phantomLabelSize))))),
+                  horizontalInset: AppDesign.spaceXs),
               place(
                   eqTop,
                   math.max(0, dynamicsTop - eqTop),
@@ -178,6 +190,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                       channel: widget.channel,
                       compact: !widget.showGain,
                       showPhantom: widget.showPhantom,
+                      phantomLabelSize: widget.phantomLabelSize,
                       onOpen: widget.onOpen),
                   horizontalInset: 0),
               place(
@@ -211,6 +224,7 @@ class MixerEqPreview extends StatelessWidget {
   final MixerChannel channel;
   final bool compact;
   final bool showPhantom;
+  final double phantomLabelSize;
   final VoidCallback onOpen;
   const MixerEqPreview({
     super.key,
@@ -218,6 +232,7 @@ class MixerEqPreview extends StatelessWidget {
     required this.onOpen,
     this.compact = false,
     this.showPhantom = false,
+    required this.phantomLabelSize,
   });
 
   @override
@@ -238,7 +253,7 @@ class MixerEqPreview extends StatelessWidget {
                       child: IgnorePointer(
                           child: ExcludeSemantics(
                               child: Text('48V',
-                                  style: mixerType(context, _phantomLabelSize,
+                                  style: mixerType(context, phantomLabelSize,
                                           color: (channel.params['phantom'] ==
                                                       true ||
                                                   channel.params['phantom'] ==
@@ -271,7 +286,9 @@ class _GainPainter extends CustomPainter {
   final bool demo;
   final List<double>? gainRange;
   final bool showPhantom;
-  _GainPainter(this.palette, this.params, this.demo, this.gainRange, this.showPhantom);
+  final double phantomLabelSize;
+  _GainPainter(this.palette, this.params, this.demo, this.gainRange,
+      this.showPhantom, this.phantomLabelSize);
   @override
   void paint(Canvas c, Size s) {
     mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
@@ -281,7 +298,7 @@ class _GainPainter extends CustomPainter {
         ? (TextPainter(
             text: TextSpan(
                 text: '48V',
-                style: AppDesign.type(_phantomLabelSize,
+                style: AppDesign.type(phantomLabelSize,
                     color: phantom ? palette.phantom : palette.mutedText,
                     weight: FontWeight.w700)),
             textDirection: TextDirection.ltr,
@@ -293,7 +310,10 @@ class _GainPainter extends CustomPainter {
     final width = math.max(0.0, trackEnd - inset);
     final trackY = (s.height - 6) / 2;
     if (label != null) {
-      label.paint(c, Offset(labelX, (s.height - label.height) / 2));
+      // Align the lettering's ink with the centre of the track.
+      const labelOpticalLift = 1.0;
+      label.paint(
+          c, Offset(labelX, (s.height - label.height) / 2 - labelOpticalLift));
       label.dispose();
     }
     if (width < 3) return;
@@ -317,6 +337,7 @@ class _GainPainter extends CustomPainter {
       old.palette != palette ||
       old.demo != demo ||
       old.showPhantom != showPhantom ||
+      old.phantomLabelSize != phantomLabelSize ||
       !listEquals(old.gainRange, gainRange) ||
       !mapEquals(old.params, params);
 }

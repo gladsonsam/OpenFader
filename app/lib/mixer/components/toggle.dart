@@ -31,6 +31,9 @@ class MixerToggleCell extends StatelessWidget {
     final ch = channel;
     final isMaster = ch.master;
     final chIndex = ch.channel;
+    final fontSize = visualHeight >= AppDesign.actionLargeHeight
+        ? AppDesign.controlLabel
+        : AppDesign.body;
     switch (kind) {
       case MixerToggleKind.mute:
         return ValueListenableBuilder<bool>(
@@ -40,7 +43,7 @@ class MixerToggleCell extends StatelessWidget {
                 unavailableReason:
                     ready & 2 != 0 ? null : 'Mute unavailable',
                 visualHeight: visualHeight,
-                fontSize: AppDesign.body,
+                fontSize: fontSize,
                 channelName: ch.name,
                 on: ready & 2 != 0 && muted,
                 activeColor: ConsolePalette.of(context).mute,
@@ -56,7 +59,7 @@ class MixerToggleCell extends StatelessWidget {
                 unavailableReason:
                     ready & 8 != 0 ? null : 'Solo unavailable',
                 visualHeight: visualHeight,
-                fontSize: AppDesign.body,
+                fontSize: fontSize,
                 channelName: ch.name,
                 on: ready & 8 != 0 && solo,
                 activeColor: ConsolePalette.of(context).solo,
